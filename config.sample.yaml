@@ -1,0 +1,31 @@
+data_path: ./data
+logs_path:
+credential_encryption_key: ""
+virtual_tag: current
+tags_check_interval: 24h
+session_lifetime: 168h
+secure_cookies: false # set to true once dockvmap is served over HTTPS (e.g. behind a reverse proxy) otherwise the session cookie is sent unencrypted
+web_server_listen: ":8080"
+proxy_server_listen: ":5000"
+trusted_proxies: [] # only trusted if your reverse proxy appends to X-Forwarded-For, not passes it through as-is
+login_rate_limit:
+  enabled: true
+  max_attempts: 5
+  window: 15m
+  bypass_ips: []
+blob_cache:
+  enabled: true
+  path: ./cache
+  lifetime: 24h
+  cleanup_interval: 1h
+smtp:
+  enabled: false
+  host: ""
+  port: 587
+  username: ""
+  password: ""
+  from: ""
+  tls: true
+webhooks: []
+proxy_auth:
+  enabled: false
