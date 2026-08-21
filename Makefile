@@ -1,5 +1,5 @@
 BINARY := bin/dockvmap
-CONFIG := data/config.yaml
+CONFIG := config/config.yaml
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 .DEFAULT_GOAL := help
