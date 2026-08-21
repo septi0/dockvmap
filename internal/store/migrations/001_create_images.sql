@@ -1,0 +1,12 @@
+CREATE TABLE images (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    registry_id INTEGER NOT NULL,
+    repository TEXT NOT NULL,
+    tag        TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_checked DATETIME,
+    last_check_error TEXT,
+    FOREIGN KEY (registry_id) REFERENCES registries(id) ON DELETE RESTRICT ON UPDATE CASCADE
+);

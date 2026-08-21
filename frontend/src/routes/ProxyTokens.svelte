@@ -1,0 +1,206 @@
+<script lang="ts">
+  import { onMount } from 'svelte'
+  import Plus from '@lucide/svelte/icons/plus'
+  import KeyRound from '@lucide/svelte/icons/key-round'
+  import Trash2 from '@lucide/svelte/icons/trash-2'
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
+  import AppShell from '../lib/components/AppShell.svelte'
+  import AsyncState from '../lib/components/AsyncState.svelte'
+  import Button from '../lib/components/Button.svelte'
+  import CreateProxyTokenModal from '../lib/components/CreateProxyTokenModal.svelte'
+  import RevealProxyTokenModal from '../lib/components/RevealProxyTokenModal.svelte'
+  import ConfirmDialog from '../lib/components/ConfirmDialog.svelte'
+  import { listProxyTokens, deleteProxyToken } from '../lib/api/proxyTokens'
+  import { getProxyAuthStatus } from '../lib/api/system'
+  import { ApiError } from '../lib/api/client'
+  import { toast } from '../lib/services/toast'
+  import { formatDate } from '../lib/utils/format'
+  import type { ProxyToken, CreateProxyTokenResult } from '../lib/api/types/proxyTokens'
+
+  let tokens = $state<ProxyToken[]>([])
+  let loading = $state(true)
+  let error = $state<string | null>(null)
+  let showCreateModal = $state(false)
+  let revealedToken = $state<CreateProxyTokenResult | null>(null)
+  let deletingToken = $state<ProxyToken | null>(null)
+  let deleteError = $state<string | null>(null)
+  let deleting = $state(false)
+  let proxyAuthEnabled = $state(true)
+
+  async function load() {
+    loading = true
+    error = null
+
+    try {
+      tokens = await listProxyTokens()
+    } catch (err) {
+      error = err instanceof ApiError ? err.message : 'Failed to load proxy tokens'
+    } finally {
+      loading = false
+    }
+  }
+
+  onMount(load)
+
+  onMount(async () => {
+    try {
+      const status = await getProxyAuthStatus()
+      proxyAuthEnabled = status.enabled
+    } catch {}
+  })
+
+  async function handleCreated(result: CreateProxyTokenResult) {
+    revealedToken = result
+    await load()
+  }
+
+  function cancelDelete() {
+    deletingToken = null
+    deleteError = null
+  }
+
+  async function handleDelete() {
+    if (!deletingToken) return
+
+    deleteError = null
+    deleting = true
+
+    try {
+      const deletedLabel = deletingToken.label
+      await deleteProxyToken(deletingToken.id)
+      deletingToken = null
+      await load()
+      toast.success(`Token "${deletedLabel}" deleted.`)
+    } catch (err) {
+      deleteError = err instanceof ApiError ? err.message : 'Failed to delete token'
+    } finally {
+      deleting = false
+    }
+  }
+</script>
+
+<AppShell>
+  <div class="header">
+    <div class="title-row">
+      <KeyRound size={20} strokeWidth={1.75} />
+      <h1>Proxy Tokens</h1>
+    </div>
+    <Button onclick={() => (showCreateModal = true)}>
+      <Plus size={16} strokeWidth={2} />
+      Create token
+    </Button>
+  </div>
+
+  {#if !proxyAuthEnabled}
+    <p class="warning-text">
+      <TriangleAlert size={14} strokeWidth={2} />
+      <span>
+        Proxy authentication is <strong>not enabled</strong> in config.yaml — these tokens exist but
+        nothing is being enforced yet; the proxy accepts pulls with no credential until this is
+        turned on.
+      </span>
+    </p>
+  {/if}
+
+  <AsyncState
+    {loading}
+    {error}
+    empty={tokens.length === 0}
+    emptyMessage="No proxy tokens yet. Create one to authenticate a client against the proxy."
+    columns={3}
+  >
+    <div class="card">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each tokens as token (token.id)}
+            <tr>
+              <td>{token.label}</td>
+              <td>{formatDate(token.createdAt)}</td>
+              <td class="actions">
+                <button
+                  type="button"
+                  class="icon-button danger"
+                  onclick={() => (deletingToken = token)}
+                  aria-label="Delete {token.label}"
+                >
+                  <Trash2 size={16} strokeWidth={1.75} />
+                </button>
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+  </AsyncState>
+</AppShell>
+
+<CreateProxyTokenModal
+  open={showCreateModal}
+  onClose={() => (showCreateModal = false)}
+  onCreated={handleCreated}
+/>
+
+<RevealProxyTokenModal result={revealedToken} onClose={() => (revealedToken = null)} />
+
+<ConfirmDialog
+  open={deletingToken !== null}
+  title="Delete proxy token"
+  message={`Delete "${deletingToken?.label ?? ''}"? Any client using it will stop being able to authenticate. This cannot be undone.`}
+  confirmLabel="Delete"
+  danger
+  error={deleteError}
+  submitting={deleting}
+  onConfirm={handleDelete}
+  onCancel={cancelDelete}
+/>
+
+<style>
+  td {
+    vertical-align: middle;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-4);
+  }
+
+  .warning-text {
+    margin-bottom: var(--space-4);
+  }
+
+  .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-1);
+  }
+
+  .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-1);
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+
+  .icon-button:hover {
+    background: var(--color-surface-hover);
+    color: var(--color-text);
+  }
+
+  .icon-button.danger:hover {
+    color: var(--color-danger);
+  }
+</style>

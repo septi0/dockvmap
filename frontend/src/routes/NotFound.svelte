@@ -1,0 +1,25 @@
+<script lang="ts">
+  import { link } from "svelte-spa-router";
+  import Logo from "../lib/components/Logo.svelte";
+</script>
+
+<div class="not-found">
+  <Logo size="lg" />
+  <h1>Page not found</h1>
+  <a class="btn btn-secondary" href="/" use:link>Go home</a>
+</div>
+
+<style>
+  .not-found {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4);
+  }
+
+  a {
+    text-decoration: none;
+  }
+</style>

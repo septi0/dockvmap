@@ -1,0 +1,1 @@
+ALTER TABLE images ADD COLUMN update_available BOOLEAN NOT NULL DEFAULT 0;
