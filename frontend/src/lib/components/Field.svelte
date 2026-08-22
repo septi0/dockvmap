@@ -38,6 +38,7 @@
       <button
         type="button"
         class="toggle"
+        tabindex="-1"
         onclick={() => (revealed = !revealed)}
         aria-label={revealed ? "Hide password" : "Show password"}
       >
