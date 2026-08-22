@@ -22,17 +22,13 @@ frontend/node_modules: frontend/package.json frontend/package-lock.json
 frontend-deps: ## npm install in frontend/ only
 	cd frontend && npm install
 
-$(CONFIG):
-	mkdir -p $(dir $(CONFIG))
-	cp config.sample.yaml $(CONFIG)
-
-run: build-backend $(CONFIG) ## Build then run the backend binary
+run: build-backend ## Build then run the backend binary
 	./$(BINARY) -config $(CONFIG)
 
 dev: ## Run backend + frontend dev server together (Ctrl+C stops both)
 	$(MAKE) -j2 dev-backend dev-frontend
 
-dev-backend: frontend/dist $(CONFIG)
+dev-backend: frontend/dist
 	go run -ldflags "-X main.version=$(VERSION)" ./cmd/dockvmap -config $(CONFIG)
 
 dev-frontend: frontend/node_modules
