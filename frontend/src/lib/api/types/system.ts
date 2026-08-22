@@ -1,3 +1,7 @@
+export interface Version {
+  version: string
+}
+
 export interface SMTPStatus {
   enabled: boolean
 }

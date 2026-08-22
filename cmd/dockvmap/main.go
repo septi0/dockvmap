@@ -165,7 +165,7 @@ func run() error {
 
 	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens)
 
-	webSrv, err := newWebServer(cfg, images, registries, events, audit, users, sessions, health, proxyTokens, metrics, failureLog, loginRateLimitWindow)
+	webSrv, err := newWebServer(cfg, images, registries, events, audit, users, sessions, health, proxyTokens, metrics, failureLog, loginRateLimitWindow, version)
 
 	if err != nil {
 		return fmt.Errorf("failed to initialize web server: %w", err)

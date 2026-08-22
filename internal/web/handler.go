@@ -96,9 +96,10 @@ type Web struct {
 	cfg                  *config.Config
 	trustedProxies       ipmatch.Set
 	loginRateLimitWindow time.Duration
+	version              string
 }
 
-func New(cfg *config.Config, images imageService, registries registryService, events eventService, audit auditService, users userService, sessions sessionService, health healthChecker, proxyTokens proxyTokenService, proxyMetrics proxyMetricsProvider, failures failureLister, loginRateLimitWindow time.Duration) (http.Handler, error) {
+func New(cfg *config.Config, images imageService, registries registryService, events eventService, audit auditService, users userService, sessions sessionService, health healthChecker, proxyTokens proxyTokenService, proxyMetrics proxyMetricsProvider, failures failureLister, loginRateLimitWindow time.Duration, version string) (http.Handler, error) {
 	trustedProxies, err := ipmatch.Parse(cfg.TrustedProxies)
 
 	if err != nil {
@@ -118,6 +119,7 @@ func New(cfg *config.Config, images imageService, registries registryService, ev
 		failures:             failures,
 		cfg:                  cfg,
 		trustedProxies:       trustedProxies,
+		version:              version,
 		loginRateLimitWindow: loginRateLimitWindow,
 	}
 
