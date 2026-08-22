@@ -1,5 +1,9 @@
 import { api } from './client'
-import type { SMTPStatus, ProxyAuthStatus } from './types/system'
+import type { Version, SMTPStatus, ProxyAuthStatus } from './types/system'
+
+export function getVersion() {
+  return api.get<Version>('/version')
+}
 
 export function getSMTPStatus() {
   return api.get<SMTPStatus>('/smtp-status')

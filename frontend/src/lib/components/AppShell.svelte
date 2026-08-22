@@ -1,12 +1,24 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { Snippet } from "svelte";
   import { link } from "svelte-spa-router";
   import active from "svelte-spa-router/active";
   import Logo from "./Logo.svelte";
   import UserMenu from "./UserMenu.svelte";
   import UpdatesBadge from "./UpdatesBadge.svelte";
+  import { getVersion } from "../api/system";
 
   let { children }: { children: Snippet } = $props();
+
+  let version = $state("");
+
+  onMount(async () => {
+    try {
+      version = (await getVersion()).version;
+    } catch {
+      // non-essential chrome, ignore failures
+    }
+  });
 
   const navItems = [
     { label: "Dashboard", href: "/", enabled: true },
@@ -39,7 +51,7 @@
     </nav>
 
     <p class="sidebar-footer muted">
-      DockVMap · AGPL-3.0 ·
+      DockVMap{version ? ` ${version}` : ""} · AGPL-3.0 ·
       <a href="https://github.com/septi0/dockvmap" target="_blank" rel="noopener noreferrer">Source</a>
     </p>
   </aside>

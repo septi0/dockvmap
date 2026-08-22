@@ -8,6 +8,8 @@ import (
 func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/proxy/pull-info", apiMethod(http.MethodGet, w.apiProxyPullInfo))
 
+	mux.HandleFunc("/version", apiMethod(http.MethodGet, w.apiVersion))
+
 	mux.HandleFunc("/smtp-status", apiMethod(http.MethodGet, w.apiSMTPStatus))
 
 	mux.HandleFunc("/proxy-auth-status", apiMethod(http.MethodGet, w.apiProxyAuthStatus))
