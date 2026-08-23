@@ -28,6 +28,16 @@ docker pull registry.internal:5000/myimage:current
 
 `:latest` moves under you with no warning and no audit trail. Hardcoding a specific version tag everywhere it's referenced means every rollout is a find-and-replace across configs. DockVMap adds one layer of indirection so you get a fixed, predictable reference for clients *and* full control over what it actually resolves to — plus a record of when it changed and to what.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" width="800" alt="DockVMap dashboard">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/image-details.png" width="800" alt="Virtual image details page">
+</p>
+
 ## Features
 
 - **Virtual tag proxying** — OCI Distribution API proxy (`/v2/...`) that transparently resolves a stable tag to whatever real tag an image is currently pinned to.
