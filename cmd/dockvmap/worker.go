@@ -13,6 +13,7 @@ import (
 
 const sessionCleanupInterval = time.Hour
 const tagNotificationInterval = 5 * time.Minute
+const blobOrphanScanInterval = 24 * time.Hour
 
 func startWorker(ctx context.Context, cfg *config.Config, images *service.Images, cache *blobcache.Cache, notifications *service.Notifications, sessions *service.Sessions) {
 	var wg sync.WaitGroup
@@ -52,6 +53,15 @@ func startWorker(ctx context.Context, cfg *config.Config, images *service.Images
 		} else {
 			slog.Warn("blob cache cleanup worker disabled", "interval", cfg.BlobCache.CleanupInterval)
 		}
+
+		slog.Info("starting blob cache orphan scan worker", "interval", blobOrphanScanInterval)
+
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			runBlobCacheOrphanScanWorker(ctx, blobOrphanScanInterval, cache)
+		}()
 	}
 
 	if cfg.SMTP.Enabled || len(cfg.Webhooks) > 0 {
@@ -147,6 +157,22 @@ func runBlobCacheCleanupWorker(ctx context.Context, interval time.Duration, cach
 
 		if deleted > 0 {
 			slog.Info("removed expired cached blobs", "count", deleted)
+		}
+
+		return nil
+	})
+}
+
+func runBlobCacheOrphanScanWorker(ctx context.Context, interval time.Duration, cache *blobcache.Cache) {
+	runTickerLoop(ctx, interval, "blob cache orphan scan", func(ctx context.Context) error {
+		removed, err := cache.ScanOrphans(ctx)
+
+		if err != nil {
+			return err
+		}
+
+		if removed > 0 {
+			slog.Info("removed orphaned cached blob files", "count", removed)
 		}
 
 		return nil
