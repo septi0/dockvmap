@@ -39,7 +39,7 @@ func applyEnvOverridesValue(v reflect.Value) error {
 			continue
 		}
 
-		if err := setEnvValue(fieldValue, name, raw); err != nil {
+		if err := setTaggedValue(fieldValue, name, raw); err != nil {
 			return err
 		}
 	}
@@ -47,7 +47,7 @@ func applyEnvOverridesValue(v reflect.Value) error {
 	return nil
 }
 
-func setEnvValue(fieldValue reflect.Value, name, raw string) error {
+func setTaggedValue(fieldValue reflect.Value, name, raw string) error {
 	switch {
 	case fieldValue.Kind() == reflect.String:
 		fieldValue.SetString(raw)
@@ -83,7 +83,7 @@ func setEnvValue(fieldValue reflect.Value, name, raw string) error {
 		fieldValue.Set(reflect.ValueOf(splitEnvList(raw)))
 
 	default:
-		return fmt.Errorf("env override: unsupported field type for %s", name)
+		return fmt.Errorf("unsupported field type for %s", name)
 	}
 
 	return nil
