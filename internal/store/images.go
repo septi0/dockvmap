@@ -167,6 +167,28 @@ func (s *Store) CreateImage(ctx context.Context, img *model.Image) error {
 	return nil
 }
 
+func (s *Store) UpdateImageName(ctx context.Context, imageId int64, name string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE images SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+	`, name, imageId)
+
+	if err != nil {
+		if isUniqueConstraintErr(err) {
+			return false, ErrImageNameConflict
+		}
+
+		return false, fmt.Errorf("renaming image %d: %w", imageId, err)
+	}
+
+	updated, err := result.RowsAffected()
+
+	if err != nil {
+		return false, fmt.Errorf("checking renamed image %d: %w", imageId, err)
+	}
+
+	return updated != 0, nil
+}
+
 func (s *Store) DeleteImage(ctx context.Context, imageId int64) (bool, error) {
 	result, err := s.db.ExecContext(ctx, "DELETE FROM images WHERE id = ?", imageId)
 

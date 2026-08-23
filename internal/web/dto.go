@@ -83,6 +83,10 @@ type updateImageTagRequest struct {
 	Tag string `json:"tag"`
 }
 
+type renameImageRequest struct {
+	Name string `json:"name"`
+}
+
 type pullInfoResponse struct {
 	Host       string `json:"host"`
 	Port       string `json:"port"`

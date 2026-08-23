@@ -49,6 +49,7 @@ type imageStore interface {
 	CountImages(ctx context.Context, filters model.ImageListFilters) (int64, error)
 	UpdateImageCheck(ctx context.Context, tx store.DBTX, imageId int64, checkErr *string, checkedAt time.Time) (bool, error)
 	UpdateImageTag(ctx context.Context, tx store.DBTX, imageId int64, tag string) (bool, error)
+	UpdateImageName(ctx context.Context, imageId int64, name string) (bool, error)
 	UpdateImageUpdateAvailable(ctx context.Context, tx store.DBTX, imageId int64, available bool) (bool, error)
 	GetImageTags(ctx context.Context, imageId int64) ([]model.ImageTag, error)
 	GetImageTag(ctx context.Context, imageId int64, tag string) (*model.ImageTag, error)
@@ -138,6 +139,11 @@ type auditImageTagChangedData struct {
 	Name   string `json:"name"`
 	OldTag string `json:"oldTag"`
 	NewTag string `json:"newTag"`
+}
+
+type auditImageRenamedData struct {
+	OldName string `json:"oldName"`
+	NewName string `json:"newName"`
 }
 
 func NewImages(store imageStore, tagLister tagLister, events eventHandler, audit auditRecorder, failures failureRecorder) *Images {
@@ -367,6 +373,60 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string) error
 		Name:   image.Name,
 		OldTag: image.Tag,
 		NewTag: tag,
+	})
+
+	return nil
+}
+
+func (i *Images) Rename(ctx context.Context, imageId int64, name string) error {
+	if imageId < 1 {
+		return fmt.Errorf("%w: id must be positive", ErrInvalidImage)
+	}
+
+	unlock := i.refreshLocker.lock(imageId)
+	defer unlock()
+
+	name = strings.TrimSpace(name)
+
+	if name == "" {
+		return fmt.Errorf("%w: name is required", ErrInvalidImage)
+	}
+
+	if !repositoryNameRE.MatchString(name) {
+		return fmt.Errorf("%w: name must be a valid lowercase repository path", ErrInvalidImage)
+	}
+
+	image, err := i.store.GetImageByID(ctx, imageId)
+
+	if err != nil {
+		return err
+	}
+
+	if image == nil {
+		return fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
+	}
+
+	if name == image.Name {
+		return nil
+	}
+
+	updated, err := i.store.UpdateImageName(ctx, imageId, name)
+
+	if err != nil {
+		if errors.Is(err, store.ErrImageNameConflict) {
+			return ErrImageAlreadyExists
+		}
+
+		return err
+	}
+
+	if !updated {
+		return fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
+	}
+
+	recordAudit(ctx, i.audit, AuditTypeImageRenamed, auditImageRenamedData{
+		OldName: image.Name,
+		NewName: name,
 	})
 
 	return nil
