@@ -85,8 +85,9 @@ All settings live in a single YAML file (`config.sample.yaml` is a documented st
 | `virtual_tag` | The tag name clients pull (`current` by default) |
 | `tags_check_interval` | How often DockVMap polls upstream registries for tag changes |
 | `session_lifetime` | Web UI session duration |
-| `secure_cookies` | Set `true` once served over HTTPS — otherwise the session cookie is sent unencrypted |
+| `secure_cookies` | Set `true` once served over HTTPS — otherwise the session cookie is sent unencrypted. Defaults to `true` when `tls.enabled` is true, `false` otherwise |
 | `trusted_proxies` | CIDRs/IPs of reverse proxies you trust to report the real client IP |
+| `tls` | Serve both the proxy and web servers directly over HTTPS using `cert_file`/`key_file`. If enabled but either file path is blank, TLS is silently disabled at startup |
 | `login_rate_limit` | Failed-login lockout: attempts, window, IPs allowed to bypass it |
 | `blob_cache` | Optional on-disk cache for manifests/blobs |
 | `smtp` / `webhooks` | Notification channels for tag changes |

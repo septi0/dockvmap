@@ -7,20 +7,13 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"sync"
-	"syscall"
-	"time"
 
-	"github.com/septi0/dockvmap/internal/blobcache"
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/oci"
 	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
-	"github.com/septi0/dockvmap/internal/smtp"
 	"github.com/septi0/dockvmap/internal/store"
-	"github.com/septi0/dockvmap/internal/webhook"
 )
 
 var version = "dev"
@@ -73,21 +66,7 @@ func run() error {
 
 	defer db.Close()
 
-	sessionLifetime, err := time.ParseDuration(cfg.SessionLifetime)
-
-	if err != nil || sessionLifetime <= 0 {
-		return fmt.Errorf("invalid session_lifetime %q: %w", cfg.SessionLifetime, err)
-	}
-
-	loginRateLimitWindow, err := time.ParseDuration(cfg.LoginRateLimit.Window)
-
-	if err != nil || loginRateLimitWindow <= 0 {
-		return fmt.Errorf("invalid login_rate_limit.window %q: %w", cfg.LoginRateLimit.Window, err)
-	}
-
-	if cfg.LoginRateLimit.MaxAttempts <= 0 {
-		return fmt.Errorf("invalid login_rate_limit.max_attempts %d: must be positive", cfg.LoginRateLimit.MaxAttempts)
-	}
+	loginRateLimitWindow := cfg.LoginRateLimit.WindowDuration()
 
 	loginRateLimiter, err := service.NewLoginRateLimiter(*cfg.LoginRateLimit.Enabled, cfg.LoginRateLimit.MaxAttempts, loginRateLimitWindow, cfg.LoginRateLimit.BypassIPs)
 
@@ -96,20 +75,11 @@ func run() error {
 	}
 
 	audit := service.NewAudit(db)
-	sessions := service.NewSessions(db, sessionLifetime, audit, loginRateLimiter)
+	sessions := service.NewSessions(db, cfg.SessionLifetimeDuration(), audit, loginRateLimiter)
 	users := service.NewUsers(db, audit, sessions)
 
 	if *resetPassword != "" {
-		password, err := users.ResetPassword(context.Background(), *resetPassword)
-
-		if err != nil {
-			return fmt.Errorf("failed to reset password: %w", err)
-		}
-
-		fmt.Println("Password reset. New password:")
-		fmt.Println(password)
-
-		return nil
+		return runResetPassword(context.Background(), users, *resetPassword)
 	}
 
 	health := service.NewHealth(db)
@@ -126,46 +96,29 @@ func run() error {
 	images := service.NewImages(db, ociClient, events, audit, failureLog)
 	metrics := proxy.NewMetrics()
 
-	var cache *blobcache.Cache
-
-	if cfg.BlobCache.Enabled {
-		cache, err = blobcache.New(cfg.BlobCache.Path, cfg.BlobCache.Lifetime, db)
-
-		if err != nil {
-			return fmt.Errorf("failed to initialize blob cache: %w", err)
-		}
-
-		slog.Info("blob cache enabled", "path", cfg.BlobCache.Path, "lifetime", cache.Lifetime())
-	}
-
-	var mailer *smtp.Client
-
-	if cfg.SMTP.Enabled {
-		mailer = smtp.NewClient(smtp.Config{
-			Host:     cfg.SMTP.Host,
-			Port:     cfg.SMTP.Port,
-			Username: cfg.SMTP.Username,
-			Password: cfg.SMTP.Password,
-			From:     cfg.SMTP.From,
-			TLS:      cfg.SMTP.TLS,
-		})
-
-		slog.Info("smtp enabled", "host", cfg.SMTP.Host, "port", cfg.SMTP.Port)
-	}
-
-	if len(cfg.Webhooks) > 0 {
-		slog.Info("webhook notifications enabled", "count", len(cfg.Webhooks))
-	}
-
-	notifications, err := service.NewNotifications(db, db, mailer, cfg.SMTP.Enabled, webhook.NewClient(), cfg.Webhooks, failureLog)
+	cache, err := initBlobCache(cfg, db)
 
 	if err != nil {
-		return fmt.Errorf("failed to configure webhook notifications: %w", err)
+		return err
 	}
 
-	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens)
+	mailer := initMailer(cfg)
 
-	webSrv, err := newWebServer(cfg, images, registries, events, audit, users, sessions, health, proxyTokens, metrics, failureLog, loginRateLimitWindow, version)
+	notifications, err := initNotifications(cfg, db, mailer, failureLog)
+
+	if err != nil {
+		return err
+	}
+
+	tlsConfig, err := loadTLSConfig(cfg)
+
+	if err != nil {
+		return err
+	}
+
+	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens, tlsConfig)
+
+	webSrv, err := newWebServer(cfg, images, registries, events, audit, users, sessions, health, proxyTokens, metrics, failureLog, loginRateLimitWindow, version, tlsConfig)
 
 	if err != nil {
 		return fmt.Errorf("failed to initialize web server: %w", err)
@@ -187,47 +140,20 @@ func run() error {
 		startWorker(workerCtx, cfg, images, cache, notifications, sessions)
 	}()
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)
 
-	defer signal.Stop(sig)
+	return nil
+}
 
-	select {
-	case <-sig:
-		slog.Info("shutting down")
-	case err := <-serverErrs:
-		slog.Error("server failed, shutting down", "error", err)
+func runResetPassword(ctx context.Context, users *service.Users, username string) error {
+	password, err := users.ResetPassword(ctx, username)
+
+	if err != nil {
+		return fmt.Errorf("failed to reset password: %w", err)
 	}
 
-	workerCancel()
-	<-workerDone
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-
-	defer shutdownCancel()
-
-	var shutdownWg sync.WaitGroup
-	shutdownWg.Add(2)
-
-	go func() {
-		defer shutdownWg.Done()
-
-		if err := proxySrv.Shutdown(shutdownCtx); err != nil {
-			slog.Error("proxy server shutdown error", "error", err)
-		}
-	}()
-
-	go func() {
-		defer shutdownWg.Done()
-
-		if err := webSrv.Shutdown(shutdownCtx); err != nil {
-			slog.Error("web server shutdown error", "error", err)
-		}
-	}()
-
-	shutdownWg.Wait()
-
-	slog.Info("stopped")
+	fmt.Println("Password reset. New password:")
+	fmt.Println(password)
 
 	return nil
 }

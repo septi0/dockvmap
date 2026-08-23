@@ -32,7 +32,7 @@ func (w *Web) apiLogin(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookie(rw, token, expiresAt, w.cfg.SecureCookies)
+	setSessionCookie(rw, token, expiresAt, *w.cfg.SecureCookies)
 
 	apiJSON(rw, http.StatusOK, map[string]string{"status": "logged in"})
 }
@@ -49,7 +49,7 @@ func (w *Web) apiLogout(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clearSessionCookie(rw, w.cfg.SecureCookies)
+	clearSessionCookie(rw, *w.cfg.SecureCookies)
 
 	apiJSON(rw, http.StatusOK, map[string]string{"status": "logged out"})
 }
