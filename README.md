@@ -113,13 +113,6 @@ dockvmap -reset-password <username>  # generate and print a new password, invali
 dockvmap -version                    # print version and exit
 ```
 
-## Security notes
-
-- Registry credentials are encrypted at rest (AES-GCM); the web session cookie is `HttpOnly` + `SameSite=Lax`, never exposed to JS.
-- Passwords are bcrypt-hashed; proxy tokens are SHA-256-hashed high-entropy secrets, shown once at creation.
-- SSRF-guarded: any registry host the server is asked to contact must already be a configured registry.
-- No known-CVE-relevant footguns intended, but this hasn't had an external audit — treat it accordingly if you're exposing it beyond a trusted network.
-
 ## Development
 
 ```bash
