@@ -1,8 +1,13 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/septi0/dockvmap/internal/blobcache"
 	"github.com/septi0/dockvmap/internal/config"
@@ -11,6 +16,42 @@ import (
 	"github.com/septi0/dockvmap/internal/store"
 	"github.com/septi0/dockvmap/internal/webhook"
 )
+
+const credentialEncryptionKeyFile = "credential_encryption.key"
+
+func resolveCredentialEncryptionKey(cfg *config.Config) (string, error) {
+	if cfg.CredentialEncryptionKey != "" {
+		return cfg.CredentialEncryptionKey, nil
+	}
+
+	keyPath := filepath.Join(cfg.DataPath, credentialEncryptionKeyFile)
+
+	data, err := os.ReadFile(keyPath)
+
+	if err == nil {
+		return strings.TrimSpace(string(data)), nil
+	}
+
+	if !os.IsNotExist(err) {
+		return "", fmt.Errorf("reading credential encryption key: %w", err)
+	}
+
+	key := make([]byte, 32)
+
+	if _, err := rand.Read(key); err != nil {
+		return "", fmt.Errorf("generating credential encryption key: %w", err)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(key)
+
+	if err := os.WriteFile(keyPath, []byte(encoded), 0o600); err != nil {
+		return "", fmt.Errorf("writing credential encryption key: %w", err)
+	}
+
+	slog.Info("generated credential encryption key", "path", keyPath)
+
+	return encoded, nil
+}
 
 func initBlobCache(cfg *config.Config, db *store.Store) (*blobcache.Cache, error) {
 	if !cfg.BlobCache.Enabled {

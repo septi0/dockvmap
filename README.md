@@ -76,12 +76,14 @@ Open the web UI (`web_server_listen`, `:8080` by default) — the first visit wa
 
 ## Configuration
 
-All settings live in a single YAML file (`config.sample.yaml` is a documented starting point). Key options:
+Settings can come from a YAML file (`config.sample.yaml` is a documented starting point), from `DOCKVMAP_*` environment variables, or both — the config file is entirely optional. Precedence per setting is **env var > config file > built-in default**. Env var names mirror the YAML keys, uppercased with underscores, prefixed `DOCKVMAP_` (e.g. `web_server_listen` → `DOCKVMAP_WEB_SERVER_LISTEN`, `smtp.host` → `DOCKVMAP_SMTP_HOST`); comma-separate list values (`DOCKVMAP_TRUSTED_PROXIES=10.0.0.0/8,192.168.1.1`).
+
+Key options:
 
 | Key | Purpose |
 |---|---|
 | `data_path` | Where the SQLite database lives |
-| `credential_encryption_key` | Base64, 32-byte AES-GCM key encrypting stored registry credentials |
+| `credential_encryption_key` | Base64, 32-byte AES-GCM key encrypting stored registry credentials. If left unset, DockVMap generates one and persists it at `<data_path>/credential_encryption.key` on first run |
 | `virtual_tag` | The tag name clients pull (`current` by default) |
 | `tags_check_interval` | How often DockVMap polls upstream registries for tag changes |
 | `session_lifetime` | Web UI session duration |
@@ -96,7 +98,7 @@ All settings live in a single YAML file (`config.sample.yaml` is a documented st
 ## CLI
 
 ```
-dockvmap -config <path>              # path to config file (default: config.yaml)
+dockvmap -config <path>              # path to config file (optional; default: config.yaml)
 dockvmap -reset-password <username>  # generate and print a new password, invalidate their sessions, exit
 dockvmap -version                    # print version and exit
 ```

@@ -9,17 +9,17 @@ import (
 )
 
 type Config struct {
-	VirtualTag              string               `yaml:"virtual_tag"`
-	TagsCheckInterval       string               `yaml:"tags_check_interval"`
-	ProxyServerListen       string               `yaml:"proxy_server_listen"`
-	WebServerListen         string               `yaml:"web_server_listen"`
-	DataPath                string               `yaml:"data_path"`
-	LogsPath                string               `yaml:"logs_path"`
-	CredentialEncryptionKey string               `yaml:"credential_encryption_key"`
-	SessionLifetime         string               `yaml:"session_lifetime"`
-	SecureCookies           *bool                `yaml:"secure_cookies"`
-	TrustedProxies          []string             `yaml:"trusted_proxies"`
-	Webhooks                []string             `yaml:"webhooks"`
+	VirtualTag              string               `yaml:"virtual_tag" env:"DOCKVMAP_VIRTUAL_TAG"`
+	TagsCheckInterval       string               `yaml:"tags_check_interval" env:"DOCKVMAP_TAGS_CHECK_INTERVAL"`
+	ProxyServerListen       string               `yaml:"proxy_server_listen" env:"DOCKVMAP_PROXY_SERVER_LISTEN"`
+	WebServerListen         string               `yaml:"web_server_listen" env:"DOCKVMAP_WEB_SERVER_LISTEN"`
+	DataPath                string               `yaml:"data_path" env:"DOCKVMAP_DATA_PATH"`
+	LogsPath                string               `yaml:"logs_path" env:"DOCKVMAP_LOGS_PATH"`
+	CredentialEncryptionKey string               `yaml:"credential_encryption_key" env:"DOCKVMAP_CREDENTIAL_ENCRYPTION_KEY"`
+	SessionLifetime         string               `yaml:"session_lifetime" env:"DOCKVMAP_SESSION_LIFETIME"`
+	SecureCookies           *bool                `yaml:"secure_cookies" env:"DOCKVMAP_SECURE_COOKIES"`
+	TrustedProxies          []string             `yaml:"trusted_proxies" env:"DOCKVMAP_TRUSTED_PROXIES"`
+	Webhooks                []string             `yaml:"webhooks" env:"DOCKVMAP_WEBHOOKS"`
 	BlobCache               BlobCacheConfig      `yaml:"blob_cache"`
 	SMTP                    SMTPConfig           `yaml:"smtp"`
 	TLS                     TLSConfig            `yaml:"tls"`
@@ -28,37 +28,37 @@ type Config struct {
 }
 
 type BlobCacheConfig struct {
-	Enabled         bool   `yaml:"enabled"`
-	Path            string `yaml:"path"`
-	Lifetime        string `yaml:"lifetime"`
-	CleanupInterval string `yaml:"cleanup_interval"`
+	Enabled         bool   `yaml:"enabled" env:"DOCKVMAP_BLOB_CACHE_ENABLED"`
+	Path            string `yaml:"path" env:"DOCKVMAP_BLOB_CACHE_PATH"`
+	Lifetime        string `yaml:"lifetime" env:"DOCKVMAP_BLOB_CACHE_LIFETIME"`
+	CleanupInterval string `yaml:"cleanup_interval" env:"DOCKVMAP_BLOB_CACHE_CLEANUP_INTERVAL"`
 }
 
 type SMTPConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-	From     string `yaml:"from"`
-	TLS      bool   `yaml:"tls"`
+	Enabled  bool   `yaml:"enabled" env:"DOCKVMAP_SMTP_ENABLED"`
+	Host     string `yaml:"host" env:"DOCKVMAP_SMTP_HOST"`
+	Port     int    `yaml:"port" env:"DOCKVMAP_SMTP_PORT"`
+	Username string `yaml:"username" env:"DOCKVMAP_SMTP_USERNAME"`
+	Password string `yaml:"password" env:"DOCKVMAP_SMTP_PASSWORD"`
+	From     string `yaml:"from" env:"DOCKVMAP_SMTP_FROM"`
+	TLS      bool   `yaml:"tls" env:"DOCKVMAP_SMTP_TLS"`
 }
 
 type ProxyAuthConfig struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" env:"DOCKVMAP_PROXY_AUTH_ENABLED"`
 }
 
 type TLSConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	CertFile string `yaml:"cert_file"`
-	KeyFile  string `yaml:"key_file"`
+	Enabled  bool   `yaml:"enabled" env:"DOCKVMAP_TLS_ENABLED"`
+	CertFile string `yaml:"cert_file" env:"DOCKVMAP_TLS_CERT_FILE"`
+	KeyFile  string `yaml:"key_file" env:"DOCKVMAP_TLS_KEY_FILE"`
 }
 
 type LoginRateLimitConfig struct {
-	Enabled     *bool    `yaml:"enabled"`
-	MaxAttempts int      `yaml:"max_attempts"`
-	Window      string   `yaml:"window"`
-	BypassIPs   []string `yaml:"bypass_ips"`
+	Enabled     *bool    `yaml:"enabled" env:"DOCKVMAP_LOGIN_RATE_LIMIT_ENABLED"`
+	MaxAttempts int      `yaml:"max_attempts" env:"DOCKVMAP_LOGIN_RATE_LIMIT_MAX_ATTEMPTS"`
+	Window      string   `yaml:"window" env:"DOCKVMAP_LOGIN_RATE_LIMIT_WINDOW"`
+	BypassIPs   []string `yaml:"bypass_ips" env:"DOCKVMAP_LOGIN_RATE_LIMIT_BYPASS_IPS"`
 }
 
 func (c *Config) setDefaults() {
@@ -152,15 +152,18 @@ func (l LoginRateLimitConfig) WindowDuration() time.Duration {
 }
 
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	var cfg Config
 
-	if err != nil {
+	if data, err := os.ReadFile(path); err == nil {
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("parsing config: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
 		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config: %w", err)
+	if err := applyEnvOverrides(&cfg); err != nil {
+		return nil, err
 	}
 
 	cfg.setDefaults()

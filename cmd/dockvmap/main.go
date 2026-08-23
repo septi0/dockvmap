@@ -26,7 +26,7 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", "config.yaml", "path to configuration file")
+	configPath := flag.String("config", "config.yaml", "path to configuration file (optional; falls back to DOCKVMAP_* env vars and defaults if not found)")
 	resetPassword := flag.String("reset-password", "", "generate a new random password for the given username, print it, and exit")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
@@ -58,7 +58,13 @@ func run() error {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	db, err := store.New(filepath.Join(cfg.DataPath, "dockvmap.db"), cfg.CredentialEncryptionKey)
+	credentialEncryptionKey, err := resolveCredentialEncryptionKey(cfg)
+
+	if err != nil {
+		return fmt.Errorf("failed to resolve credential encryption key: %w", err)
+	}
+
+	db, err := store.New(filepath.Join(cfg.DataPath, "dockvmap.db"), credentialEncryptionKey)
 
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
