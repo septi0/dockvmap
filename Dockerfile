@@ -35,7 +35,6 @@ RUN addgroup -g ${GID} dockvmap && \
     adduser -D -H -u ${UID} -G dockvmap -h ${DATA_DIR} dockvmap
 
 COPY --from=builder /src/bin/dockvmap /usr/local/bin/dockvmap
-COPY config.sample.yaml /etc/dockvmap/config.sample.yaml
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
@@ -44,6 +43,8 @@ RUN mkdir -p ${DATA_DIR} ${CONFIG_DIR} && chown -R dockvmap:dockvmap ${DATA_DIR}
 USER dockvmap
 
 WORKDIR ${DATA_DIR}
+
+ENV DOCKVMAP_DATA_PATH=${DATA_DIR}
 
 VOLUME ["${DATA_DIR}", "${CONFIG_DIR}"]
 
