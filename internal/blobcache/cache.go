@@ -28,6 +28,7 @@ type Store interface {
 	DeleteCachedBlobIfExpired(ctx context.Context, digest string, before time.Time) (bool, error)
 	GetCachedBlob(ctx context.Context, digest string) (*Blob, error)
 	ListExpiredCachedBlobs(ctx context.Context, before time.Time) ([]string, error)
+	ListCachedBlobDigestsWithPrefix(ctx context.Context, prefix string) ([]string, error)
 	SaveCachedBlob(ctx context.Context, blob Blob) error
 	TouchCachedBlob(ctx context.Context, digest string, accessedAt time.Time) error
 }
@@ -40,6 +41,7 @@ type Cache struct {
 }
 
 const metadataWriteTimeout = 5 * time.Second
+const orphanGracePeriod = 15 * time.Minute
 
 func New(dir string, lifetime string, store Store) (*Cache, error) {
 	lifetimeDuration, err := time.ParseDuration(lifetime)
@@ -192,6 +194,97 @@ func (c *Cache) Cleanup(ctx context.Context) (int, error) {
 	}
 
 	return deleted, nil
+}
+
+func (c *Cache) ScanOrphans(ctx context.Context) (int, error) {
+	root := filepath.Join(c.dir, "blobs", "sha256")
+
+	shardEntries, err := os.ReadDir(root)
+
+	if err != nil {
+		return 0, fmt.Errorf("reading blob cache directory: %w", err)
+	}
+
+	cutoff := time.Now().Add(-orphanGracePeriod)
+	removed := 0
+
+	for _, shard := range shardEntries {
+		if !shard.IsDir() {
+			continue
+		}
+
+		n, err := c.scanShardOrphans(ctx, shard.Name(), cutoff)
+
+		if err != nil {
+			return removed, err
+		}
+
+		removed += n
+	}
+
+	return removed, nil
+}
+
+func (c *Cache) scanShardOrphans(ctx context.Context, shard string, cutoff time.Time) (int, error) {
+	shardPath := filepath.Join(c.dir, "blobs", "sha256", shard)
+
+	fileEntries, err := os.ReadDir(shardPath)
+
+	if err != nil {
+		return 0, fmt.Errorf("reading blob cache shard %q: %w", shard, err)
+	}
+
+	if len(fileEntries) == 0 {
+		return 0, nil
+	}
+
+	known, err := c.store.ListCachedBlobDigestsWithPrefix(ctx, "sha256:"+shard)
+
+	if err != nil {
+		return 0, err
+	}
+
+	knownSet := make(map[string]struct{}, len(known))
+
+	for _, digest := range known {
+		knownSet[digest] = struct{}{}
+	}
+
+	removed := 0
+
+	for _, f := range fileEntries {
+		if f.IsDir() {
+			continue
+		}
+
+		digest := "sha256:" + f.Name()
+
+		if !IsDigest(digest) {
+			continue
+		}
+
+		if _, ok := knownSet[digest]; ok {
+			continue
+		}
+
+		info, err := f.Info()
+
+		if err != nil {
+			return removed, fmt.Errorf("stat cached blob %q: %w", digest, err)
+		}
+
+		if info.ModTime().After(cutoff) {
+			continue
+		}
+
+		if err := os.Remove(filepath.Join(shardPath, f.Name())); err != nil && !os.IsNotExist(err) {
+			return removed, fmt.Errorf("removing orphaned cached blob %q: %w", digest, err)
+		}
+
+		removed++
+	}
+
+	return removed, nil
 }
 
 type writer struct {

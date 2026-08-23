@@ -113,6 +113,45 @@ func (s *Store) ListExpiredCachedBlobs(ctx context.Context, before time.Time) ([
 	return digests, nil
 }
 
+func (s *Store) ListCachedBlobDigestsWithPrefix(ctx context.Context, prefix string) ([]string, error) {
+	rows, err := s.db.QueryContext(
+		ctx,
+		"SELECT digest FROM cached_blobs WHERE digest >= ? AND digest < ?",
+		prefix, prefixUpperBound(prefix),
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("listing cached blob digests with prefix %q: %w", prefix, err)
+	}
+
+	defer rows.Close()
+
+	var digests []string
+
+	for rows.Next() {
+		var digest string
+
+		if err := rows.Scan(&digest); err != nil {
+			return nil, fmt.Errorf("scanning cached blob digest: %w", err)
+		}
+
+		digests = append(digests, digest)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("listing cached blob digests with prefix %q: %w", prefix, err)
+	}
+
+	return digests, nil
+}
+
+func prefixUpperBound(prefix string) string {
+	b := []byte(prefix)
+	b[len(b)-1]++
+
+	return string(b)
+}
+
 func (s *Store) DeleteCachedBlobIfExpired(ctx context.Context, digest string, before time.Time) (bool, error) {
 	result, err := s.db.ExecContext(
 		ctx,
