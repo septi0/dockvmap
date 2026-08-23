@@ -15,7 +15,7 @@
   import ChangeTagModal from "../lib/components/ChangeTagModal.svelte";
   import RefreshTagsButton from "../lib/components/RefreshTagsButton.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
-  import { getImage, deleteImage } from "../lib/api/images";
+  import { getImage, deleteImage, renameImage } from "../lib/api/images";
   import { getPullInfo } from "../lib/api/metrics";
   import { ApiError } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
@@ -40,6 +40,14 @@
   let deleting = $state(false);
   let deleteError = $state<string | null>(null);
 
+  let renameValue = $state("");
+  let showRenameConfirm = $state(false);
+  let renaming = $state(false);
+  let renameError = $state<string | null>(null);
+  const renameDisabled = $derived(
+    !renameValue.trim() || renameValue.trim() === image?.name,
+  );
+
   async function load() {
     loading = true;
     error = null;
@@ -49,6 +57,7 @@
       image = img;
       pullInfo = info;
       pullHost = info.host;
+      renameValue = img.name;
     } catch (err) {
       error =
         err instanceof ApiError ? err.message : "Failed to load virtual image";
@@ -94,6 +103,31 @@
   function cancelDelete() {
     showDeleteConfirm = false;
     deleteError = null;
+  }
+
+  function cancelRename() {
+    showRenameConfirm = false;
+    renameError = null;
+  }
+
+  async function handleRename() {
+    if (!image || renameDisabled) return;
+
+    renameError = null;
+    renaming = true;
+
+    try {
+      const newName = renameValue.trim();
+      await renameImage(imageId, newName);
+      toast.success(`Virtual image renamed to "${newName}".`);
+      showRenameConfirm = false;
+      await refreshImageDetails();
+    } catch (err) {
+      renameError =
+        err instanceof ApiError ? err.message : "Failed to rename virtual image";
+    } finally {
+      renaming = false;
+    }
   }
 
   async function handleDelete() {
@@ -225,15 +259,36 @@
 
       <div class="card section-card danger-card">
         <h2>Danger zone</h2>
-        <p class="section-hint muted">
-          Deleting this virtual image stops the proxy from resolving
-          <code class="inline-code">{image.name}:{pullInfo?.virtualTag}</code>
-          and removes its tracked tag history. This cannot be undone.
-        </p>
-        <Button variant="danger" onclick={() => (showDeleteConfirm = true)}>
-          <Trash2 size={16} strokeWidth={1.75} />
-          Delete virtual image
-        </Button>
+
+        <div class="danger-action">
+          <p class="section-hint muted">
+            Renaming changes the path clients pull from. Any client currently
+            pulling <code class="inline-code"
+              >{image.name}:{pullInfo?.virtualTag}</code
+            > will stop working immediately once renamed.
+          </p>
+          <Field label="New name" bind:value={renameValue} />
+          <Button
+            variant="danger"
+            disabled={renameDisabled}
+            onclick={() => (showRenameConfirm = true)}
+          >
+            <ArrowLeftRight size={16} strokeWidth={1.75} />
+            Rename virtual image
+          </Button>
+        </div>
+
+        <div class="danger-action">
+          <p class="section-hint muted">
+            Deleting this virtual image stops the proxy from resolving
+            <code class="inline-code">{image.name}:{pullInfo?.virtualTag}</code>
+            and removes its tracked tag history. This cannot be undone.
+          </p>
+          <Button variant="danger" onclick={() => (showDeleteConfirm = true)}>
+            <Trash2 size={16} strokeWidth={1.75} />
+            Delete virtual image
+          </Button>
+        </div>
       </div>
     {/if}
   </AsyncState>
@@ -260,6 +315,18 @@
   submitting={deleting}
   onConfirm={handleDelete}
   onCancel={cancelDelete}
+/>
+
+<ConfirmDialog
+  open={showRenameConfirm}
+  title="Rename virtual image"
+  message={`Rename "${image?.name ?? ""}" to "${renameValue.trim()}"? Any client currently pulling "${image?.name ?? ""}" will stop working immediately.`}
+  confirmLabel="Rename"
+  danger
+  error={renameError}
+  submitting={renaming}
+  onConfirm={handleRename}
+  onCancel={cancelRename}
 />
 
 <style>
@@ -334,5 +401,18 @@
   .danger-card {
     margin-bottom: 0;
     border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
+  }
+
+  .danger-action {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+  }
+
+  .danger-action + .danger-action {
+    margin-top: var(--space-4);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
   }
 </style>

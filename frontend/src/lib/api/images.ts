@@ -36,6 +36,10 @@ export function updateImageTag(id: number, tag: string) {
   return api.put<{ status: string }>(`/images/${id}/tag`, { tag })
 }
 
+export function renameImage(id: number, name: string) {
+  return api.put<{ status: string }>(`/images/${id}/name`, { name })
+}
+
 export function refreshImageTags(id: number) {
   return api.post<{ status: string; eventRegistered: boolean }>(`/images/${id}/refresh-tags`)
 }

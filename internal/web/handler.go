@@ -26,6 +26,7 @@ type imageService interface {
 	Count(ctx context.Context, filters model.ImageListFilters) (int64, error)
 	RefreshAvailableTags(ctx context.Context, imageId int64, opts service.RefreshTagsOpts) error
 	UpdateTag(ctx context.Context, imageId int64, tag string) error
+	Rename(ctx context.Context, imageId int64, name string) error
 	InspectRepository(ctx context.Context, registry string, repository string) (taganalyzer.Analysis, error)
 	MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, error)
 }

@@ -1,6 +1,6 @@
 BINARY := bin/dockvmap
 CONFIG := config/config.yaml
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION := $(shell git describe --tags --always 2>/dev/null || echo dev)
 
 .DEFAULT_GOAL := help
 .PHONY: build build-backend build-frontend frontend-deps run dev dev-backend dev-frontend test vet fmt lint check clean help

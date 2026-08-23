@@ -266,6 +266,43 @@ func (w *Web) apiUpdateImageTag(rw http.ResponseWriter, r *http.Request) {
 	apiJSON(rw, http.StatusOK, map[string]string{"status": "updated"})
 }
 
+func (w *Web) apiRenameImage(rw http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+
+	if err != nil {
+		apiError(rw, http.StatusBadRequest, "image id must be a valid integer")
+
+		return
+	}
+
+	request, ok := decodeJSON[renameImageRequest](rw, r)
+	if !ok {
+		return
+	}
+
+	err = w.images.Rename(r.Context(), id, request.Name)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidImage):
+			apiError(rw, http.StatusBadRequest, err.Error())
+
+		case errors.Is(err, service.ErrImageNotFound):
+			apiError(rw, http.StatusNotFound, "image not found")
+
+		case errors.Is(err, service.ErrImageAlreadyExists):
+			apiError(rw, http.StatusConflict, "image name already exists")
+
+		default:
+			apiError(rw, http.StatusInternalServerError, "internal server error")
+		}
+
+		return
+	}
+
+	apiJSON(rw, http.StatusOK, map[string]string{"status": "renamed"})
+}
+
 func (w *Web) apiGetImage(rw http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 
