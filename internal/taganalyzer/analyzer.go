@@ -41,9 +41,6 @@ func AnalyzeWithOptions(tags []string, options AnalysisOptions) Analysis {
 	return result
 }
 
-// IsPrerelease reports whether any segment of the tag carries a real
-// prerelease identifier (rc/beta/alpha/pre/preview/dev/snapshot) — as
-// opposed to a bare revision suffix or an OS/variant tag like "alpine".
 func IsPrerelease(tag TagAnalysis) bool {
 	for _, segment := range tag.Segments {
 		if segment.Prerelease != nil {

@@ -123,7 +123,7 @@ func newWebServer(cfg *config.Config, images *service.Images, registries *servic
 		Handler:           handler,
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      45 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 		TLSConfig:         tlsConfig,

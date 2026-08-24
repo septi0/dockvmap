@@ -24,7 +24,22 @@ const tagsListPageSize = 1000
 
 var (
 	paramRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
+
+	excludedTagPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`^pr-\d+`),
+		regexp.MustCompile(`^commit-[0-9a-f]+`),
+	}
 )
+
+func isExcludedTag(tag string) bool {
+	for _, re := range excludedTagPatterns {
+		if re.MatchString(tag) {
+			return true
+		}
+	}
+
+	return false
+}
 
 type Credentials struct {
 	Username   string
@@ -143,7 +158,14 @@ func (c *Client) ListTags(ctx context.Context, registry, repository string) ([]s
 			return nil, fmt.Errorf("decoding tag list from %s: %w", response.Request.URL.Host, decodeErr)
 		}
 
-		tags = append(tags, page.Tags...)
+		for _, tag := range page.Tags {
+			if isExcludedTag(tag) {
+				continue
+			}
+
+			tags = append(tags, tag)
+		}
+
 		endpoint = next
 	}
 
