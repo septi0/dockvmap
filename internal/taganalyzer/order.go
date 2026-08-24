@@ -105,12 +105,25 @@ func compareFamilyKind(left, right FamilyKind) int {
 }
 
 func familyOrderType(family Family, tagIndex map[string]*TagAnalysis) OrderType {
+	fallback := OrderUnknown
+
 	for _, tag := range family.Tags {
-		if analysis := tagIndex[tag]; analysis != nil && len(analysis.Segments) > 0 {
-			return analysis.Segments[0].OrderType
+		analysis := tagIndex[tag]
+		if analysis == nil || len(analysis.Segments) == 0 {
+			continue
+		}
+
+		orderType := analysis.Segments[0].OrderType
+		if orderType == OrderVersion || orderType == OrderSemVer {
+			return orderType
+		}
+
+		if fallback == OrderUnknown {
+			fallback = orderType
 		}
 	}
-	return OrderUnknown
+
+	return fallback
 }
 
 func compareFamilyOrderType(left, right OrderType) int {
