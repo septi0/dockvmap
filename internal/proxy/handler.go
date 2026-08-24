@@ -233,8 +233,8 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL
 	}
 
 	for _, h := range []string{"Accept", "Accept-Encoding", "Range"} {
-		if v := r.Header.Get(h); v != "" {
-			req.Header.Set(h, v)
+		for _, v := range r.Header.Values(h) {
+			req.Header.Add(h, v)
 		}
 	}
 
