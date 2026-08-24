@@ -445,10 +445,6 @@ func (i *Images) commitUpdateAvailable(ctx context.Context, tx store.Transaction
 	return tx.Commit()
 }
 
-// updateAvailableFor reports whether a newer tag exists in currentTag's family, and if so,
-// the exact tag to update to (the newest such candidate). Prerelease tags (rc/beta/alpha/...)
-// are only offered as an update target when currentTag is itself a prerelease — a stable tag
-// never reports an update toward a prerelease.
 func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string) {
 	var current *model.ImageTag
 
