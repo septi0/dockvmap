@@ -127,7 +127,7 @@ func parseVersionStructure(value string) (VersionStructure, bool) {
 			i++
 		}
 		component := base[start:i]
-		if prefix == "" {
+		if prefix == "" && len(numbers) == 0 {
 			if !isCanonicalInteger(component) {
 				return VersionStructure{}, false
 			}

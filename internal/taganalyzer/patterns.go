@@ -8,7 +8,7 @@ import (
 
 var (
 	versionRE = regexp.MustCompile(
-		`(?i)^[A-Za-z]*(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))*(?:(?:alpha|beta|rc|pre|preview|dev|snapshot)[._]?[0-9]*(?:[._](?:alpha|beta|rc|pre|preview|dev|snapshot)[._]?[0-9]*)*)?(?:\+[0-9A-Za-z.-]+)?$`,
+		`(?i)^[A-Za-z]*(?:0|[1-9][0-9]*)(?:\.[0-9]+)*(?:(?:alpha|beta|rc|pre|preview|dev|snapshot)[._]?[0-9]*(?:[._](?:alpha|beta|rc|pre|preview|dev|snapshot)[._]?[0-9]*)*)?(?:\+[0-9A-Za-z.-]+)?$`,
 	)
 
 	embeddedVersionRE = regexp.MustCompile(
