@@ -20,6 +20,7 @@ import (
 
 const registryDataCacheTTL = 30 * time.Second
 const tokenCacheMaxEntries = 512
+const tagsListPageSize = 1000
 
 var (
 	paramRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
@@ -101,7 +102,7 @@ func (c *Client) ListTags(ctx context.Context, registry, repository string) ([]s
 	host := RegistryAPIHost(registry)
 	path := RepositoryPath(registry, repository)
 
-	endpoint := fmt.Sprintf("https://%s/v2/%s/tags/list", host, path)
+	endpoint := fmt.Sprintf("https://%s/v2/%s/tags/list?n=%d", host, path, tagsListPageSize)
 
 	tags := make([]string, 0)
 
