@@ -218,7 +218,12 @@
               >
                 <span class="item-main">
                   <span class="item-title">{event.imageName}</span>
-                  <span class="item-sub muted">
+                  <span
+                    class="item-sub muted"
+                    title="{formatAuditType(event.type)}: {event.data.tags.join(
+                      ', ',
+                    )}"
+                  >
                     {formatAuditType(event.type)}: {event.data.tags.join(", ")}
                   </span>
                 </span>
