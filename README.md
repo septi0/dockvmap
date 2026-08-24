@@ -114,6 +114,7 @@ Key options:
 ```
 dockvmap -config <path>              # path to config file (optional; default: config.yaml)
 dockvmap -reset-password <username>  # generate and print a new password, invalidate their sessions, exit
+dockvmap -refresh-tags               # refresh tags for all configured images from their upstream registries, exit
 dockvmap -version                    # print version and exit
 ```
 
