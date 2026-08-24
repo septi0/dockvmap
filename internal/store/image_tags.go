@@ -11,7 +11,7 @@ import (
 
 func (s *Store) GetImageTags(ctx context.Context, imageId int64) ([]model.ImageTag, error) {
 	query := `
-		SELECT id, family_id, family_type, tag, tag_order, first_seen, last_seen, new
+		SELECT id, family_id, family_type, tag, tag_order, prerelease, first_seen, last_seen, new
 		FROM image_tags
 		WHERE image_id = ?
 		ORDER BY tag_order ASC`
@@ -38,6 +38,7 @@ func (s *Store) GetImageTags(ctx context.Context, imageId int64) ([]model.ImageT
 			&tag.FamilyType,
 			&tag.Tag,
 			&tag.TagOrder,
+			&tag.Prerelease,
 			&tag.FirstSeen,
 			&tag.LastSeen,
 			&tag.New,
@@ -59,7 +60,7 @@ func (s *Store) GetImageTag(ctx context.Context, imageId int64, name string) (*m
 	var imageTag model.ImageTag
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, family_id, family_type, tag, tag_order, first_seen, last_seen, new
+		SELECT id, family_id, family_type, tag, tag_order, prerelease, first_seen, last_seen, new
 		FROM image_tags
 		WHERE image_id = ? AND tag = ?
 		LIMIT 1
@@ -69,6 +70,7 @@ func (s *Store) GetImageTag(ctx context.Context, imageId int64, name string) (*m
 		&imageTag.FamilyType,
 		&imageTag.Tag,
 		&imageTag.TagOrder,
+		&imageTag.Prerelease,
 		&imageTag.FirstSeen,
 		&imageTag.LastSeen,
 		&imageTag.New,
@@ -93,12 +95,13 @@ func (s *Store) SetImageTags(ctx context.Context, tx DBTX, imageId int64, tags [
 	}
 
 	stmt, err := db.PrepareContext(ctx, `
-		INSERT INTO image_tags (image_id, family_id, family_type, tag, tag_order, first_seen, last_seen, new)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO image_tags (image_id, family_id, family_type, tag, tag_order, prerelease, first_seen, last_seen, new)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(image_id, tag) DO UPDATE SET
 			family_id = excluded.family_id,
     		family_type = excluded.family_type,
 			tag_order = excluded.tag_order,
+			prerelease = excluded.prerelease,
 			last_seen = excluded.last_seen
 	`)
 
@@ -115,6 +118,7 @@ func (s *Store) SetImageTags(ctx context.Context, tx DBTX, imageId int64, tags [
 			tag.FamilyType,
 			tag.Tag,
 			tag.TagOrder,
+			tag.Prerelease,
 			tag.FirstSeen,
 			tag.LastSeen,
 			tag.New,

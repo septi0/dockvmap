@@ -50,7 +50,7 @@ type imageStore interface {
 	UpdateImageCheck(ctx context.Context, tx store.DBTX, imageId int64, checkErr *string, checkedAt time.Time) (bool, error)
 	UpdateImageTag(ctx context.Context, tx store.DBTX, imageId int64, tag string) (bool, error)
 	UpdateImageName(ctx context.Context, imageId int64, name string) (bool, error)
-	UpdateImageUpdateAvailable(ctx context.Context, tx store.DBTX, imageId int64, available bool) (bool, error)
+	UpdateImageUpdateAvailable(ctx context.Context, tx store.DBTX, imageId int64, available bool, targetTag *string) (bool, error)
 	GetImageTags(ctx context.Context, imageId int64) ([]model.ImageTag, error)
 	GetImageTag(ctx context.Context, imageId int64, tag string) (*model.ImageTag, error)
 	SetImageTags(ctx context.Context, tx store.DBTX, imageId int64, tags []model.ImageTag) error
@@ -345,7 +345,7 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string) error
 		return fmt.Errorf("checking available tags for %q: %w", image.Name, err)
 	}
 
-	updateAvailable := updateAvailableFor(allTags, tag)
+	updateAvailable, updateAvailableTag := updateAvailableFor(allTags, tag)
 
 	tx, err := i.store.BeginTx(ctx)
 
@@ -365,7 +365,7 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string) error
 		return fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
 	}
 
-	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable); err != nil {
+	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
 		return err
 	}
 
@@ -432,15 +432,24 @@ func (i *Images) Rename(ctx context.Context, imageId int64, name string) error {
 	return nil
 }
 
-func (i *Images) commitUpdateAvailable(ctx context.Context, tx store.Transaction, image *model.Image, updateAvailable bool) error {
-	if _, err := i.store.UpdateImageUpdateAvailable(ctx, tx, image.ID, updateAvailable); err != nil {
+func (i *Images) commitUpdateAvailable(ctx context.Context, tx store.Transaction, image *model.Image, updateAvailable bool, updateAvailableTag string) error {
+	var targetTag *string
+	if updateAvailableTag != "" {
+		targetTag = &updateAvailableTag
+	}
+
+	if _, err := i.store.UpdateImageUpdateAvailable(ctx, tx, image.ID, updateAvailable, targetTag); err != nil {
 		return fmt.Errorf("updating update-available flag for %q: %w", image.Name, err)
 	}
 
 	return tx.Commit()
 }
 
-func updateAvailableFor(tags []model.ImageTag, currentTag string) bool {
+// updateAvailableFor reports whether a newer tag exists in currentTag's family, and if so,
+// the exact tag to update to (the newest such candidate). Prerelease tags (rc/beta/alpha/...)
+// are only offered as an update target when currentTag is itself a prerelease — a stable tag
+// never reports an update toward a prerelease.
+func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string) {
 	var current *model.ImageTag
 
 	for i := range tags {
@@ -452,16 +461,32 @@ func updateAvailableFor(tags []model.ImageTag, currentTag string) bool {
 	}
 
 	if current == nil {
-		return false
+		return false, ""
 	}
 
-	for _, t := range tags {
-		if t.FamilyID == current.FamilyID && t.TagOrder < current.TagOrder {
-			return true
+	var target *model.ImageTag
+
+	for i := range tags {
+		t := &tags[i]
+
+		if t.FamilyID != current.FamilyID || t.TagOrder >= current.TagOrder {
+			continue
+		}
+
+		if !current.Prerelease && t.Prerelease {
+			continue
+		}
+
+		if target == nil || t.TagOrder < target.TagOrder {
+			target = t
 		}
 	}
 
-	return false
+	if target == nil {
+		return false, ""
+	}
+
+	return true, target.Tag
 }
 
 func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, options RefreshTagsOpts) error {
@@ -503,9 +528,7 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 	}
 
 	analyzedTags := taganalyzer.AnalyzeWithOptions(rawTags, taganalyzer.AnalysisOptions{
-		IncludeTokens:        false,
-		IncludeRelationships: false,
-		IncludePartPatterns:  false,
+		IncludeTokens: false,
 	})
 
 	tags := imageTagsFromAnalysis(analyzedTags, image.ID, checkedAt, options.FlagAsNew)
@@ -536,9 +559,9 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 		return fmt.Errorf("recording tag check for %q: %w", image.Name, err)
 	}
 
-	updateAvailable := updateAvailableFor(tags, image.Tag)
+	updateAvailable, updateAvailableTag := updateAvailableFor(tags, image.Tag)
 
-	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable); err != nil {
+	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
 		return err
 	}
 
@@ -633,9 +656,7 @@ func (i *Images) InspectRepository(ctx context.Context, registryHost string, rep
 	return taganalyzer.AnalyzeWithOptions(
 		tags,
 		taganalyzer.AnalysisOptions{
-			IncludeTokens:        false,
-			IncludeRelationships: false,
-			IncludePartPatterns:  false,
+			IncludeTokens: false,
 		},
 	), nil
 }
@@ -704,6 +725,11 @@ func imageTagsFromAnalysis(analysis taganalyzer.Analysis, imageID int64, seenAt 
 	var tags []model.ImageTag
 	order := 0
 
+	prerelease := make(map[string]bool, len(analysis.Tags))
+	for _, tag := range analysis.Tags {
+		prerelease[tag.Tag] = taganalyzer.IsPrerelease(tag)
+	}
+
 	for _, family := range analysis.Ordered {
 		for _, tag := range family.OrderedTags {
 			tags = append(tags, model.ImageTag{
@@ -712,6 +738,7 @@ func imageTagsFromAnalysis(analysis taganalyzer.Analysis, imageID int64, seenAt 
 				FamilyType: string(family.Kind),
 				Tag:        tag,
 				TagOrder:   order,
+				Prerelease: prerelease[tag],
 				FirstSeen:  seenAt,
 				LastSeen:   seenAt,
 				New:        flagAsNew,

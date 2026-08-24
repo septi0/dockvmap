@@ -176,6 +176,11 @@
                   <span class="item-sub muted"
                     >{image.registry} / {image.repository}</span
                   >
+                  {#if image.updateAvailableTag}
+                    <span class="item-sub muted"
+                      >{image.tag} &rarr; {image.updateAvailableTag}</span
+                    >
+                  {/if}
                 </span>
                 <span class="badge badge-warning">
                   <ArrowUp size={12} strokeWidth={2.5} />
@@ -187,7 +192,7 @@
         </ul>
 
         {#if updatesTotal > updatesAvailable.length}
-          <a class="view-all link" href="/images" use:link>
+          <a class="view-all link" href="/images?updateAvailable=true" use:link>
             View all {updatesTotal} images with updates available
           </a>
         {/if}

@@ -3,13 +3,21 @@ package taganalyzer
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
 func analyzeFamilies(tags []TagAnalysis) []Family {
+	knownMajors := collectKnownMajors(tags)
+
+	identities := make(map[string][]string, len(tags))
+	for _, tag := range tags {
+		identities[tag.Tag] = segmentIdentities(tag.Segments, knownMajors)
+	}
+
 	bloodGroups := map[string][]TagAnalysis{}
 	for _, tag := range tags {
-		key := familyKey(tag.Segments)
+		key := strings.Join(identities[tag.Tag], "|")
 		bloodGroups[key] = append(bloodGroups[key], tag)
 	}
 
@@ -47,28 +55,40 @@ func analyzeFamilies(tags []TagAnalysis) []Family {
 	for i := range ancestorIndexes {
 		ancestorIndexes[i] = i
 	}
-	tagIndex := make(map[string]*TagAnalysis, len(tags))
-	for i := range tags {
-		tagIndex[tags[i].Tag] = &tags[i]
-	}
 
-	ancestorFamilies, remaining, nextID := attachAncestorFamilies(singletons, ancestorIndexes, nil, tagIndex, nextID)
+	ancestorFamilies, remaining, nextID := attachAncestorFamilies(singletons, ancestorIndexes, nil, nextID, identities)
 	families = append(families, ancestorFamilies...)
 
 	stepSingletons := make([]TagAnalysis, 0, len(remaining))
 	for _, index := range remaining {
 		stepSingletons = append(stepSingletons, singletons[index])
 	}
-	stepFamilies, _ := buildStepFamilies(stepSingletons, nextID)
+	stepFamilies, _ := buildStepFamilies(stepSingletons, nextID, knownMajors)
 	families = append(families, stepFamilies...)
 
 	return families
 }
 
-type stepCluster struct {
-	tags    []TagAnalysis
-	indexes []int // Positions in the singleton input; avoids tag-string identity.
-	level   int
+func collectKnownMajors(tags []TagAnalysis) map[string]bool {
+	known := make(map[string]bool)
+	for _, tag := range tags {
+		if len(tag.Segments) == 0 {
+			continue
+		}
+		segment := tag.Segments[0]
+		if !segment.IsVariable || segment.OrderType != OrderVersion || len(segment.Numbers) == 0 {
+			continue
+		}
+		if len(segment.Numbers) < 2 && segment.Prerelease == nil {
+			continue
+		}
+		known[majorKey(segment.Prefix, segment.Numbers[0])] = true
+	}
+	return known
+}
+
+func majorKey(prefix string, major int64) string {
+	return prefix + "\x00" + strconv.FormatInt(major, 10)
 }
 
 type stepPrefixKeys struct {
@@ -76,7 +96,7 @@ type stepPrefixKeys struct {
 	texts []string // Indexed by the corresponding interned prefix ID.
 }
 
-func buildStepFamilies(singletons []TagAnalysis, nextID int) ([]Family, []TagAnalysis) {
+func buildStepFamilies(singletons []TagAnalysis, nextID int, knownMajors map[string]bool) ([]Family, []TagAnalysis) {
 	if len(singletons) == 0 {
 		return nil, nil
 	}
@@ -84,7 +104,7 @@ func buildStepFamilies(singletons []TagAnalysis, nextID int) ([]Family, []TagAna
 		tag := singletons[0]
 		return []Family{{
 			ID:        nextID,
-			Key:       "singleton:" + familyKey(tag.Segments),
+			Key:       "singleton:" + segmentPrefixKey(tag.Segments, knownMajors),
 			TagCount:  1,
 			Tags:      []string{tag.Tag},
 			Kind:      FamilyStep,
@@ -92,7 +112,7 @@ func buildStepFamilies(singletons []TagAnalysis, nextID int) ([]Family, []TagAna
 		}}, nil
 	}
 
-	prefixKeys := precomputeStepPrefixKeys(singletons)
+	prefixKeys := precomputeStepPrefixKeys(singletons, knownMajors)
 	remaining := make([]int, len(singletons))
 	for i := range remaining {
 		remaining[i] = i
@@ -228,7 +248,7 @@ func buildStepFamilies(singletons []TagAnalysis, nextID int) ([]Family, []TagAna
 	return families, nil
 }
 
-func attachAncestorFamilies(singletons []TagAnalysis, remaining []int, families []Family, tagIndex map[string]*TagAnalysis, nextID int) ([]Family, []int, int) {
+func attachAncestorFamilies(singletons []TagAnalysis, remaining []int, families []Family, nextID int, identities map[string][]string) ([]Family, []int, int) {
 	if len(remaining) == 0 {
 		return families, remaining, nextID
 	}
@@ -257,6 +277,7 @@ func attachAncestorFamilies(singletons []TagAnalysis, remaining []int, families 
 			continue
 		}
 		root := singletons[rootIndex]
+		rootIdentity := identities[root.Tag]
 
 		familyIndexes := make([]int, 0)
 		for fi := range families {
@@ -265,8 +286,7 @@ func attachAncestorFamilies(singletons []TagAnalysis, remaining []int, families 
 			}
 			matched := false
 			for _, descendantTag := range families[fi].Tags {
-				descendant := tagIndex[descendantTag]
-				if descendant != nil && isStrictSegmentPrefix(root.Segments, descendant.Segments) {
+				if isStrictSegmentPrefix(rootIdentity, identities[descendantTag]) {
 					matched = true
 					break
 				}
@@ -282,7 +302,7 @@ func attachAncestorFamilies(singletons []TagAnalysis, remaining []int, families 
 			if candidate == rootIndex || !remainingSet[candidate] || consumedRoots[candidate] {
 				continue
 			}
-			if isStrictSegmentPrefix(root.Segments, singletons[candidate].Segments) {
+			if isStrictSegmentPrefix(rootIdentity, identities[singletons[candidate].Tag]) {
 				descendantRoots = append(descendantRoots, candidate)
 			}
 		}
@@ -296,7 +316,7 @@ func attachAncestorFamilies(singletons []TagAnalysis, remaining []int, families 
 
 		family := Family{
 			ID:        nextID,
-			Key:       "ancestor:" + segmentPrefixKey(root.Segments),
+			Key:       "ancestor:" + strings.Join(rootIdentity, "|"),
 			Kind:      FamilyAncestor,
 			StepLevel: len(root.Segments),
 			Tags:      []string{root.Tag},
@@ -341,19 +361,40 @@ func attachAncestorFamilies(singletons []TagAnalysis, remaining []int, families 
 	return newFamilies, newRemaining, nextID
 }
 
-func isStrictSegmentPrefix(prefix, full []SegmentAnalysis) bool {
+func isStrictSegmentPrefix(prefix, full []string) bool {
 	if len(prefix) == 0 || len(prefix) >= len(full) {
 		return false
 	}
 	for i := range prefix {
-		if segmentIdentity(prefix[i]) != segmentIdentity(full[i]) {
+		if prefix[i] != full[i] {
 			return false
 		}
 	}
 	return true
 }
 
-func segmentIdentity(segment SegmentAnalysis) string {
+func versionShape(segment SegmentAnalysis, isLeading bool, knownMajors map[string]bool) string {
+	if len(segment.Numbers) >= 2 {
+		if looksLikeCalVer(segment) {
+			return "calver"
+		}
+		return "multi"
+	}
+	if segment.Prerelease != nil {
+		return "multi"
+	}
+	if isLeading && len(segment.Numbers) == 1 && knownMajors[majorKey(segment.Prefix, segment.Numbers[0])] {
+		return "multi"
+	}
+	return "solo"
+}
+
+func looksLikeCalVer(segment SegmentAnalysis) bool {
+	year, month := segment.Numbers[0], segment.Numbers[1]
+	return year >= 2000 && year <= 2099 && month >= 1 && month <= 12
+}
+
+func segmentIdentity(segment SegmentAnalysis, isLeading bool, knownMajors map[string]bool) string {
 	if !segment.IsVariable {
 		return "S:" + segment.Raw
 	}
@@ -366,26 +407,30 @@ func segmentIdentity(segment SegmentAnalysis) string {
 	case OrderTime:
 		return "T"
 	default:
-		return "V:P=" + segment.Prefix + ":S=" + segment.Suffix
+		return "V:P=" + segment.Prefix + ":S=" + segment.Suffix + ":" + versionShape(segment, isLeading, knownMajors)
 	}
 }
 
-func segmentPrefixKey(segments []SegmentAnalysis) string {
-	parts := make([]string, len(segments))
+func segmentIdentities(segments []SegmentAnalysis, knownMajors map[string]bool) []string {
+	ids := make([]string, len(segments))
 	for i, segment := range segments {
-		parts[i] = segmentIdentity(segment)
+		ids[i] = segmentIdentity(segment, i == 0, knownMajors)
 	}
-	return strings.Join(parts, "|")
+	return ids
 }
 
-func precomputeStepPrefixKeys(tags []TagAnalysis) stepPrefixKeys {
+func segmentPrefixKey(segments []SegmentAnalysis, knownMajors map[string]bool) string {
+	return strings.Join(segmentIdentities(segments, knownMajors), "|")
+}
+
+func precomputeStepPrefixKeys(tags []TagAnalysis, knownMajors map[string]bool) stepPrefixKeys {
 	result := stepPrefixKeys{ids: make([][]int, len(tags)), texts: []string{""}}
 	interned := make(map[string]int)
 	for tagIndex, tag := range tags {
 		parts := make([]string, len(tag.Segments))
 		keys := make([]int, len(tag.Segments)+1)
 		for i, segment := range tag.Segments {
-			parts[i] = stepSegmentKey(segment)
+			parts[i] = stepSegmentKey(segment, i == 0, knownMajors)
 			text := fmt.Sprintf("prefix=%d:%s", i+1, strings.Join(parts[:i+1], "|"))
 			id, ok := interned[text]
 			if !ok {
@@ -400,13 +445,13 @@ func precomputeStepPrefixKeys(tags []TagAnalysis) stepPrefixKeys {
 	return result
 }
 
-func stepSegmentKey(segment SegmentAnalysis) string {
+func stepSegmentKey(segment SegmentAnalysis, isLeading bool, knownMajors map[string]bool) string {
 	if !segment.IsVariable {
 		return "S:" + segment.Raw
 	}
 
 	if segment.OrderType == OrderDate {
-		return "V:plain"
+		return "D"
 	}
 	if segment.OrderType == OrderDateTime {
 		return "DT"
@@ -414,40 +459,26 @@ func stepSegmentKey(segment SegmentAnalysis) string {
 	if segment.OrderType == OrderTime {
 		return "T"
 	}
-	if (segment.OrderType == OrderVersion || segment.OrderType == OrderSemVer) &&
-		segment.Prefix == "" && segment.Suffix == "" &&
-		segment.Prerelease == nil && segment.BuildMetadata == "" {
-		return "V:plain"
+	if isPlainVersionSegment(segment) {
+		switch versionShape(segment, isLeading, knownMajors) {
+		case "solo":
+			return "V:plain:solo"
+		case "calver":
+			return "V:plain"
+		default:
+			return "V:plain:trad"
+		}
 	}
 
 	pre := ""
 	if segment.Prerelease != nil {
 		pre = ":pre"
 	}
-	return fmt.Sprintf("V:%s:%s:%s%s", segment.OrderType, segment.Prefix, segment.Suffix, pre)
+	return fmt.Sprintf("V:%s:%s:%s%s:%s", segment.OrderType, segment.Prefix, segment.Suffix, pre, versionShape(segment, isLeading, knownMajors))
 }
 
-func familyKey(segments []SegmentAnalysis) string {
-	parts := make([]string, 0, len(segments))
-
-	for _, segment := range segments {
-		if segment.IsVariable {
-			switch segment.OrderType {
-			case OrderDate:
-				parts = append(parts, "D")
-			case OrderDateTime:
-				parts = append(parts, "DT")
-			case OrderTime:
-				parts = append(parts, "T")
-			default:
-				parts = append(parts,
-					"V:P="+segment.Prefix+":S="+segment.Suffix)
-			}
-			continue
-		}
-
-		parts = append(parts, "S:"+segment.Raw)
-	}
-
-	return strings.Join(parts, "|")
+func isPlainVersionSegment(segment SegmentAnalysis) bool {
+	return segment.OrderType == OrderVersion &&
+		segment.Prefix == "" && segment.Suffix == "" &&
+		segment.Prerelease == nil
 }

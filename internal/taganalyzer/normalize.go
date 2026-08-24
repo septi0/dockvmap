@@ -17,11 +17,12 @@ func NormalizeSegments(tokens []TokenClassification) []SegmentAnalysis {
 		raw := token.Token.Value
 
 		if hasMatch(token.Matches, TokenDateTime) {
-			segments = append(segments, SegmentAnalysis{Raw: raw, OrderType: OrderDateTime, IsVariable: true, sortKey: temporalSortKey(raw, dateTimeLayouts)})
+			segments = append(segments, SegmentAnalysis{Raw: raw, OrderType: OrderDateTime, IsVariable: true, sortKey: temporalSortKey(raw, dateTimeLayout)})
 			continue
 		}
 		if hasMatch(token.Matches, TokenDate) {
-			segments = append(segments, SegmentAnalysis{Raw: raw, OrderType: OrderDate, IsVariable: true, sortKey: temporalSortKey(raw, dateLayouts)})
+			numbers, sortKey := parseDate(raw)
+			segments = append(segments, SegmentAnalysis{Raw: raw, OrderType: OrderDate, IsVariable: true, Numbers: numbers, sortKey: sortKey})
 			continue
 		}
 
@@ -33,11 +34,8 @@ func NormalizeSegments(tokens []TokenClassification) []SegmentAnalysis {
 		}
 
 		if i > 0 && len(segments) > 0 && segments[len(segments)-1].OrderType == OrderVersion {
-			if prerelease, build, ok := parsePrereleaseToken(raw); ok {
+			if prerelease, ok := parsePrereleaseToken(raw); ok {
 				appendPrerelease(segments[len(segments)-1:], prerelease)
-				if build != "" {
-					segments[len(segments)-1].BuildMetadata = build
-				}
 
 				if prerelease.Number == nil && i+1 < len(tokens) && hasMatch(tokens[i+1].Matches, TokenInteger) {
 					if n, err := strconv.ParseInt(tokens[i+1].Token.Value, 10, 64); err == nil {
@@ -58,25 +56,9 @@ func NormalizeSegments(tokens []TokenClassification) []SegmentAnalysis {
 				segments = append(segments, SegmentAnalysis{
 					Raw: raw, OrderType: OrderVersion, Prefix: version.Prefix,
 					Numbers: version.Numbers, Suffix: normalizeVersionSuffix(version),
-					Prerelease: version.Prerelease, BuildMetadata: version.BuildMetadata,
+					Prerelease: version.Prerelease,
 					IsVariable: true,
 				})
-				continue
-			}
-		}
-
-		if hasMatch(token.Matches, TokenInteger) {
-			if isCanonicalInteger(raw) {
-				if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
-					segments = append(segments, SegmentAnalysis{Raw: raw, OrderType: OrderVersion, Numbers: []int64{n}, IsVariable: true})
-					continue
-				}
-			}
-		}
-
-		if hasMatch(token.Matches, TokenNumber) {
-			if nums, ok := parseDottedNumbers(raw); ok {
-				segments = append(segments, SegmentAnalysis{Raw: raw, OrderType: OrderVersion, Numbers: nums, IsVariable: true})
 				continue
 			}
 		}
@@ -87,13 +69,21 @@ func NormalizeSegments(tokens []TokenClassification) []SegmentAnalysis {
 	return segments
 }
 
-func temporalSortKey(value string, layouts []string) string {
-	for _, layout := range layouts {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed.UTC().Format("20060102150405.000000000Z")
-		}
+func temporalSortKey(value, layout string) string {
+	parsed, err := time.Parse(layout, value)
+	if err != nil {
+		return ""
 	}
-	return ""
+	return parsed.UTC().Format("20060102150405.000000000Z")
+}
+
+func parseDate(value string) (numbers []int64, sortKey string) {
+	parsed, err := time.Parse(dateLayout, value)
+	if err != nil {
+		return nil, ""
+	}
+	y, m, d := parsed.Date()
+	return []int64{int64(y), int64(m), int64(d)}, parsed.UTC().Format("20060102150405.000000000Z")
 }
 
 func parseVersionStructure(value string) (VersionStructure, bool) {
@@ -102,15 +92,6 @@ func parseVersionStructure(value string) (VersionStructure, bool) {
 	}
 
 	base := value
-	build := ""
-	if idx := strings.IndexByte(base, '+'); idx >= 0 {
-		build = base[idx+1:]
-		if build == "" || strings.ContainsAny(build, " +") {
-			return VersionStructure{}, false
-		}
-		base = base[:idx]
-	}
-
 	i := 0
 	for i < len(base) && isASCIIAlpha(base[i]) {
 		i++
@@ -155,21 +136,12 @@ func parseVersionStructure(value string) (VersionStructure, bool) {
 		}
 	}
 
-	return VersionStructure{Prefix: prefix, Numbers: numbers, Suffix: suffix, Prerelease: prerelease, BuildMetadata: build}, true
+	return VersionStructure{Prefix: prefix, Numbers: numbers, Suffix: suffix, Prerelease: prerelease}, true
 }
 
-func parsePrereleaseToken(value string) (*Prerelease, string, bool) {
-	base := value
-	build := ""
-	if idx := strings.IndexByte(base, '+'); idx >= 0 {
-		build = base[idx+1:]
-		if build == "" {
-			return nil, "", false
-		}
-		base = base[:idx]
-	}
-	p := parsePrereleaseSequence(base)
-	return p, build, p != nil
+func parsePrereleaseToken(value string) (*Prerelease, bool) {
+	p := parsePrereleaseSequence(value)
+	return p, p != nil
 }
 
 func parsePrereleaseSequence(value string) *Prerelease {
@@ -183,11 +155,13 @@ func parsePrereleaseSequence(value string) *Prerelease {
 	}
 
 	result := &Prerelease{}
+	sawKeyword := false
 	for _, part := range parts {
 		if part == "" {
 			return nil
 		}
 		if m := prereleaseRE.FindStringSubmatch(part); m != nil {
+			sawKeyword = true
 			id := PrereleaseIdentifier{Value: strings.ToLower(m[1])}
 			if m[2] != "" {
 				n, err := strconv.ParseInt(m[2], 10, 64)
@@ -219,7 +193,7 @@ func parsePrereleaseSequence(value string) *Prerelease {
 		return nil
 	}
 
-	if len(result.Identifiers) == 0 {
+	if len(result.Identifiers) == 0 || !sawKeyword {
 		return nil
 	}
 	result.Type = result.Identifiers[0].Value
@@ -244,27 +218,8 @@ func appendPrerelease(dst []SegmentAnalysis, p *Prerelease) {
 	}
 }
 
-func parseDottedNumbers(value string) ([]int64, bool) {
-	parts := strings.Split(value, ".")
-	if len(parts) < 2 {
-		return nil, false
-	}
-	result := make([]int64, len(parts))
-	for i, part := range parts {
-		if !isCanonicalInteger(part) {
-			return nil, false
-		}
-		n, err := strconv.ParseInt(part, 10, 64)
-		if err != nil {
-			return nil, false
-		}
-		result[i] = n
-	}
-	return result, true
-}
-
 func normalizeVersionSuffix(version VersionStructure) string {
-	if version.Prerelease != nil || version.BuildMetadata != "" {
+	if version.Prerelease != nil {
 		return ""
 	}
 	return version.Suffix

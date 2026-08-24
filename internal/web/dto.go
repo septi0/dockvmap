@@ -50,32 +50,34 @@ type createImageRequest struct {
 }
 
 type imageResponse struct {
-	ID              int64      `json:"id"`
-	Name            string     `json:"name"`
-	RegistryID      int64      `json:"registryId"`
-	Registry        string     `json:"registry"`
-	Repository      string     `json:"repository"`
-	Tag             string     `json:"tag"`
-	LastChecked     *time.Time `json:"lastChecked,omitempty"`
-	LastCheckError  *string    `json:"lastCheckError,omitempty"`
-	UpdateAvailable bool       `json:"updateAvailable"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	UpdatedAt       time.Time  `json:"updatedAt"`
+	ID                 int64      `json:"id"`
+	Name               string     `json:"name"`
+	RegistryID         int64      `json:"registryId"`
+	Registry           string     `json:"registry"`
+	Repository         string     `json:"repository"`
+	Tag                string     `json:"tag"`
+	LastChecked        *time.Time `json:"lastChecked,omitempty"`
+	LastCheckError     *string    `json:"lastCheckError,omitempty"`
+	UpdateAvailable    bool       `json:"updateAvailable"`
+	UpdateAvailableTag *string    `json:"updateAvailableTag,omitempty"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
 func newImageResponse(image model.Image) imageResponse {
 	return imageResponse{
-		ID:              image.ID,
-		Name:            image.Name,
-		RegistryID:      image.RegistryID,
-		Registry:        image.Registry,
-		Repository:      image.Repository,
-		Tag:             image.Tag,
-		LastChecked:     image.LastChecked,
-		LastCheckError:  image.LastCheckError,
-		UpdateAvailable: image.UpdateAvailable,
-		CreatedAt:       image.CreatedAt,
-		UpdatedAt:       image.UpdatedAt,
+		ID:                 image.ID,
+		Name:               image.Name,
+		RegistryID:         image.RegistryID,
+		Registry:           image.Registry,
+		Repository:         image.Repository,
+		Tag:                image.Tag,
+		LastChecked:        image.LastChecked,
+		LastCheckError:     image.LastCheckError,
+		UpdateAvailable:    image.UpdateAvailable,
+		UpdateAvailableTag: image.UpdateAvailableTag,
+		CreatedAt:          image.CreatedAt,
+		UpdatedAt:          image.UpdatedAt,
 	}
 }
 
@@ -99,10 +101,11 @@ type inspectRepositoryRequest struct {
 }
 
 type tagResponse struct {
-	Tag       string     `json:"tag"`
-	FirstSeen *time.Time `json:"firstSeen,omitempty"`
-	LastSeen  *time.Time `json:"lastSeen,omitempty"`
-	New       bool       `json:"new,omitempty"`
+	Tag        string     `json:"tag"`
+	FirstSeen  *time.Time `json:"firstSeen,omitempty"`
+	LastSeen   *time.Time `json:"lastSeen,omitempty"`
+	New        bool       `json:"new,omitempty"`
+	Prerelease bool       `json:"prerelease,omitempty"`
 }
 
 type tagGroupResponse struct {
@@ -118,6 +121,11 @@ type inspectRepositoryResponse struct {
 }
 
 func newInspectRepositoryResponse(registry string, repository string, analysis taganalyzer.Analysis) inspectRepositoryResponse {
+	prerelease := make(map[string]bool, len(analysis.Tags))
+	for _, tag := range analysis.Tags {
+		prerelease[tag.Tag] = taganalyzer.IsPrerelease(tag)
+	}
+
 	tagGroups := make([]tagGroupResponse, 0, len(analysis.Ordered))
 
 	for _, family := range analysis.Ordered {
@@ -125,7 +133,8 @@ func newInspectRepositoryResponse(registry string, repository string, analysis t
 
 		for _, tag := range family.OrderedTags {
 			tags = append(tags, tagResponse{
-				Tag: tag,
+				Tag:        tag,
+				Prerelease: prerelease[tag],
 			})
 		}
 
@@ -172,10 +181,11 @@ func newImageTagsResponse(tags []model.ImageTag, currentTag string) imageTagsRes
 		}
 
 		group.Tags = append(group.Tags, tagResponse{
-			Tag:       tag.Tag,
-			FirstSeen: &tag.FirstSeen,
-			LastSeen:  &tag.LastSeen,
-			New:       tag.New,
+			Tag:        tag.Tag,
+			FirstSeen:  &tag.FirstSeen,
+			LastSeen:   &tag.LastSeen,
+			New:        tag.New,
+			Prerelease: tag.Prerelease,
 		})
 	}
 

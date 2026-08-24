@@ -1,0 +1,1 @@
+ALTER TABLE image_tags ADD COLUMN prerelease BOOLEAN NOT NULL DEFAULT 0;
