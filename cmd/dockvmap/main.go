@@ -28,6 +28,7 @@ func main() {
 func run() error {
 	configPath := flag.String("config", "config.yaml", "path to configuration file (optional; falls back to DOCKVMAP_* env vars and defaults if not found)")
 	resetPassword := flag.String("reset-password", "", "generate a new random password for the given username, print it, and exit")
+	refreshTags := flag.Bool("refresh-tags", false, "refresh tags for all configured images from their upstream registries, then exit")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
@@ -88,9 +89,7 @@ func run() error {
 		return runResetPassword(context.Background(), users, *resetPassword)
 	}
 
-	health := service.NewHealth(db)
 	registries := service.NewRegistries(db, audit)
-	proxyTokens := service.NewProxyTokens(db, audit)
 
 	credentialsAdapter := registryCredentialsAdapter{registries: registries}
 	optionsAdapter := registryOptionsAdapter{registries: registries}
@@ -100,6 +99,13 @@ func run() error {
 
 	events := service.NewEvents(db)
 	images := service.NewImages(db, ociClient, events, audit, failureLog)
+
+	if *refreshTags {
+		return runRefreshTags(context.Background(), images)
+	}
+
+	health := service.NewHealth(db)
+	proxyTokens := service.NewProxyTokens(db, audit)
 	metrics := proxy.NewMetrics()
 
 	cache, err := initBlobCache(cfg, db)
@@ -160,6 +166,18 @@ func runResetPassword(ctx context.Context, users *service.Users, username string
 
 	fmt.Println("Password reset. New password:")
 	fmt.Println(password)
+
+	return nil
+}
+
+func runRefreshTags(ctx context.Context, images *service.Images) error {
+	refreshed, err := images.RefreshAll(ctx)
+
+	fmt.Printf("Refreshed tags for %d image(s).\n", refreshed)
+
+	if err != nil {
+		return fmt.Errorf("some images failed to refresh: %w", err)
+	}
 
 	return nil
 }
