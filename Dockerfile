@@ -40,7 +40,7 @@ RUN chmod +x /entrypoint.sh
 
 RUN mkdir -p ${DATA_DIR} ${CONFIG_DIR} && chown -R dockvmap:dockvmap ${DATA_DIR} ${CONFIG_DIR}
 
-USER dockvmap
+# USER dockvmap
 
 WORKDIR ${DATA_DIR}
 
