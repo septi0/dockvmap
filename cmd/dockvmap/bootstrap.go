@@ -54,7 +54,7 @@ func resolveCredentialEncryptionKey(cfg *config.Config) (string, error) {
 }
 
 func initBlobCache(cfg *config.Config, db *store.Store) (*blobcache.Cache, error) {
-	if !cfg.BlobCache.Enabled {
+	if !*cfg.BlobCache.Enabled {
 		return nil, nil
 	}
 
@@ -80,7 +80,7 @@ func initMailer(cfg *config.Config) *smtp.Client {
 		Username: cfg.SMTP.Username,
 		Password: cfg.SMTP.Password,
 		From:     cfg.SMTP.From,
-		TLS:      cfg.SMTP.TLS,
+		TLS:      *cfg.SMTP.TLS,
 	})
 
 	slog.Info("smtp enabled", "host", cfg.SMTP.Host, "port", cfg.SMTP.Port)

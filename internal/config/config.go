@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -28,8 +29,8 @@ type Config struct {
 }
 
 type BlobCacheConfig struct {
-	Enabled         bool   `yaml:"enabled" env:"DOCKVMAP_BLOB_CACHE_ENABLED"`
-	Path            string `yaml:"path" env:"DOCKVMAP_BLOB_CACHE_PATH" default:"./cache"`
+	Enabled         *bool  `yaml:"enabled" env:"DOCKVMAP_BLOB_CACHE_ENABLED" default:"true"`
+	Path            string `yaml:"path" env:"DOCKVMAP_BLOB_CACHE_PATH"`
 	Lifetime        string `yaml:"lifetime" env:"DOCKVMAP_BLOB_CACHE_LIFETIME" default:"24h"`
 	CleanupInterval string `yaml:"cleanup_interval" env:"DOCKVMAP_BLOB_CACHE_CLEANUP_INTERVAL" default:"1h"`
 }
@@ -37,11 +38,11 @@ type BlobCacheConfig struct {
 type SMTPConfig struct {
 	Enabled  bool   `yaml:"enabled" env:"DOCKVMAP_SMTP_ENABLED"`
 	Host     string `yaml:"host" env:"DOCKVMAP_SMTP_HOST"`
-	Port     int    `yaml:"port" env:"DOCKVMAP_SMTP_PORT"`
+	Port     int    `yaml:"port" env:"DOCKVMAP_SMTP_PORT" default:"587"`
 	Username string `yaml:"username" env:"DOCKVMAP_SMTP_USERNAME"`
 	Password string `yaml:"password" env:"DOCKVMAP_SMTP_PASSWORD"`
 	From     string `yaml:"from" env:"DOCKVMAP_SMTP_FROM"`
-	TLS      bool   `yaml:"tls" env:"DOCKVMAP_SMTP_TLS"`
+	TLS      *bool  `yaml:"tls" env:"DOCKVMAP_SMTP_TLS" default:"true"`
 }
 
 type ProxyAuthConfig struct {
@@ -73,6 +74,10 @@ func (c *Config) applyDerivedDefaults() {
 	if c.SecureCookies == nil {
 		secure := c.TLS.Enabled
 		c.SecureCookies = &secure
+	}
+
+	if c.BlobCache.Path == "" {
+		c.BlobCache.Path = filepath.Join(c.DataPath, "cache")
 	}
 }
 
