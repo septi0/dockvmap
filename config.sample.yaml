@@ -19,7 +19,7 @@ login_rate_limit:
   bypass_ips: []
 blob_cache:
   enabled: true
-  path: ./cache
+  path: "" # defaults to <data_path>/cache; set explicitly to store the cache elsewhere
   lifetime: 24h
   cleanup_interval: 1h
 smtp:
