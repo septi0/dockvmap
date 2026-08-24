@@ -3,6 +3,7 @@ package taganalyzer
 import (
 	"sort"
 	"strings"
+	"time"
 )
 
 type sortableTag struct {
@@ -169,6 +170,9 @@ func compareSegments(left, right []SegmentAnalysis) int {
 
 func compareSegment(left, right SegmentAnalysis) int {
 	if left.OrderType != right.OrderType {
+		if result, ok := compareTemporalMismatch(left, right); ok {
+			return result
+		}
 		return compareOrderType(left.OrderType, right.OrderType)
 	}
 
@@ -207,6 +211,37 @@ func compareSegment(left, right SegmentAnalysis) int {
 
 func compareOrderType(left, right OrderType) int {
 	return strings.Compare(string(left), string(right))
+}
+
+func compareTemporalMismatch(left, right SegmentAnalysis) (int, bool) {
+	leftNumbers, leftOK := temporalNumbers(left)
+	rightNumbers, rightOK := temporalNumbers(right)
+
+	if !leftOK || !rightOK {
+		return 0, false
+	}
+
+	return compareVersionNumbers(leftNumbers, rightNumbers), true
+}
+
+func temporalNumbers(segment SegmentAnalysis) ([]int64, bool) {
+	switch segment.OrderType {
+	case OrderDate:
+		for _, layout := range dateLayouts {
+			if parsed, err := time.Parse(layout, segment.Raw); err == nil {
+				y, m, d := parsed.Date()
+				return []int64{int64(y), int64(m), int64(d)}, true
+			}
+		}
+		return nil, false
+
+	case OrderVersion, OrderSemVer:
+		if segment.Prefix == "" && segment.Suffix == "" && segment.Prerelease == nil && segment.BuildMetadata == "" {
+			return segment.Numbers, true
+		}
+	}
+
+	return nil, false
 }
 
 func compareVersionNumbers(left, right []int64) int {
