@@ -1,12 +1,10 @@
 package taganalyzer
 
-import (
-	"regexp"
-	"strings"
-)
+import "regexp"
 
 var pretokenizeRewrites = []func(string) (string, bool){
 	rewriteReleaseTimestamp,
+	rewriteRevisionSuffix,
 }
 
 func pretokenize(tag string) string {
@@ -35,6 +33,17 @@ func rewriteReleaseTimestamp(tag string) (string, bool) {
 	return rewritten + tag[len(m[0]):], true
 }
 
+var revisionSuffixRE = regexp.MustCompile(`^([A-Za-z]*[0-9]+(?:\.[0-9]+)+)-([0-9]{1,2})$`)
+
+func rewriteRevisionSuffix(tag string) (string, bool) {
+	m := revisionSuffixRE.FindStringSubmatch(tag)
+	if m == nil {
+		return tag, false
+	}
+
+	return m[1] + "." + m[2], true
+}
+
 func Tokenize(tag string) []Token {
 	if tag == "" {
 		return nil
@@ -58,35 +67,13 @@ func Tokenize(tag string) []Token {
 		for i < len(tag) && tag[i] != '-' && tag[i] != '_' {
 			i++
 		}
-		result = append(result, Token{Value: tag[start:i], Start: start, End: i, Separator: separator})
+		result = append(result, Token{Value: tag[start:i], Separator: separator})
 		separator = ""
 	}
 
-	if separator != "" {
-		if len(result) == 0 {
-			result = append(result, Token{Start: len(tag), End: len(tag), Separator: separator})
-		} else {
-			result[len(result)-1].TrailingSeparator = separator
-		}
+	if separator != "" && len(result) == 0 {
+		result = append(result, Token{Separator: separator})
 	}
 
 	return result
-}
-
-func Reconstruct(tokens []Token) string {
-	if len(tokens) == 0 {
-		return ""
-	}
-
-	var b strings.Builder
-
-	for i, token := range tokens {
-		b.WriteString(token.Separator)
-		b.WriteString(token.Value)
-		if i == len(tokens)-1 {
-			b.WriteString(token.TrailingSeparator)
-		}
-	}
-
-	return b.String()
 }

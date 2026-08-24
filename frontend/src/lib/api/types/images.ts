@@ -8,6 +8,7 @@ export interface Image {
   lastChecked?: string
   lastCheckError?: string
   updateAvailable: boolean
+  updateAvailableTag?: string
   createdAt: string
   updatedAt: string
 }
@@ -29,6 +30,7 @@ export interface Tag {
   firstSeen?: string
   lastSeen?: string
   new?: boolean
+  prerelease?: boolean
 }
 
 export interface TagGroup {

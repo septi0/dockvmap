@@ -9,6 +9,7 @@ type ImageTag struct {
 	FamilyType string    `json:"familyType"`
 	Tag        string    `json:"tag"`
 	TagOrder   int       `json:"tag_order"`
+	Prerelease bool      `json:"prerelease"`
 	FirstSeen  time.Time `json:"firstSeen"`
 	LastSeen   time.Time `json:"lastSeen"`
 	New        bool      `json:"new"`

@@ -56,10 +56,16 @@
         ? group.tags.findIndex((t) => t.tag === currentTag)
         : -1}
       {@const isCurrentFamily = currentIndex !== -1}
+      {@const currentIsPrerelease = isCurrentFamily
+        ? (group.tags[currentIndex].prerelease ?? false)
+        : false}
       <div class="family" class:current={isCurrentFamily}>
         <div class="tags">
           {#each visibleTags as tagInfo, index (tagInfo.tag)}
-            {@const isNewer = isCurrentFamily && index < currentIndex}
+            {@const isNewer =
+              isCurrentFamily &&
+              index < currentIndex &&
+              (currentIsPrerelease || !tagInfo.prerelease)}
             <button
               type="button"
               class="tag-chip"

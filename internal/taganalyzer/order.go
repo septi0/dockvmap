@@ -3,7 +3,6 @@ package taganalyzer
 import (
 	"sort"
 	"strings"
-	"time"
 )
 
 type sortableTag struct {
@@ -23,8 +22,14 @@ func OrderFamilies(analysis *Analysis) {
 	}
 
 	families := append([]Family(nil), analysis.Families...)
+
+	orderTypes := make(map[int]OrderType, len(families))
+	for _, family := range families {
+		orderTypes[family.ID] = familyOrderType(family, tagIndex)
+	}
+
 	sort.SliceStable(families, func(i, j int) bool {
-		return compareFamilies(families[i], families[j], tagIndex) < 0
+		return compareFamilies(families[i], families[j], orderTypes) < 0
 	})
 
 	for _, family := range families {
@@ -65,13 +70,13 @@ func OrderFamilies(analysis *Analysis) {
 	analysis.Ordered = ordered
 }
 
-func compareFamilies(left, right Family, tagIndex map[string]*TagAnalysis) int {
+func compareFamilies(left, right Family, orderTypes map[int]OrderType) int {
 	if left.Kind != right.Kind {
 		return compareFamilyKind(left.Kind, right.Kind)
 	}
 
-	leftOrderType := familyOrderType(left, tagIndex)
-	rightOrderType := familyOrderType(right, tagIndex)
+	leftOrderType := orderTypes[left.ID]
+	rightOrderType := orderTypes[right.ID]
 	if leftOrderType != rightOrderType {
 		return compareFamilyOrderType(leftOrderType, rightOrderType)
 	}
@@ -105,7 +110,8 @@ func compareFamilyKind(left, right FamilyKind) int {
 }
 
 func familyOrderType(family Family, tagIndex map[string]*TagAnalysis) OrderType {
-	fallback := OrderUnknown
+	best := OrderUnknown
+	bestRank := orderTypeRank(OrderUnknown)
 
 	for _, tag := range family.Tags {
 		analysis := tagIndex[tag]
@@ -114,41 +120,36 @@ func familyOrderType(family Family, tagIndex map[string]*TagAnalysis) OrderType 
 		}
 
 		orderType := analysis.Segments[0].OrderType
-		if orderType == OrderVersion || orderType == OrderSemVer {
-			return orderType
-		}
-
-		if fallback == OrderUnknown {
-			fallback = orderType
+		if rank := orderTypeRank(orderType); rank < bestRank {
+			best, bestRank = orderType, rank
+			if rank == 0 {
+				break
+			}
 		}
 	}
 
-	return fallback
+	return best
+}
+
+func orderTypeRank(orderType OrderType) int {
+	switch orderType {
+	case OrderVersion:
+		return 0
+	case OrderDate:
+		return 1
+	case OrderDateTime:
+		return 2
+	case OrderTime:
+		return 3
+	case OrderAlphabetical:
+		return 4
+	default:
+		return 5
+	}
 }
 
 func compareFamilyOrderType(left, right OrderType) int {
-	rank := func(orderType OrderType) int {
-		switch orderType {
-		case OrderSemVer, OrderVersion:
-			return 0
-		case OrderDate:
-			return 1
-		case OrderDateTime:
-			return 2
-		case OrderTime:
-			return 3
-		case OrderNumeric:
-			return 4
-		case OrderAlphabetical:
-			return 5
-		case OrderLiteral:
-			return 6
-		default:
-			return 7
-		}
-	}
-
-	l, r := rank(left), rank(right)
+	l, r := orderTypeRank(left), orderTypeRank(right)
 	switch {
 	case l < r:
 		return -1
@@ -190,10 +191,7 @@ func compareSegment(left, right SegmentAnalysis) int {
 	}
 
 	switch left.OrderType {
-	case OrderNumeric:
-		return compareNumbers(left.Numbers, right.Numbers)
-
-	case OrderSemVer, OrderVersion:
+	case OrderVersion:
 		if result := compareString(left.Prefix, right.Prefix); result != 0 {
 			return result
 		}
@@ -205,7 +203,7 @@ func compareSegment(left, right SegmentAnalysis) int {
 		}
 		return compareString(left.Suffix, right.Suffix)
 
-	case OrderAlphabetical, OrderLiteral:
+	case OrderAlphabetical:
 		return compareString(left.Raw, right.Raw)
 
 	case OrderDate, OrderDateTime:
@@ -238,22 +236,12 @@ func compareTemporalMismatch(left, right SegmentAnalysis) (int, bool) {
 }
 
 func temporalNumbers(segment SegmentAnalysis) ([]int64, bool) {
-	switch segment.OrderType {
-	case OrderDate:
-		for _, layout := range dateLayouts {
-			if parsed, err := time.Parse(layout, segment.Raw); err == nil {
-				y, m, d := parsed.Date()
-				return []int64{int64(y), int64(m), int64(d)}, true
-			}
-		}
-		return nil, false
-
-	case OrderVersion, OrderSemVer:
-		if segment.Prefix == "" && segment.Suffix == "" && segment.Prerelease == nil && segment.BuildMetadata == "" {
-			return segment.Numbers, true
-		}
+	if segment.OrderType == OrderDate && len(segment.Numbers) > 0 {
+		return segment.Numbers, true
 	}
-
+	if isPlainVersionSegment(segment) {
+		return segment.Numbers, true
+	}
 	return nil, false
 }
 
@@ -280,31 +268,6 @@ func compareVersionNumbers(left, right []int64) int {
 	}
 
 	return 0
-}
-
-func compareNumbers(left, right []int64) int {
-	n := len(left)
-	if len(right) < n {
-		n = len(right)
-	}
-
-	for i := 0; i < n; i++ {
-		switch {
-		case left[i] < right[i]:
-			return -1
-		case left[i] > right[i]:
-			return 1
-		}
-	}
-
-	switch {
-	case len(left) < len(right):
-		return -1
-	case len(left) > len(right):
-		return 1
-	default:
-		return 0
-	}
 }
 
 func compareString(left, right string) int {

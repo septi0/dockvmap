@@ -34,7 +34,7 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 	where, args := imageListWhere(filters)
 
 	query := fmt.Sprintf(`
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.created_at, i.updated_at
+		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.created_at, i.updated_at
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
 		%s
@@ -57,7 +57,7 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 
 		if err := rows.Scan(
 			&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
-			&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable,
+			&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
 			&img.CreatedAt, &img.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image row: %w", err)
@@ -96,13 +96,13 @@ func (s *Store) GetImage(ctx context.Context, name string) (*model.Image, error)
 	var img model.Image
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.created_at, i.updated_at
+		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.created_at, i.updated_at
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
 		WHERE i.name = ?
 	`, name).Scan(
 		&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
-		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable,
+		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
 		&img.CreatedAt, &img.UpdatedAt,
 	)
 
@@ -121,13 +121,13 @@ func (s *Store) GetImageByID(ctx context.Context, imageId int64) (*model.Image, 
 	var img model.Image
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.created_at, i.updated_at
+		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.created_at, i.updated_at
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
 		WHERE i.id = ?
 	`, imageId).Scan(
 		&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
-		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable,
+		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
 		&img.CreatedAt, &img.UpdatedAt,
 	)
 
@@ -248,14 +248,14 @@ func (s *Store) UpdateImageTag(ctx context.Context, tx DBTX, imageId int64, tag 
 	return updated != 0, nil
 }
 
-func (s *Store) UpdateImageUpdateAvailable(ctx context.Context, tx DBTX, imageId int64, available bool) (bool, error) {
+func (s *Store) UpdateImageUpdateAvailable(ctx context.Context, tx DBTX, imageId int64, available bool, targetTag *string) (bool, error) {
 	db := s.executor(tx)
 
 	result, err := db.ExecContext(ctx, `
 		UPDATE images
-		SET update_available = ?
+		SET update_available = ?, update_available_tag = ?
 		WHERE id = ?
-	`, available, imageId)
+	`, available, targetTag, imageId)
 
 	if err != nil {
 		return false, fmt.Errorf("updating image %d update_available: %w", imageId, err)

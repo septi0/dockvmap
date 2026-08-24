@@ -200,7 +200,11 @@
             {#if image.updateAvailable}
               <p class="warning-text">
                 <TriangleAlert size={14} strokeWidth={2} />
-                A newer tag is available in this tag's family.
+                {#if image.updateAvailableTag}
+                  Update available: {image.tag} &rarr; {image.updateAvailableTag}
+                {:else}
+                  A newer tag is available in this tag's family.
+                {/if}
               </p>
             {/if}
           </div>

@@ -151,9 +151,16 @@
               <td>{formatDate(image.lastChecked, "Never")}</td>
               <td>
                 {#if image.updateAvailable}
-                  <span class="badge badge-warning">
+                  <span
+                    class="badge badge-warning"
+                    title={image.updateAvailableTag
+                      ? `Update to ${image.updateAvailableTag}`
+                      : undefined}
+                  >
                     <TriangleAlert size={12} strokeWidth={2} />
-                    Update available
+                    {image.updateAvailableTag
+                      ? `Update to ${image.updateAvailableTag}`
+                      : "Update available"}
                   </span>
                 {:else}
                   <span class="badge">
