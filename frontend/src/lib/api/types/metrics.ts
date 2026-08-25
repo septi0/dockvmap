@@ -2,6 +2,7 @@ export interface PullInfo {
   host: string
   port: string
   virtualTag: string
+  hostConfigured: boolean
 }
 
 export interface ProxyMetrics {

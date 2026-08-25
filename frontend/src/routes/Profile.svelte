@@ -243,8 +243,8 @@
         {#if notifyNewTags && !smtpEnabled}
           <p class="warning-text">
             <TriangleAlert size={14} strokeWidth={2} />
-            SMTP is not configured — new tag alert emails won't be sent until an
-            administrator sets it up.
+            SMTP is not configured, so new tag alert emails won't be sent
+            until an administrator sets it up.
           </p>
         {/if}
       </div>

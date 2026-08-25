@@ -9,11 +9,7 @@ import (
 	"github.com/septi0/dockvmap/internal/ipmatch"
 )
 
-// resolveClientIP returns the real client IP for a request. X-Forwarded-For
-// is only honored when the immediate connecting peer is a trusted proxy -
-// otherwise it's client-supplied and trivially spoofable. When trusted, it
-// walks the header from the right, skipping further trusted-proxy hops,
-// until it finds the first address that isn't itself a trusted proxy.
+// resolveClientIP trusts X-Forwarded-For only from a trusted immediate peer; otherwise it's spoofable.
 func resolveClientIP(r *http.Request, trusted ipmatch.Set) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 

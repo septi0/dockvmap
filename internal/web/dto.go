@@ -81,7 +81,36 @@ func newImageResponse(image model.Image) imageResponse {
 }
 
 type updateImageTagRequest struct {
-	Tag string `json:"tag"`
+	Tag    string `json:"tag"`
+	Source string `json:"source,omitempty"`
+}
+
+type tagHistoryEntryResponse struct {
+	ID          int64     `json:"id"`
+	Tag         string    `json:"tag"`
+	PreviousTag *string   `json:"previousTag,omitempty"`
+	Source      string    `json:"source"`
+	AppliedAt   time.Time `json:"appliedAt"`
+}
+
+type tagHistoryResponse struct {
+	History []tagHistoryEntryResponse `json:"history"`
+}
+
+func newTagHistoryResponse(history []model.ImageTagHistory) tagHistoryResponse {
+	entries := make([]tagHistoryEntryResponse, 0, len(history))
+
+	for _, h := range history {
+		entries = append(entries, tagHistoryEntryResponse{
+			ID:          h.ID,
+			Tag:         h.Tag,
+			PreviousTag: h.PreviousTag,
+			Source:      string(h.Source),
+			AppliedAt:   h.AppliedAt,
+		})
+	}
+
+	return tagHistoryResponse{History: entries}
 }
 
 type renameImageRequest struct {
@@ -89,9 +118,10 @@ type renameImageRequest struct {
 }
 
 type pullInfoResponse struct {
-	Host       string `json:"host"`
-	Port       string `json:"port"`
-	VirtualTag string `json:"virtualTag"`
+	Host           string `json:"host"`
+	Port           string `json:"port"`
+	VirtualTag     string `json:"virtualTag"`
+	HostConfigured bool   `json:"hostConfigured"`
 }
 
 type inspectRepositoryRequest struct {

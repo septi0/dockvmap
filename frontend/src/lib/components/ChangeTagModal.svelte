@@ -38,6 +38,25 @@
   let updating = $state(false);
   let updateError = $state<string | null>(null);
 
+  const currentFamilyId = $derived(
+    tagGroups.find((group) => group.tags.some((t) => t.tag === currentTag))
+      ?.familyId ?? null,
+  );
+  const selectedFamilyId = $derived(
+    selectedTag
+      ? (tagGroups.find((group) =>
+          group.tags.some((t) => t.tag === selectedTag),
+        )?.familyId ?? null)
+      : null,
+  );
+  const isFamilyMismatch = $derived(
+    selectedTag !== null &&
+      selectedTag !== currentTag &&
+      currentFamilyId !== null &&
+      selectedFamilyId !== null &&
+      currentFamilyId !== selectedFamilyId,
+  );
+
   async function loadTags() {
     loadingTags = true;
     tagsError = null;
@@ -128,6 +147,15 @@
     </div>
   {/if}
 
+  {#if isFamilyMismatch}
+    <p class="family-warning">
+      <span class="icon"><TriangleAlert size={16} strokeWidth={2} /></span>
+      <strong>{selectedTag}</strong> is from a different tag family than <strong
+        >{currentTag}</strong
+      >, so they might not be compatible for an in-place update.
+    </p>
+  {/if}
+
   {#if updateError}
     <p class="error">
       <TriangleAlert size={16} strokeWidth={2} />
@@ -182,6 +210,26 @@
     font-size: 0.875rem;
   }
 
+  .family-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
+
+  .family-warning .icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
   .tags-scroll {
     max-height: 480px;
     overflow-y: auto;
@@ -195,8 +243,7 @@
     background-repeat: no-repeat, no-repeat;
     background-position: bottom, bottom;
     background-size: 100% 28px, 100% 28px;
-    /* local scrolls with content so it only masks the shadow layer once truly
-       scrolled to the bottom (or when there's nothing to scroll at all) */
+    /* local scrolls with content, masking the shadow only once actually scrolled to bottom */
     background-attachment: local, scroll;
   }
 

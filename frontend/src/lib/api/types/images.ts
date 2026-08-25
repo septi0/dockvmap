@@ -66,3 +66,17 @@ export interface CreateImageParams {
 export interface ImageTagsResult {
   tagGroups: TagGroup[]
 }
+
+export type TagHistorySource = 'created' | 'manual' | 'restore'
+
+export interface TagHistoryEntry {
+  id: number
+  tag: string
+  previousTag?: string
+  source: TagHistorySource
+  appliedAt: string
+}
+
+export interface TagHistoryResult {
+  history: TagHistoryEntry[]
+}

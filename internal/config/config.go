@@ -14,6 +14,7 @@ type Config struct {
 	TagsCheckInterval       string               `yaml:"tags_check_interval" env:"DOCKVMAP_TAGS_CHECK_INTERVAL" default:"24h"`
 	TagDiscoveryTTL         string               `yaml:"tag_discovery_ttl" env:"DOCKVMAP_TAG_DISCOVERY_TTL" default:"1h"`
 	ProxyServerListen       string               `yaml:"proxy_server_listen" env:"DOCKVMAP_PROXY_SERVER_LISTEN" default:":5000"`
+	ProxyPublicHost         string               `yaml:"proxy_public_host" env:"DOCKVMAP_PROXY_PUBLIC_HOST"`
 	WebServerListen         string               `yaml:"web_server_listen" env:"DOCKVMAP_WEB_SERVER_LISTEN" default:":8080"`
 	DataPath                string               `yaml:"data_path" env:"DOCKVMAP_DATA_PATH" default:"./data"`
 	LogsPath                string               `yaml:"logs_path" env:"DOCKVMAP_LOGS_PATH"`

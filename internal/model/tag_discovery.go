@@ -32,7 +32,6 @@ type TagDiscovery struct {
 	Error       string
 	StartedAt   time.Time
 	CompletedAt *time.Time
-	// TagsSeen is a live, in-memory-only progress count while Status is running - it's never
-	// persisted, and comes back to 0 after a restart since it's purely informational.
+	// TagsSeen is in-memory only while Status is running; never persisted.
 	TagsSeen int
 }

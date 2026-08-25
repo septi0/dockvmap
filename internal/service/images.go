@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -55,6 +56,8 @@ type imageStore interface {
 	SetImageTags(ctx context.Context, tx store.DBTX, imageId int64, tags []model.ImageTag) error
 	DeleteImageTagsNotSeen(ctx context.Context, tx store.DBTX, imageId int64, lastSeen time.Time) (int64, error)
 	MarkImageTagsAsSeen(ctx context.Context, imageId int64) (int64, error)
+	InsertImageTagHistory(ctx context.Context, tx store.DBTX, imageId int64, tag string, previousTag *string, source model.TagHistorySource) error
+	GetImageTagHistory(ctx context.Context, imageId int64) ([]model.ImageTagHistory, error)
 }
 
 type tagLister interface {
@@ -244,6 +247,10 @@ func (i *Images) Create(ctx context.Context, img model.Image, availableTags []st
 		Tag:        img.Tag,
 	})
 
+	if err := i.store.InsertImageTagHistory(ctx, nil, img.ID, img.Tag, nil, model.TagHistorySourceCreated); err != nil {
+		slog.Error("recording initial tag history failed", "image", img.Name, "error", err)
+	}
+
 	opts := RefreshTagsOpts{
 		FlagAsNew:     false,
 		RegisterEvent: EventNone,
@@ -314,7 +321,7 @@ func (i *Images) Delete(ctx context.Context, imageId int64) (bool, error) {
 	return true, nil
 }
 
-func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string) error {
+func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string, source model.TagHistorySource) error {
 	if imageId < 1 {
 		return fmt.Errorf("%w: id must be positive", ErrInvalidImage)
 	}
@@ -340,6 +347,10 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string) error
 
 	if image == nil {
 		return fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
+	}
+
+	if tag == image.Tag {
+		return nil
 	}
 
 	if image_tag, err := i.store.GetImageTag(ctx, imageId, tag); err != nil {
@@ -374,6 +385,12 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string) error
 		return fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
 	}
 
+	previousTag := image.Tag
+
+	if err := i.store.InsertImageTagHistory(ctx, tx, imageId, tag, &previousTag, source); err != nil {
+		return fmt.Errorf("recording tag history for %q: %w", image.Name, err)
+	}
+
 	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
 		return err
 	}
@@ -385,6 +402,24 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string) error
 	})
 
 	return nil
+}
+
+func (i *Images) GetTagHistory(ctx context.Context, imageId int64) ([]model.ImageTagHistory, error) {
+	if imageId < 1 {
+		return nil, fmt.Errorf("%w: id must be positive", ErrInvalidImage)
+	}
+
+	image, err := i.store.GetImageByID(ctx, imageId)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if image == nil {
+		return nil, fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
+	}
+
+	return i.store.GetImageTagHistory(ctx, imageId)
 }
 
 func (i *Images) Rename(ctx context.Context, imageId int64, name string) error {
