@@ -1,4 +1,4 @@
 #!/bin/sh
 set -e
 
-exec dockvmap -config /config/config.yaml "$@"
+exec dockvmap -config /config/config.yaml -filters /config/filters.yaml "$@"

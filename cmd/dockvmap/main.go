@@ -14,6 +14,7 @@ import (
 	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
 	"github.com/septi0/dockvmap/internal/store"
+	"github.com/septi0/dockvmap/internal/tagfilter"
 )
 
 var version = "dev"
@@ -27,6 +28,7 @@ func main() {
 
 func run() error {
 	configPath := flag.String("config", "config.yaml", "path to configuration file (optional; falls back to DOCKVMAP_* env vars and defaults if not found)")
+	filtersPath := flag.String("filters", "filters.yaml", "path to tag-filters file (optional; falls back to the built-in default if not found)")
 	resetPassword := flag.String("reset-password", "", "generate a new random password for the given username, print it, and exit")
 	refreshTags := flag.Bool("refresh-tags", false, "refresh tags for all configured images from their upstream registries, then exit")
 	showVersion := flag.Bool("version", false, "print the version and exit")
@@ -41,6 +43,12 @@ func run() error {
 
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	tagFilter, err := tagfilter.Load(*filtersPath)
+
+	if err != nil {
+		return fmt.Errorf("failed to load tag filters: %w", err)
 	}
 
 	logFile, err := setupLogging(cfg.LogsPath)
@@ -98,7 +106,7 @@ func run() error {
 	failureLog := service.NewFailureLog()
 
 	events := service.NewEvents(db)
-	images := service.NewImages(db, ociClient, events, audit, failureLog)
+	images := service.NewImages(db, ociClient, events, audit, failureLog, tagFilter)
 
 	if *refreshTags {
 		return runRefreshTags(context.Background(), images)

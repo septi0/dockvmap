@@ -66,6 +66,10 @@ type failureRecorder interface {
 	Record(source FailureSource, detail string, err error)
 }
 
+type tagFilterer interface {
+	Apply(tags []string) []string
+}
+
 type imageRefreshLock struct {
 	mu   sync.Mutex
 	refs int
@@ -119,13 +123,14 @@ type Images struct {
 	events        eventHandler
 	audit         auditRecorder
 	failures      failureRecorder
+	tagFilter     tagFilterer
 	refreshLocker *imageRefreshLocker
 }
 
 type RefreshTagsOpts struct {
 	FlagAsNew     bool
 	RegisterEvent EventMode
-	Tags          []string
+	Tags          []string // already fetched and filtered; if nil, tags are fetched and filtered internally
 }
 
 type auditImageData struct {
@@ -146,13 +151,14 @@ type auditImageRenamedData struct {
 	NewName string `json:"newName"`
 }
 
-func NewImages(store imageStore, tagLister tagLister, events eventHandler, audit auditRecorder, failures failureRecorder) *Images {
+func NewImages(store imageStore, tagLister tagLister, events eventHandler, audit auditRecorder, failures failureRecorder, tagFilter tagFilterer) *Images {
 	return &Images{
 		store:         store,
 		tagLister:     tagLister,
 		events:        events,
 		audit:         audit,
 		failures:      failures,
+		tagFilter:     tagFilter,
 		refreshLocker: newImageRefreshLocker(),
 	}
 }
@@ -216,7 +222,9 @@ func (i *Images) Create(ctx context.Context, img model.Image) error {
 		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 	}
 
-	if !containsTag(tags, img.Tag) {
+	availableTags := i.tagFilter.Apply(tags)
+
+	if !containsTag(availableTags, img.Tag) {
 		return fmt.Errorf("%w: %q", ErrTagUnavailable, img.Tag)
 	}
 
@@ -238,7 +246,7 @@ func (i *Images) Create(ctx context.Context, img model.Image) error {
 	opts := RefreshTagsOpts{
 		FlagAsNew:     false,
 		RegisterEvent: EventNone,
-		Tags:          tags,
+		Tags:          availableTags,
 	}
 
 	if err := i.RefreshAvailableTags(ctx, img.ID, opts); err != nil {
@@ -505,10 +513,10 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 
 	checkedAt := time.Now().UTC()
 
-	rawTags := options.Tags
+	sourceTags := options.Tags
 
 	if options.Tags == nil {
-		rawTags, err = i.tagLister.ListTags(ctx, image.Registry, image.Repository)
+		sourceTags, err = i.tagLister.ListTags(ctx, image.Registry, image.Repository)
 
 		if err != nil {
 			message := err.Error()
@@ -521,9 +529,11 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 
 			return fmt.Errorf("%w for %q: %w", ErrTagRefreshFailed, image.Name, err)
 		}
+
+		sourceTags = i.tagFilter.Apply(sourceTags)
 	}
 
-	analyzedTags := taganalyzer.AnalyzeWithOptions(rawTags, taganalyzer.AnalysisOptions{
+	analyzedTags := taganalyzer.AnalyzeWithOptions(sourceTags, taganalyzer.AnalysisOptions{
 		IncludeTokens: false,
 	})
 
@@ -650,7 +660,7 @@ func (i *Images) InspectRepository(ctx context.Context, registryHost string, rep
 	}
 
 	return taganalyzer.AnalyzeWithOptions(
-		tags,
+		i.tagFilter.Apply(tags),
 		taganalyzer.AnalysisOptions{
 			IncludeTokens: false,
 		},
