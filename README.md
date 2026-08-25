@@ -90,13 +90,16 @@ Open the web UI (`web_server_listen`, `:8080` by default). The first visit walks
 
 ## Configuration
 
-Settings can come from a YAML file (`config.sample.yaml` is a documented starting point), from `DOCKVMAP_*` environment variables, or both (the config file is entirely optional). Precedence per setting is **env var > config file > built-in default**. Env var names mirror the YAML keys, uppercased with underscores, prefixed `DOCKVMAP_` (e.g. `web_server_listen` → `DOCKVMAP_WEB_SERVER_LISTEN`, `smtp.host` → `DOCKVMAP_SMTP_HOST`); comma-separate list values (`DOCKVMAP_TRUSTED_PROXIES=10.0.0.0/8,192.168.1.1`).
+Settings can come from a YAML file (`config.sample.yaml` is a documented starting point), from `DOCKVMAP_*` environment variables, or both (the config file is entirely optional). Precedence per setting is **env var > config file > built-in default**. Env var names mirror the YAML keys, uppercased with underscores, prefixed `DOCKVMAP_` (e.g. `web_server_listen` → `DOCKVMAP_WEB_SERVER_LISTEN`, `smtp.host` → `DOCKVMAP_SMTP_HOST`); comma-separate list values (`DOCKVMAP_TRUSTED_PROXIES=10.0.0.0/8,192.168.1.1`). Omitting `-config` entirely is fine (runs on env vars/defaults); pointing it at a path that doesn't exist is a startup error, not a silent fallback.
+
+One setting sits outside this system, as a CLI flag instead of a config key: `-data-path` (see CLI below). Where the database and credential key live is a deployment decision fixed at startup, not something meant to be layered through env/file/default like a behavioral setting.
 
 Key options:
 
 | Key | Purpose |
 |---|---|
-| `data_path` | Where the SQLite database lives |
+| `logs_path` | Directory for log files. Logs to stdout only if unset |
+| `tag_filters_path` | Path to a `filters.yaml` policy file (see Tag filtering below). If set, the file must exist — an invalid path is a startup error, not a silent fallback. Unset uses the built-in default filters |
 | `credential_encryption_key` | Base64, 32-byte AES-GCM key encrypting stored registry credentials. If left unset, DockVMap generates one and persists it at `<data_path>/credential_encryption.key` on first run |
 | `virtual_tag` | The tag name clients pull (`current` by default) |
 | `tags_check_interval` | How often DockVMap polls upstream registries for tag changes |
@@ -106,14 +109,14 @@ Key options:
 | `trusted_proxies` | CIDRs/IPs of reverse proxies you trust to report the real client IP |
 | `tls` | Serve both the proxy and web servers directly over HTTPS using `cert_file`/`key_file`. If enabled but either file path is blank, TLS is silently disabled at startup |
 | `login_rate_limit` | Failed-login lockout: attempts, window, IPs allowed to bypass it |
-| `blob_cache` | Optional on-disk cache for manifests/blobs |
+| `blob_cache` | Optional on-disk cache for manifests/blobs, always stored at `<data_path>/cache` |
 | `smtp` / `webhooks` | Notification channels for tag changes |
 | `proxy_auth` | Gate the registry proxy itself behind issued Basic Auth tokens |
 | `proxy_public_host` | Hostname clients use to reach the proxy, shown in the GUI's pull instructions; may include a port (`registry.example.com:5050`) to override `proxy_server_listen`'s port too, e.g. when the publicly reachable port differs from the internal bind port. If unset, the GUI guesses the host from the browser's request host, which can be wrong behind a reverse proxy |
 
 ## Tag filtering
 
-Tags fetched from upstream registries can be excluded from tracking/categorization before DockVMap groups them into families. This is useful for CI-generated tags (`commit-<sha>`, `pr-<n>`, etc.) that would otherwise pollute the tag list. This is separate from `config.yaml`: it's policy, not runtime configuration, and lives in its own YAML file.
+Tags fetched from upstream registries can be excluded from tracking/categorization before DockVMap groups them into families. This is useful for CI-generated tags (`commit-<sha>`, `pr-<n>`, etc.) that would otherwise pollute the tag list. This is separate content from the rest of `config.yaml`: it's policy, not runtime configuration, and lives in its own YAML file, referenced by the `tag_filters_path` setting.
 
 ```yaml
 tag_filters:
@@ -122,13 +125,13 @@ tag_filters:
     - "^pr-.*"
 ```
 
-Each entry is a regular expression matched against the raw tag name; any match excludes the tag. The built-in default (shown above) ships compiled into the binary (`internal/tagfilter/filters.yaml`) and is used whenever no filters file is found at the configured path, so filtering works out of the box with no setup. To customize it, write your own `filters.yaml` at the path given by `-filters` (`filters.yaml` by default, `/config/filters.yaml` in the Docker image). Your file's `exclude` list fully replaces the built-in one (it isn't merged), so include the defaults yourself if you want to keep them alongside your own patterns. An empty `exclude` list disables filtering entirely.
+Each entry is a regular expression matched against the raw tag name; any match excludes the tag. The built-in default (shown above) ships compiled into the binary and is used whenever `tag_filters_path` is unset, so filtering works out of the box with no setup. To customize it, write your own `filters.yaml` somewhere and point `tag_filters_path` at it — the file must exist at that point, or startup fails with an error rather than silently using the built-in default. Your file's `exclude` list fully replaces the built-in one (it isn't merged), so include the defaults yourself if you want to keep them alongside your own patterns. An empty `exclude` list disables filtering entirely.
 
 ## CLI
 
 ```
-dockvmap -config <path>              # path to config file (optional; default: config.yaml)
-dockvmap -filters <path>             # path to tag-filters file (optional; default: filters.yaml, falls back to the built-in default)
+dockvmap -config <path>              # path to config file (optional; falls back to DOCKVMAP_* env vars and defaults if unset)
+dockvmap -data-path <path>           # path to the data directory: SQLite database, blob cache, credential key (optional; default: ./data)
 dockvmap -reset-password <username>  # generate and print a new password, invalidate their sessions, exit
 dockvmap -refresh-tags               # refresh tags for all configured images from their upstream registries, exit
 dockvmap -version                    # print version and exit

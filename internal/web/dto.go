@@ -395,6 +395,12 @@ func failureMessage(failure service.Failure) string {
 	case service.FailureSourceRefresh:
 		return fmt.Sprintf("Image %q failed to refresh: %s", failure.Detail, failure.Error)
 
+	case service.FailureSourceDiscoveryRefresh:
+		return fmt.Sprintf("Repository %q tag discovery refresh failed: %s", failure.Detail, failure.Error)
+
+	case service.FailureSourceEventRegistration:
+		return fmt.Sprintf("Image %q refreshed but its tag-change notification failed to register: %s", failure.Detail, failure.Error)
+
 	default:
 		return failure.Error
 	}

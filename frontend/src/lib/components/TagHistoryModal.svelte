@@ -28,8 +28,10 @@
 
   let restoring = $state<number | null>(null);
   let restoreError = $state<string | null>(null);
+  let loadToken = 0;
 
   async function load() {
+    const requestId = ++loadToken;
     loading = true;
     loadError = null;
 
@@ -38,15 +40,17 @@
         getTagHistory(imageId),
         getImageTags(imageId),
       ]);
+      if (requestId !== loadToken) return;
       history = historyResult.history;
       availableTags = new Set(
         tagsResult.tagGroups.flatMap((group) => group.tags.map((t) => t.tag)),
       );
     } catch (err) {
+      if (requestId !== loadToken) return;
       loadError =
         err instanceof ApiError ? err.message : "Failed to load tag history";
     } finally {
-      loading = false;
+      if (requestId === loadToken) loading = false;
     }
   }
 

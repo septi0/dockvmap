@@ -23,14 +23,16 @@ type Filter struct {
 }
 
 func Load(path string) (*Filter, error) {
-	data, err := os.ReadFile(path)
+	data := defaultFiltersYAML
 
-	if err != nil {
-		if !os.IsNotExist(err) {
+	if path != "" {
+		fileData, err := os.ReadFile(path)
+
+		if err != nil {
 			return nil, fmt.Errorf("reading filters: %w", err)
 		}
 
-		data = defaultFiltersYAML
+		data = fileData
 	}
 
 	var cfg fileConfig

@@ -32,6 +32,7 @@
   let pullInfo = $state<PullInfo | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let loadToken = 0;
 
   let showTagModal = $state(false);
   let showHistoryModal = $state(false);
@@ -51,19 +52,22 @@
   );
 
   async function load() {
+    const requestId = ++loadToken;
     loading = true;
     error = null;
 
     try {
       const [img, info] = await Promise.all([getImage(imageId), getPullInfo()]);
+      if (requestId !== loadToken) return;
       image = img;
       pullInfo = info;
       renameValue = img.name;
     } catch (err) {
+      if (requestId !== loadToken) return;
       error =
         err instanceof ApiError ? err.message : "Failed to load virtual image";
     } finally {
-      loading = false;
+      if (requestId === loadToken) loading = false;
     }
   }
 

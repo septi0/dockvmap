@@ -644,10 +644,18 @@ func (i *Images) RefreshAll(ctx context.Context) (int, error) {
 				RegisterEvent: EventNormal,
 			}
 
-			if err := i.RefreshAvailableTags(ctx, image.ID, opts); err != nil {
-				refreshErrors = append(refreshErrors, fmt.Errorf("refreshing image %d: %w", image.ID, err))
-			} else {
+			err := i.RefreshAvailableTags(ctx, image.ID, opts)
+
+			switch {
+			case err == nil:
 				refreshed++
+
+			case errors.Is(err, ErrFailedToRegisterEvent):
+				i.failures.Record(FailureSourceEventRegistration, image.Name, err)
+				refreshed++
+
+			default:
+				refreshErrors = append(refreshErrors, fmt.Errorf("refreshing image %d: %w", image.ID, err))
 			}
 		}
 	}

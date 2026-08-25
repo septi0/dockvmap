@@ -37,6 +37,7 @@
 
   let updating = $state(false);
   let updateError = $state<string | null>(null);
+  let loadToken = 0;
 
   const currentFamilyId = $derived(
     tagGroups.find((group) => group.tags.some((t) => t.tag === currentTag))
@@ -58,16 +59,19 @@
   );
 
   async function loadTags() {
+    const requestId = ++loadToken;
     loadingTags = true;
     tagsError = null;
 
     try {
       const result = await getImageTags(imageId);
+      if (requestId !== loadToken) return;
       tagGroups = result.tagGroups;
     } catch (err) {
+      if (requestId !== loadToken) return;
       tagsError = err instanceof ApiError ? err.message : "Failed to load tags";
     } finally {
-      loadingTags = false;
+      if (requestId === loadToken) loadingTags = false;
     }
   }
 

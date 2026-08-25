@@ -41,6 +41,7 @@ type discoveryStore interface {
 	StartOrGetTagDiscovery(ctx context.Context, registryID int64, repository string) (*model.TagDiscovery, bool, error)
 	CompleteTagDiscovery(ctx context.Context, id int64, groups []model.TagDiscoveryGroup, tagCount int, rawTagCount int) error
 	FailTagDiscovery(ctx context.Context, id int64, errMessage string) error
+	RecordTagDiscoveryRefreshFailure(ctx context.Context, id int64, errMessage string) error
 	MarkStaleRunningTagDiscoveriesAsFailed(ctx context.Context) (int64, error)
 	DeleteOldTagDiscoveries(ctx context.Context, olderThan time.Time) (int64, error)
 }
@@ -116,19 +117,21 @@ type Discoveries struct {
 	checker    repositoryChecker
 	tagLister  progressiveTagLister
 	tagFilter  tagFilterer
+	failures   failureRecorder
 	bgCtx      context.Context
 	ttl        time.Duration
 	refreshing *keySet
 	progress   *discoveryProgress
 }
 
-func NewDiscoveries(store discoveryStore, registries discoveryRegistryLookup, checker repositoryChecker, tagLister progressiveTagLister, tagFilter tagFilterer, bgCtx context.Context, ttl time.Duration) *Discoveries {
+func NewDiscoveries(store discoveryStore, registries discoveryRegistryLookup, checker repositoryChecker, tagLister progressiveTagLister, tagFilter tagFilterer, failures failureRecorder, bgCtx context.Context, ttl time.Duration) *Discoveries {
 	return &Discoveries{
 		store:      store,
 		registries: registries,
 		checker:    checker,
 		tagLister:  tagLister,
 		tagFilter:  tagFilter,
+		failures:   failures,
 		bgCtx:      bgCtx,
 		ttl:        ttl,
 		refreshing: newKeySet(),
@@ -315,6 +318,12 @@ func (d *Discoveries) maybeRefresh(registryID int64, registryHost, repository st
 		defer d.refreshing.unlock(key)
 
 		d.runScan(discoveryID, registryHost, repository, func(err error) {
+			if failErr := d.store.RecordTagDiscoveryRefreshFailure(context.Background(), discoveryID, err.Error()); failErr != nil {
+				slog.Error("recording tag discovery refresh failure failed", "registry", registryHost, "repository", repository, "error", failErr)
+			}
+
+			d.failures.Record(FailureSourceDiscoveryRefresh, repository, err)
+
 			slog.Error("background tag discovery refresh failed", "registry", registryHost, "repository", repository, "error", err)
 		})
 	}()
