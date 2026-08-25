@@ -14,11 +14,10 @@ import (
 	"github.com/septi0/dockvmap/internal/model"
 	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
-	"github.com/septi0/dockvmap/internal/taganalyzer"
 )
 
 type imageService interface {
-	Create(ctx context.Context, img model.Image) error
+	Create(ctx context.Context, img model.Image, availableTags []string) error
 	Delete(ctx context.Context, imageId int64) (bool, error)
 	GetByID(ctx context.Context, imageId int64) (*model.Image, error)
 	GetTags(ctx context.Context, imageId int64) ([]model.ImageTag, error)
@@ -27,8 +26,13 @@ type imageService interface {
 	RefreshAvailableTags(ctx context.Context, imageId int64, opts service.RefreshTagsOpts) error
 	UpdateTag(ctx context.Context, imageId int64, tag string) error
 	Rename(ctx context.Context, imageId int64, name string) error
-	InspectRepository(ctx context.Context, registry string, repository string) (taganalyzer.Analysis, error)
 	MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, error)
+}
+
+type discoveryService interface {
+	Check(ctx context.Context, registry, repository string) (model.TagDiscovery, error)
+	Get(ctx context.Context, id int64) (*model.TagDiscovery, error)
+	CachedTags(ctx context.Context, registryID int64, repository string) ([]string, bool)
 }
 
 type registryService interface {
@@ -85,6 +89,7 @@ type failureLister interface {
 
 type Web struct {
 	images               imageService
+	discoveries          discoveryService
 	registries           registryService
 	events               eventService
 	audit                auditService
@@ -100,7 +105,7 @@ type Web struct {
 	version              string
 }
 
-func New(cfg *config.Config, images imageService, registries registryService, events eventService, audit auditService, users userService, sessions sessionService, health healthChecker, proxyTokens proxyTokenService, proxyMetrics proxyMetricsProvider, failures failureLister, loginRateLimitWindow time.Duration, version string) (http.Handler, error) {
+func New(cfg *config.Config, images imageService, discoveries discoveryService, registries registryService, events eventService, audit auditService, users userService, sessions sessionService, health healthChecker, proxyTokens proxyTokenService, proxyMetrics proxyMetricsProvider, failures failureLister, loginRateLimitWindow time.Duration, version string) (http.Handler, error) {
 	trustedProxies, err := ipmatch.Parse(cfg.TrustedProxies)
 
 	if err != nil {
@@ -109,6 +114,7 @@ func New(cfg *config.Config, images imageService, registries registryService, ev
 
 	w := &Web{
 		images:               images,
+		discoveries:          discoveries,
 		registries:           registries,
 		events:               events,
 		audit:                audit,

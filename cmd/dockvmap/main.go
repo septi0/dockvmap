@@ -112,6 +112,16 @@ func run() error {
 		return runRefreshTags(context.Background(), images)
 	}
 
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+
+	defer workerCancel()
+
+	discoveries := service.NewDiscoveries(db, db, ociClient, ociClient, tagFilter, workerCtx, cfg.TagDiscoveryTTLDuration())
+
+	if err := discoveries.RecoverFromRestart(context.Background()); err != nil {
+		return fmt.Errorf("failed to recover tag discoveries: %w", err)
+	}
+
 	health := service.NewHealth(db)
 	proxyTokens := service.NewProxyTokens(db, audit)
 	metrics := proxy.NewMetrics()
@@ -138,15 +148,11 @@ func run() error {
 
 	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens, tlsConfig)
 
-	webSrv, err := newWebServer(cfg, images, registries, events, audit, users, sessions, health, proxyTokens, metrics, failureLog, loginRateLimitWindow, version, tlsConfig)
+	webSrv, err := newWebServer(cfg, images, discoveries, registries, events, audit, users, sessions, health, proxyTokens, metrics, failureLog, loginRateLimitWindow, version, tlsConfig)
 
 	if err != nil {
 		return fmt.Errorf("failed to initialize web server: %w", err)
 	}
-
-	workerCtx, workerCancel := context.WithCancel(context.Background())
-
-	defer workerCancel()
 
 	serverErrs := make(chan error, 2)
 
@@ -157,7 +163,7 @@ func run() error {
 
 	go func() {
 		defer close(workerDone)
-		startWorker(workerCtx, cfg, images, cache, notifications, sessions)
+		startWorker(workerCtx, cfg, images, discoveries, cache, notifications, sessions)
 	}()
 
 	awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)

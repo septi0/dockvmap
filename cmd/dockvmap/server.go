@@ -111,8 +111,8 @@ func newProxyServer(cfg *config.Config, images *service.Images, ociClient *oci.C
 	}
 }
 
-func newWebServer(cfg *config.Config, images *service.Images, registries *service.Registries, events *service.Events, audit *service.Audit, users *service.Users, sessions *service.Sessions, health *service.Health, proxyTokens *service.ProxyTokens, metrics *proxy.Metrics, failures *service.FailureLog, loginRateLimitWindow time.Duration, version string, tlsConfig *tls.Config) (*http.Server, error) {
-	handler, err := web.New(cfg, images, registries, events, audit, users, sessions, health, proxyTokens, metrics, failures, loginRateLimitWindow, version)
+func newWebServer(cfg *config.Config, images *service.Images, discoveries *service.Discoveries, registries *service.Registries, events *service.Events, audit *service.Audit, users *service.Users, sessions *service.Sessions, health *service.Health, proxyTokens *service.ProxyTokens, metrics *proxy.Metrics, failures *service.FailureLog, loginRateLimitWindow time.Duration, version string, tlsConfig *tls.Config) (*http.Server, error) {
+	handler, err := web.New(cfg, images, discoveries, registries, events, audit, users, sessions, health, proxyTokens, metrics, failures, loginRateLimitWindow, version)
 
 	if err != nil {
 		return nil, err

@@ -44,7 +44,6 @@ type imageStore interface {
 	GetImageByID(ctx context.Context, imageId int64) (*model.Image, error)
 	GetImage(ctx context.Context, name string) (*model.Image, error)
 	GetRegistryInfoByID(ctx context.Context, registryID int64) (*model.RegistryInfo, error)
-	GetRegistryInfoByHost(ctx context.Context, registry string) (*model.RegistryInfo, error)
 	ListImages(ctx context.Context, filters model.ImageListFilters) ([]model.Image, error)
 	CountImages(ctx context.Context, filters model.ImageListFilters) (int64, error)
 	UpdateImageCheck(ctx context.Context, tx store.DBTX, imageId int64, checkErr *string, checkedAt time.Time) (bool, error)
@@ -163,7 +162,7 @@ func NewImages(store imageStore, tagLister tagLister, events eventHandler, audit
 	}
 }
 
-func (i *Images) Create(ctx context.Context, img model.Image) error {
+func (i *Images) Create(ctx context.Context, img model.Image, availableTags []string) error {
 	img.Name = strings.TrimSpace(img.Name)
 	img.Repository = strings.TrimSpace(img.Repository)
 	img.Tag = strings.TrimSpace(img.Tag)
@@ -204,25 +203,27 @@ func (i *Images) Create(ctx context.Context, img model.Image) error {
 		return fmt.Errorf("%w: tag must be a valid tag", ErrInvalidImage)
 	}
 
-	tags, err := i.tagLister.ListTags(ctx, img.Registry, img.Repository)
+	if availableTags == nil {
+		tags, err := i.tagLister.ListTags(ctx, img.Registry, img.Repository)
 
-	if err != nil {
-		var registryErr *oci.Error
+		if err != nil {
+			var registryErr *oci.Error
 
-		if errors.As(err, &registryErr) {
-			switch registryErr.StatusCode {
-			case http.StatusNotFound:
-				return fmt.Errorf("%w: %s/%s", ErrUpstreamNotFound, img.Registry, img.Repository)
+			if errors.As(err, &registryErr) {
+				switch registryErr.StatusCode {
+				case http.StatusNotFound:
+					return fmt.Errorf("%w: %s/%s", ErrUpstreamNotFound, img.Registry, img.Repository)
 
-			case http.StatusUnauthorized:
-				return fmt.Errorf("%w: %s/%s", ErrUpstreamUnauthorized, img.Registry, img.Repository)
+				case http.StatusUnauthorized:
+					return fmt.Errorf("%w: %s/%s", ErrUpstreamUnauthorized, img.Registry, img.Repository)
+				}
 			}
+
+			return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
 		}
 
-		return fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
+		availableTags = i.tagFilter.Apply(tags)
 	}
-
-	availableTags := i.tagFilter.Apply(tags)
 
 	if !containsTag(availableTags, img.Tag) {
 		return fmt.Errorf("%w: %q", ErrTagUnavailable, img.Tag)
@@ -617,54 +618,6 @@ func (i *Images) RefreshAll(ctx context.Context) (int, error) {
 	}
 
 	return refreshed, errors.Join(refreshErrors...)
-}
-
-func (i *Images) InspectRepository(ctx context.Context, registryHost string, repository string) (taganalyzer.Analysis, error) {
-	registryHost = strings.TrimSpace(registryHost)
-	repository = strings.TrimSpace(repository)
-
-	if !validRegistry(registryHost) {
-		return taganalyzer.Analysis{}, fmt.Errorf("%w: registry must be a valid host", ErrInvalidImage)
-	}
-
-	if !repositoryNameRE.MatchString(repository) {
-		return taganalyzer.Analysis{}, fmt.Errorf("%w: repository must be a valid lowercase repository path", ErrInvalidImage)
-	}
-
-	registryInfo, err := i.store.GetRegistryInfoByHost(ctx, registryHost)
-
-	if err != nil {
-		return taganalyzer.Analysis{}, err
-	}
-
-	if registryInfo == nil {
-		return taganalyzer.Analysis{}, fmt.Errorf("%w: registry does not exist", ErrInvalidImage)
-	}
-
-	tags, err := i.tagLister.ListTags(ctx, registryHost, repository)
-
-	if err != nil {
-		var registryErr *oci.Error
-
-		if errors.As(err, &registryErr) {
-			switch registryErr.StatusCode {
-			case http.StatusNotFound:
-				return taganalyzer.Analysis{}, fmt.Errorf("%w: %s/%s", ErrUpstreamNotFound, registryHost, repository)
-
-			case http.StatusUnauthorized:
-				return taganalyzer.Analysis{}, fmt.Errorf("%w: %s/%s", ErrUpstreamUnauthorized, registryHost, repository)
-			}
-		}
-
-		return taganalyzer.Analysis{}, fmt.Errorf("%w: %v", ErrUpstreamUnavailable, err)
-	}
-
-	return taganalyzer.AnalyzeWithOptions(
-		i.tagFilter.Apply(tags),
-		taganalyzer.AnalysisOptions{
-			IncludeTokens: false,
-		},
-	), nil
 }
 
 func (i *Images) Resolve(ctx context.Context, name string) (*model.Image, error) {

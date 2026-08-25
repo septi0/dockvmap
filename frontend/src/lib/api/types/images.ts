@@ -44,10 +44,16 @@ export interface InspectRepositoryParams {
   repository: string
 }
 
-export interface InspectRepositoryResult {
-  registry: string
-  repository: string
-  tagGroups: TagGroup[]
+export type DiscoveryStatus = 'running' | 'completed' | 'failed'
+
+export interface DiscoveryResult {
+  id: number
+  status: DiscoveryStatus
+  tagGroups?: TagGroup[]
+  tagCount?: number
+  ignoredCount?: number
+  tagsSeen?: number
+  error?: string
 }
 
 export interface CreateImageParams {

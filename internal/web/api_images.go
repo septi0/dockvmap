@@ -79,12 +79,14 @@ func (w *Web) apiCreateImage(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	availableTags, _ := w.discoveries.CachedTags(r.Context(), req.RegistryID, req.Repository)
+
 	err := w.images.Create(r.Context(), model.Image{
 		Name:       req.Name,
 		RegistryID: req.RegistryID,
 		Repository: req.Repository,
 		Tag:        req.Tag,
-	})
+	}, availableTags)
 
 	if err != nil {
 		switch {
@@ -128,7 +130,7 @@ func (w *Web) apiInspectRepository(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	analysis, err := w.images.InspectRepository(r.Context(), request.Registry, request.Repository)
+	discovery, err := w.discoveries.Check(r.Context(), request.Registry, request.Repository)
 
 	if err != nil {
 		switch {
@@ -150,7 +152,36 @@ func (w *Web) apiInspectRepository(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiJSON(rw, http.StatusOK, newInspectRepositoryResponse(request.Registry, request.Repository, analysis))
+	apiJSON(rw, http.StatusOK, newDiscoveryResponse(discovery))
+}
+
+func (w *Web) apiGetDiscovery(rw http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+
+	if err != nil {
+		apiError(rw, http.StatusBadRequest, "discovery id must be a valid integer")
+
+		return
+	}
+
+	discovery, err := w.discoveries.Get(r.Context(), id)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidImage):
+			apiError(rw, http.StatusBadRequest, err.Error())
+
+		case errors.Is(err, service.ErrTagDiscoveryNotFound):
+			apiError(rw, http.StatusNotFound, "discovery not found")
+
+		default:
+			apiError(rw, http.StatusInternalServerError, "internal server error")
+		}
+
+		return
+	}
+
+	apiJSON(rw, http.StatusOK, newDiscoveryResponse(*discovery))
 }
 
 func (w *Web) apiDeleteImage(rw http.ResponseWriter, r *http.Request) {

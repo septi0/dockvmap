@@ -9,6 +9,7 @@
     autocomplete,
     placeholder,
     required = false,
+    disabled = false,
   }: {
     label: string;
     type?: string;
@@ -16,6 +17,7 @@
     autocomplete?: HTMLInputElement["autocomplete"];
     placeholder?: string;
     required?: boolean;
+    disabled?: boolean;
   } = $props();
 
   let revealed = $state(false);
@@ -33,6 +35,7 @@
       {autocomplete}
       {placeholder}
       {required}
+      {disabled}
     />
     {#if isPassword}
       <button
