@@ -4,6 +4,7 @@
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
+  import History from "@lucide/svelte/icons/history";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Copy from "@lucide/svelte/icons/copy";
   import Trash2 from "@lucide/svelte/icons/trash-2";
@@ -13,6 +14,7 @@
   import Field from "../lib/components/Field.svelte";
   import Button from "../lib/components/Button.svelte";
   import ChangeTagModal from "../lib/components/ChangeTagModal.svelte";
+  import TagHistoryModal from "../lib/components/TagHistoryModal.svelte";
   import RefreshTagsButton from "../lib/components/RefreshTagsButton.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import { getImage, deleteImage, renameImage } from "../lib/api/images";
@@ -28,11 +30,11 @@
 
   let image = $state<Image | null>(null);
   let pullInfo = $state<PullInfo | null>(null);
-  let pullHost = $state("");
   let loading = $state(true);
   let error = $state<string | null>(null);
 
   let showTagModal = $state(false);
+  let showHistoryModal = $state(false);
 
   let copyError = $state<string | null>(null);
 
@@ -56,7 +58,6 @@
       const [img, info] = await Promise.all([getImage(imageId), getPullInfo()]);
       image = img;
       pullInfo = info;
-      pullHost = info.host;
       renameValue = img.name;
     } catch (err) {
       error =
@@ -73,7 +74,7 @@
 
   const pullCommand = $derived(
     image && pullInfo
-      ? `docker pull ${pullHost || pullInfo.host}:${pullInfo.port}/${image.name}:${pullInfo.virtualTag}`
+      ? `docker pull ${pullInfo.host}:${pullInfo.port}/${image.name}:${pullInfo.virtualTag}`
       : "",
   );
 
@@ -85,6 +86,11 @@
 
   async function handleTagUpdated(tag: string) {
     toast.success(`Tag updated to "${tag}".`);
+    await refreshImageDetails();
+  }
+
+  async function handleTagRestored(tag: string) {
+    toast.success(`Restored tag to "${tag}".`);
     await refreshImageDetails();
   }
 
@@ -196,6 +202,14 @@
                   Change tag
                 </Button>
               {/if}
+              <Button
+                variant="secondary"
+                size="sm"
+                onclick={() => (showHistoryModal = true)}
+              >
+                <History size={14} strokeWidth={2} />
+                History
+              </Button>
             </span>
             {#if image.updateAvailable}
               <p class="warning-text">
@@ -235,10 +249,16 @@
           resolves to the version you choose above.
         </p>
 
-        <Field label="Host" bind:value={pullHost} />
         <p class="field-hint muted">
-          Defaults to the address you're using to reach this page — adjust it if
-          clients reach the registry through a different hostname.
+          {#if pullInfo?.hostConfigured}
+            Host pinned via the <code class="inline-code"
+              >proxy_public_host</code
+            > config option.
+          {:else}
+            Host based on the address used to reach this page. Set <code
+              class="inline-code">proxy_public_host</code
+            > in config if clients reach the registry through a different hostname.
+          {/if}
         </p>
 
         <div class="command-row">
@@ -306,6 +326,13 @@
     onClose={() => (showTagModal = false)}
     onTagUpdated={handleTagUpdated}
     onTagsRefreshed={refreshImageDetails}
+  />
+
+  <TagHistoryModal
+    open={showHistoryModal}
+    imageId={image.id}
+    onClose={() => (showHistoryModal = false)}
+    onRestored={handleTagRestored}
   />
 {/if}
 

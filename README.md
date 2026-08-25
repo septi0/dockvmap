@@ -16,13 +16,13 @@
 
 ## What it is
 
-DockVMap sits between your Docker clients and a real registry (Docker Hub, GHCR, a private registry — anything speaking the OCI Distribution API). You point clients at a **virtual tag**, e.g.:
+DockVMap sits between your Docker clients and a real registry (Docker Hub, GHCR, a private registry, or anything speaking the OCI Distribution API). You point clients at a **virtual tag**, e.g.:
 
 ```
 docker pull registry.internal:5000/myimage:current
 ```
 
-`current` isn't a real tag on the upstream registry — it's a pointer DockVMap maintains. Behind it, you track a real upstream tag (`myimage:1.4.2`, say) per image, and change what `current` resolves to whenever *you* decide to, from a web UI. Clients never change what they pull; you change what they get.
+`current` isn't a real tag on the upstream registry. It's a pointer DockVMap maintains. Behind it, you track a real upstream tag (`myimage:1.4.2`, say) per image, and change what `current` resolves to whenever *you* decide to, from a web UI. Clients never change what they pull; you change what they get.
 
 <p align="center">
   <img src="docs/screenshots/flow.png" width="800" alt="DockVMap request flow: client pulls a virtual tag, DockVMap resolves it via the configured mapping, fetches the real image from the upstream registry, and returns it to the client">
@@ -30,7 +30,7 @@ docker pull registry.internal:5000/myimage:current
 
 ### Why
 
-`:latest` moves under you with no warning and no audit trail. Hardcoding a specific version tag everywhere it's referenced means every rollout is a find-and-replace across configs. DockVMap adds one layer of indirection so you get a fixed, predictable reference for clients *and* full control over what it actually resolves to — plus a record of when it changed and to what.
+`:latest` moves under you with no warning and no audit trail. Hardcoding a specific version tag everywhere it's referenced means every rollout is a find-and-replace across configs. DockVMap adds one layer of indirection so you get a fixed, predictable reference for clients *and* full control over what it actually resolves to, plus a record of when it changed and to what.
 
 ## Screenshots
 
@@ -44,14 +44,14 @@ docker pull registry.internal:5000/myimage:current
 
 ## Features
 
-- **Virtual tag proxying** — OCI Distribution API proxy (`/v2/...`) that transparently resolves a stable tag to whatever real tag an image is currently pinned to.
-- **Tag family analysis** — inspects a repository's real tags, groups them into families, and tells you when a newer tag in the same family becomes available.
-- **Web UI** — Svelte SPA for managing registries, virtual images, and reviewing what changed and when.
-- **Notifications** — email (SMTP) and/or generic webhooks when a tracked image's tags change.
-- **Optional blob cache** — on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.
-- **Login rate limiting** — configurable per-IP lockout on the web UI's login, with a trusted-proxies-aware IP resolution so it works correctly behind a reverse proxy.
-- **Proxy authentication** — optional HTTP Basic Auth (via issued tokens) in front of the registry proxy itself.
-- **Audit log** — every state-changing action recorded, with resolved client IP and actor.
+- **Virtual tag proxying**: OCI Distribution API proxy (`/v2/...`) that transparently resolves a stable tag to whatever real tag an image is currently pinned to.
+- **Tag family analysis**: inspects a repository's real tags, groups them into families, and tells you when a newer tag in the same family becomes available.
+- **Web UI**: Svelte SPA for managing registries, virtual images, and reviewing what changed and when.
+- **Notifications**: email (SMTP) and/or generic webhooks when a tracked image's tags change.
+- **Optional blob cache**: on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.
+- **Login rate limiting**: configurable per-IP lockout on the web UI's login, with a trusted-proxies-aware IP resolution so it works correctly behind a reverse proxy.
+- **Proxy authentication**: optional HTTP Basic Auth (via issued tokens) in front of the registry proxy itself.
+- **Audit log**: every state-changing action recorded, with resolved client IP and actor.
 
 ## How it runs
 
@@ -84,13 +84,13 @@ Put the result in `credential_encryption_key` in your config, then run:
 ./bin/dockvmap -config data/config.yaml
 ```
 
-Open the web UI (`web_server_listen`, `:8080` by default) — the first visit walks you through creating the initial admin account. Point Docker clients at the proxy port (`proxy_server_listen`, `:5000` by default).
+Open the web UI (`web_server_listen`, `:8080` by default). The first visit walks you through creating the initial admin account. Point Docker clients at the proxy port (`proxy_server_listen`, `:5000` by default).
 
-> A plain `go build ./...` will fail on a fresh checkout — the web server embeds `frontend/dist` at compile time, and that directory isn't committed. `make build` (or `make build-frontend` once) handles it.
+> A plain `go build ./...` will fail on a fresh checkout: the web server embeds `frontend/dist` at compile time, and that directory isn't committed. `make build` (or `make build-frontend` once) handles it.
 
 ## Configuration
 
-Settings can come from a YAML file (`config.sample.yaml` is a documented starting point), from `DOCKVMAP_*` environment variables, or both — the config file is entirely optional. Precedence per setting is **env var > config file > built-in default**. Env var names mirror the YAML keys, uppercased with underscores, prefixed `DOCKVMAP_` (e.g. `web_server_listen` → `DOCKVMAP_WEB_SERVER_LISTEN`, `smtp.host` → `DOCKVMAP_SMTP_HOST`); comma-separate list values (`DOCKVMAP_TRUSTED_PROXIES=10.0.0.0/8,192.168.1.1`).
+Settings can come from a YAML file (`config.sample.yaml` is a documented starting point), from `DOCKVMAP_*` environment variables, or both (the config file is entirely optional). Precedence per setting is **env var > config file > built-in default**. Env var names mirror the YAML keys, uppercased with underscores, prefixed `DOCKVMAP_` (e.g. `web_server_listen` → `DOCKVMAP_WEB_SERVER_LISTEN`, `smtp.host` → `DOCKVMAP_SMTP_HOST`); comma-separate list values (`DOCKVMAP_TRUSTED_PROXIES=10.0.0.0/8,192.168.1.1`).
 
 Key options:
 
@@ -100,18 +100,20 @@ Key options:
 | `credential_encryption_key` | Base64, 32-byte AES-GCM key encrypting stored registry credentials. If left unset, DockVMap generates one and persists it at `<data_path>/credential_encryption.key` on first run |
 | `virtual_tag` | The tag name clients pull (`current` by default) |
 | `tags_check_interval` | How often DockVMap polls upstream registries for tag changes |
+| `tag_discovery_ttl` | How long a repository's discovered tag list (shown when adding a virtual image) is cached before a "Check repository" click refreshes it in the background |
 | `session_lifetime` | Web UI session duration |
-| `secure_cookies` | Set `true` once served over HTTPS — otherwise the session cookie is sent unencrypted. Defaults to `true` when `tls.enabled` is true, `false` otherwise |
+| `secure_cookies` | Set `true` once served over HTTPS; otherwise the session cookie is sent unencrypted. Defaults to `true` when `tls.enabled` is true, `false` otherwise |
 | `trusted_proxies` | CIDRs/IPs of reverse proxies you trust to report the real client IP |
 | `tls` | Serve both the proxy and web servers directly over HTTPS using `cert_file`/`key_file`. If enabled but either file path is blank, TLS is silently disabled at startup |
 | `login_rate_limit` | Failed-login lockout: attempts, window, IPs allowed to bypass it |
 | `blob_cache` | Optional on-disk cache for manifests/blobs |
 | `smtp` / `webhooks` | Notification channels for tag changes |
 | `proxy_auth` | Gate the registry proxy itself behind issued Basic Auth tokens |
+| `proxy_public_host` | Hostname clients use to reach the proxy, shown in the GUI's pull instructions; may include a port (`registry.example.com:5050`) to override `proxy_server_listen`'s port too, e.g. when the publicly reachable port differs from the internal bind port. If unset, the GUI guesses the host from the browser's request host, which can be wrong behind a reverse proxy |
 
 ## Tag filtering
 
-Tags fetched from upstream registries can be excluded from tracking/categorization before DockVMap groups them into families — useful for CI-generated tags (`commit-<sha>`, `pr-<n>`, etc.) that would otherwise pollute the tag list. This is separate from `config.yaml`: it's policy, not runtime configuration, and lives in its own YAML file.
+Tags fetched from upstream registries can be excluded from tracking/categorization before DockVMap groups them into families. This is useful for CI-generated tags (`commit-<sha>`, `pr-<n>`, etc.) that would otherwise pollute the tag list. This is separate from `config.yaml`: it's policy, not runtime configuration, and lives in its own YAML file.
 
 ```yaml
 tag_filters:
@@ -120,7 +122,7 @@ tag_filters:
     - "^pr-.*"
 ```
 
-Each entry is a regular expression matched against the raw tag name; any match excludes the tag. The built-in default (shown above) ships compiled into the binary (`internal/tagfilter/filters.yaml`) and is used whenever no filters file is found at the configured path — so filtering works out of the box with no setup. To customize it, write your own `filters.yaml` at the path given by `-filters` (`filters.yaml` by default, `/config/filters.yaml` in the Docker image) — your file's `exclude` list fully replaces the built-in one (it isn't merged), so include the defaults yourself if you want to keep them alongside your own patterns. An empty `exclude` list disables filtering entirely.
+Each entry is a regular expression matched against the raw tag name; any match excludes the tag. The built-in default (shown above) ships compiled into the binary (`internal/tagfilter/filters.yaml`) and is used whenever no filters file is found at the configured path, so filtering works out of the box with no setup. To customize it, write your own `filters.yaml` at the path given by `-filters` (`filters.yaml` by default, `/config/filters.yaml` in the Docker image). Your file's `exclude` list fully replaces the built-in one (it isn't merged), so include the defaults yourself if you want to keep them alongside your own patterns. An empty `exclude` list disables filtering entirely.
 
 ## CLI
 
@@ -144,4 +146,4 @@ make lint    # gofmt + go vet (+ golangci-lint if installed)
 
 ## License
 
-AGPL-3.0 — see [LICENSE](LICENSE). You're free to use, modify, and self-host this. If you run a modified version as a network service, you're required to make that modified source available to its users — that's the one condition of this license.
+AGPL-3.0 (see [LICENSE](LICENSE)). You're free to use, modify, and self-host this. If you run a modified version as a network service, you're required to make that modified source available to its users; that's the one condition of this license.

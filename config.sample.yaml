@@ -3,12 +3,13 @@ logs_path:
 credential_encryption_key: "" # leave blank to auto-generate and persist a key at <data_path>/credential_encryption.key
 virtual_tag: current
 tags_check_interval: 24h
-tag_discovery_ttl: 1h # how long a repository's discovered tag list is cached before "Check repository" refreshes it in the background
+tag_discovery_ttl: 1h # how long a repository's tag list is cached before it's refreshed
 session_lifetime: 168h
-# secure_cookies: defaults to true when tls.enabled is true, false otherwise; set explicitly to override
+# secure_cookies: true when tls.enabled is true, false otherwise
 web_server_listen: ":8080"
 proxy_server_listen: ":5000"
-trusted_proxies: [] # only trusted if your reverse proxy appends to X-Forwarded-For, not passes it through as-is
+# proxy_public_host: "" # hostname (optionally host:port) clients use to pull images; defaults to the web UI's address if unset
+trusted_proxies: [] # CIDRs/IPs of reverse proxies you trust for the real client IP (must append to X-Forwarded-For, not pass it through)
 tls:
   enabled: false
   cert_file: ""

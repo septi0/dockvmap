@@ -124,6 +124,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/images/{id}/tags", apiMethod(http.MethodGet, w.apiGetImageTags))
 
+	mux.HandleFunc("/images/{id}/tag-history", apiMethod(http.MethodGet, w.apiGetImageTagHistory))
+
 	mux.HandleFunc("/images/{id}/refresh-tags", apiMethod(http.MethodPost, w.apiRefreshImageTags))
 
 	mux.HandleFunc("/images/{id}/mark-seen", apiMethod(http.MethodPost, w.apiMarkImageTagsAsSeen))

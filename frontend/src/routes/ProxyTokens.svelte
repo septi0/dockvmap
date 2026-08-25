@@ -95,9 +95,9 @@
     <p class="warning-text">
       <TriangleAlert size={14} strokeWidth={2} />
       <span>
-        Proxy authentication is <strong>not enabled</strong> in config.yaml — these tokens exist but
-        nothing is being enforced yet; the proxy accepts pulls with no credential until this is
-        turned on.
+        Proxy authentication is <strong>not enabled</strong> in config.yaml. These
+        tokens exist but nothing is being enforced yet; the proxy accepts pulls
+        with no credential until this is turned on.
       </span>
     </p>
   {/if}

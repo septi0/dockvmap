@@ -8,6 +8,8 @@ import type {
   DiscoveryResult,
   CreateImageParams,
   ImageTagsResult,
+  TagHistoryResult,
+  TagHistorySource,
 } from './types/images'
 
 export const IMAGES_PAGE_SIZE = 25
@@ -36,8 +38,12 @@ export function getImageTags(id: number) {
   return api.get<ImageTagsResult>(`/images/${id}/tags`)
 }
 
-export function updateImageTag(id: number, tag: string) {
-  return api.put<{ status: string }>(`/images/${id}/tag`, { tag })
+export function updateImageTag(id: number, tag: string, source?: TagHistorySource) {
+  return api.put<{ status: string }>(`/images/${id}/tag`, { tag, source })
+}
+
+export function getTagHistory(id: number) {
+  return api.get<TagHistoryResult>(`/images/${id}/tag-history`)
 }
 
 export function renameImage(id: number, name: string) {

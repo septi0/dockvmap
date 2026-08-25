@@ -101,9 +101,6 @@ func (c *Client) ListTags(ctx context.Context, registry, repository string) ([]s
 	return c.listTags(ctx, registry, repository, nil)
 }
 
-// ListTagsWithProgress behaves exactly like ListTags, but additionally invokes onPage after
-// each page is fetched with the cumulative tag count so far - so a caller can surface live
-// progress for a long-running fetch without needing to wait for the whole thing to finish.
 func (c *Client) ListTagsWithProgress(ctx context.Context, registry, repository string, onPage func(tagsSoFar int)) ([]string, error) {
 	return c.listTags(ctx, registry, repository, onPage)
 }
@@ -190,8 +187,6 @@ func (c *Client) CheckRepository(ctx context.Context, registry, repository strin
 	return nil
 }
 
-// registryStatusError builds the Error dockvmap's callers switch on (e.g. NotFound/Unauthorized)
-// from a non-2xx registry response.
 func registryStatusError(response *http.Response) error {
 	return &Error{
 		StatusCode: response.StatusCode,
@@ -199,10 +194,7 @@ func registryStatusError(response *http.Response) error {
 	}
 }
 
-// drainAndClose reads any remaining response body before closing it, so the underlying
-// connection can be reused for keep-alive instead of forcing a fresh TCP/TLS handshake on the
-// next request to the same host - relevant here since CheckRepository and ListTags/
-// ListTagsWithProgress may all hit the same registry host again moments later.
+// drainAndClose drains the body before closing so the connection can be reused for keep-alive.
 func drainAndClose(response *http.Response) {
 	_, _ = io.Copy(io.Discard, response.Body)
 	_ = response.Body.Close()

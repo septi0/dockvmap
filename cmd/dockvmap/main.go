@@ -15,6 +15,7 @@ import (
 	"github.com/septi0/dockvmap/internal/service"
 	"github.com/septi0/dockvmap/internal/store"
 	"github.com/septi0/dockvmap/internal/tagfilter"
+	"github.com/septi0/dockvmap/internal/web"
 )
 
 var version = "dev"
@@ -148,7 +149,22 @@ func run() error {
 
 	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens, tlsConfig)
 
-	webSrv, err := newWebServer(cfg, images, discoveries, registries, events, audit, users, sessions, health, proxyTokens, metrics, failureLog, loginRateLimitWindow, version, tlsConfig)
+	webSrv, err := newWebServer(web.Dependencies{
+		Config:               cfg,
+		Images:               images,
+		Discoveries:          discoveries,
+		Registries:           registries,
+		Events:               events,
+		Audit:                audit,
+		Users:                users,
+		Sessions:             sessions,
+		Health:               health,
+		ProxyTokens:          proxyTokens,
+		ProxyMetrics:         metrics,
+		Failures:             failureLog,
+		LoginRateLimitWindow: loginRateLimitWindow,
+		Version:              version,
+	}, tlsConfig)
 
 	if err != nil {
 		return fmt.Errorf("failed to initialize web server: %w", err)

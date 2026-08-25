@@ -24,9 +24,10 @@ type imageService interface {
 	List(ctx context.Context, filters model.ImageListFilters) ([]model.Image, error)
 	Count(ctx context.Context, filters model.ImageListFilters) (int64, error)
 	RefreshAvailableTags(ctx context.Context, imageId int64, opts service.RefreshTagsOpts) error
-	UpdateTag(ctx context.Context, imageId int64, tag string) error
+	UpdateTag(ctx context.Context, imageId int64, tag string, source model.TagHistorySource) error
 	Rename(ctx context.Context, imageId int64, name string) error
 	MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, error)
+	GetTagHistory(ctx context.Context, imageId int64) ([]model.ImageTagHistory, error)
 }
 
 type discoveryService interface {
@@ -105,29 +106,46 @@ type Web struct {
 	version              string
 }
 
-func New(cfg *config.Config, images imageService, discoveries discoveryService, registries registryService, events eventService, audit auditService, users userService, sessions sessionService, health healthChecker, proxyTokens proxyTokenService, proxyMetrics proxyMetricsProvider, failures failureLister, loginRateLimitWindow time.Duration, version string) (http.Handler, error) {
-	trustedProxies, err := ipmatch.Parse(cfg.TrustedProxies)
+type Dependencies struct {
+	Config               *config.Config
+	Images               imageService
+	Discoveries          discoveryService
+	Registries           registryService
+	Events               eventService
+	Audit                auditService
+	Users                userService
+	Sessions             sessionService
+	Health               healthChecker
+	ProxyTokens          proxyTokenService
+	ProxyMetrics         proxyMetricsProvider
+	Failures             failureLister
+	LoginRateLimitWindow time.Duration
+	Version              string
+}
+
+func New(deps Dependencies) (http.Handler, error) {
+	trustedProxies, err := ipmatch.Parse(deps.Config.TrustedProxies)
 
 	if err != nil {
 		return nil, fmt.Errorf("parsing trusted_proxies: %w", err)
 	}
 
 	w := &Web{
-		images:               images,
-		discoveries:          discoveries,
-		registries:           registries,
-		events:               events,
-		audit:                audit,
-		users:                users,
-		sessions:             sessions,
-		health:               health,
-		proxyTokens:          proxyTokens,
-		proxyMetrics:         proxyMetrics,
-		failures:             failures,
-		cfg:                  cfg,
+		images:               deps.Images,
+		discoveries:          deps.Discoveries,
+		registries:           deps.Registries,
+		events:               deps.Events,
+		audit:                deps.Audit,
+		users:                deps.Users,
+		sessions:             deps.Sessions,
+		health:               deps.Health,
+		proxyTokens:          deps.ProxyTokens,
+		proxyMetrics:         deps.ProxyMetrics,
+		failures:             deps.Failures,
+		cfg:                  deps.Config,
 		trustedProxies:       trustedProxies,
-		version:              version,
-		loginRateLimitWindow: loginRateLimitWindow,
+		version:              deps.Version,
+		loginRateLimitWindow: deps.LoginRateLimitWindow,
 	}
 
 	mux := http.NewServeMux()

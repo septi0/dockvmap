@@ -332,7 +332,7 @@
                   <p class="discovery-subtitle">{discoverySubtitle}</p>
                   {#if showLeavePageHint}
                     <p class="discovery-hint">
-                      It's safe to leave this page — discovery keeps running in
+                      It's safe to leave this page: discovery keeps running in
                       the background.
                     </p>
                   {/if}

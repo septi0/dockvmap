@@ -274,7 +274,13 @@ func (w *Web) apiUpdateImageTag(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = w.images.UpdateTag(r.Context(), id, request.Tag)
+	source := model.TagHistorySourceManual
+
+	if request.Source == string(model.TagHistorySourceRestore) {
+		source = model.TagHistorySourceRestore
+	}
+
+	err = w.images.UpdateTag(r.Context(), id, request.Tag, source)
 
 	if err != nil {
 		switch {
@@ -400,6 +406,35 @@ func (w *Web) apiGetImageTags(rw http.ResponseWriter, r *http.Request) {
 	response := newImageTagsResponse(tags, image.Tag)
 
 	apiJSON(rw, http.StatusOK, response)
+}
+
+func (w *Web) apiGetImageTagHistory(rw http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+
+	if err != nil {
+		apiError(rw, http.StatusBadRequest, "image id must be a valid integer")
+
+		return
+	}
+
+	history, err := w.images.GetTagHistory(r.Context(), id)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrInvalidImage):
+			apiError(rw, http.StatusBadRequest, err.Error())
+
+		case errors.Is(err, service.ErrImageNotFound):
+			apiError(rw, http.StatusNotFound, "image not found")
+
+		default:
+			apiError(rw, http.StatusInternalServerError, "internal server error")
+		}
+
+		return
+	}
+
+	apiJSON(rw, http.StatusOK, newTagHistoryResponse(history))
 }
 
 func (w *Web) apiMarkImageTagsAsSeen(rw http.ResponseWriter, r *http.Request) {

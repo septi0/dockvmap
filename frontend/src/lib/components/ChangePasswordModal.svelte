@@ -57,7 +57,7 @@
 <Modal {open} {onClose} title="Change password">
   <p class="hint muted">
     Changing your password will sign you out of any other active sessions, on
-    this device or elsewhere — the one you're using right now stays signed in.
+    this device or elsewhere. The one you're using right now stays signed in.
   </p>
 
   <form onsubmit={handleSubmit}>
