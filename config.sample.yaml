@@ -3,6 +3,7 @@ logs_path:
 credential_encryption_key: "" # leave blank to auto-generate and persist a key at <data_path>/credential_encryption.key
 virtual_tag: current
 tags_check_interval: 24h
+tag_discovery_ttl: 1h # how long a repository's discovered tag list is cached before "Check repository" refreshes it in the background
 session_lifetime: 168h
 # secure_cookies: defaults to true when tls.enabled is true, false otherwise; set explicitly to override
 web_server_listen: ":8080"

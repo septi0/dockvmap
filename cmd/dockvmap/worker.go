@@ -14,8 +14,10 @@ import (
 const sessionCleanupInterval = time.Hour
 const tagNotificationInterval = 5 * time.Minute
 const blobOrphanScanInterval = 24 * time.Hour
+const tagDiscoveryCleanupInterval = 24 * time.Hour
+const tagDiscoveryRetention = 7 * 24 * time.Hour
 
-func startWorker(ctx context.Context, cfg *config.Config, images *service.Images, cache *blobcache.Cache, notifications *service.Notifications, sessions *service.Sessions) {
+func startWorker(ctx context.Context, cfg *config.Config, images *service.Images, discoveries *service.Discoveries, cache *blobcache.Cache, notifications *service.Notifications, sessions *service.Sessions) {
 	var wg sync.WaitGroup
 
 	slog.Info("starting session cleanup worker", "interval", sessionCleanupInterval)
@@ -25,6 +27,15 @@ func startWorker(ctx context.Context, cfg *config.Config, images *service.Images
 	go func() {
 		defer wg.Done()
 		runSessionCleanupWorker(ctx, sessionCleanupInterval, sessions)
+	}()
+
+	slog.Info("starting tag discovery cleanup worker", "interval", tagDiscoveryCleanupInterval)
+
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		runTagDiscoveryCleanupWorker(ctx, tagDiscoveryCleanupInterval, discoveries)
 	}()
 
 	if imageInterval, err := time.ParseDuration(cfg.TagsCheckInterval); err == nil && imageInterval > 0 {
@@ -125,6 +136,22 @@ func runTagNotificationWorker(ctx context.Context, interval time.Duration, notif
 
 		if sent > 0 {
 			slog.Info("sent tag notifications", "count", sent)
+		}
+
+		return nil
+	})
+}
+
+func runTagDiscoveryCleanupWorker(ctx context.Context, interval time.Duration, discoveries *service.Discoveries) {
+	runTickerLoop(ctx, interval, "tag discovery cleanup", func(ctx context.Context) error {
+		deleted, err := discoveries.CleanupOld(ctx, tagDiscoveryRetention)
+
+		if err != nil {
+			return err
+		}
+
+		if deleted > 0 {
+			slog.Info("removed old tag discoveries", "count", deleted)
 		}
 
 		return nil

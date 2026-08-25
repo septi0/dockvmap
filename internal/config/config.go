@@ -12,6 +12,7 @@ import (
 type Config struct {
 	VirtualTag              string               `yaml:"virtual_tag" env:"DOCKVMAP_VIRTUAL_TAG" default:"current"`
 	TagsCheckInterval       string               `yaml:"tags_check_interval" env:"DOCKVMAP_TAGS_CHECK_INTERVAL" default:"24h"`
+	TagDiscoveryTTL         string               `yaml:"tag_discovery_ttl" env:"DOCKVMAP_TAG_DISCOVERY_TTL" default:"1h"`
 	ProxyServerListen       string               `yaml:"proxy_server_listen" env:"DOCKVMAP_PROXY_SERVER_LISTEN" default:":5000"`
 	WebServerListen         string               `yaml:"web_server_listen" env:"DOCKVMAP_WEB_SERVER_LISTEN" default:":8080"`
 	DataPath                string               `yaml:"data_path" env:"DOCKVMAP_DATA_PATH" default:"./data"`
@@ -90,6 +91,10 @@ func (c *Config) validate() error {
 		return fmt.Errorf("invalid login_rate_limit.window %q: %w", c.LoginRateLimit.Window, err)
 	}
 
+	if d, err := time.ParseDuration(c.TagDiscoveryTTL); err != nil || d <= 0 {
+		return fmt.Errorf("invalid tag_discovery_ttl %q: %w", c.TagDiscoveryTTL, err)
+	}
+
 	if c.LoginRateLimit.MaxAttempts <= 0 {
 		return fmt.Errorf("invalid login_rate_limit.max_attempts %d: must be positive", c.LoginRateLimit.MaxAttempts)
 	}
@@ -104,6 +109,11 @@ func (c *Config) SessionLifetimeDuration() time.Duration {
 
 func (l LoginRateLimitConfig) WindowDuration() time.Duration {
 	d, _ := time.ParseDuration(l.Window)
+	return d
+}
+
+func (c *Config) TagDiscoveryTTLDuration() time.Duration {
+	d, _ := time.ParseDuration(c.TagDiscoveryTTL)
 	return d
 }
 

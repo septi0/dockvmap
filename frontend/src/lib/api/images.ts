@@ -5,7 +5,7 @@ import type {
   ImageListParams,
   ListImagesResponse,
   InspectRepositoryParams,
-  InspectRepositoryResult,
+  DiscoveryResult,
   CreateImageParams,
   ImageTagsResult,
 } from './types/images'
@@ -17,7 +17,11 @@ export function listImages(params: ImageListParams) {
 }
 
 export function inspectRepository(params: InspectRepositoryParams) {
-  return api.post<InspectRepositoryResult>('/images/inspect', params)
+  return api.post<DiscoveryResult>('/images/inspect', params)
+}
+
+export function getDiscovery(id: number) {
+  return api.get<DiscoveryResult>(`/discoveries/${id}`)
 }
 
 export function createImage(params: CreateImageParams) {

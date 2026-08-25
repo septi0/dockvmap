@@ -1,0 +1,38 @@
+package model
+
+import "time"
+
+type TagDiscoveryStatus string
+
+const (
+	TagDiscoveryRunning   TagDiscoveryStatus = "running"
+	TagDiscoveryCompleted TagDiscoveryStatus = "completed"
+	TagDiscoveryFailed    TagDiscoveryStatus = "failed"
+)
+
+type TagDiscoveryTag struct {
+	Tag        string `json:"tag"`
+	Prerelease bool   `json:"prerelease"`
+}
+
+type TagDiscoveryGroup struct {
+	FamilyID   int64             `json:"familyId"`
+	FamilyType string            `json:"familyType"`
+	Tags       []TagDiscoveryTag `json:"tags"`
+}
+
+type TagDiscovery struct {
+	ID          int64
+	RegistryID  int64
+	Repository  string
+	Status      TagDiscoveryStatus
+	TagGroups   []TagDiscoveryGroup
+	TagCount    int
+	RawTagCount int
+	Error       string
+	StartedAt   time.Time
+	CompletedAt *time.Time
+	// TagsSeen is a live, in-memory-only progress count while Status is running - it's never
+	// persisted, and comes back to 0 after a restart since it's purely informational.
+	TagsSeen int
+}

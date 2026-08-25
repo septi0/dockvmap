@@ -7,7 +7,6 @@ import (
 	"github.com/septi0/dockvmap/internal/model"
 	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
-	"github.com/septi0/dockvmap/internal/taganalyzer"
 )
 
 type createRegistryRequest struct {
@@ -114,42 +113,57 @@ type tagGroupResponse struct {
 	Tags       []tagResponse `json:"tags"`
 }
 
-type inspectRepositoryResponse struct {
-	Registry   string             `json:"registry"`
-	Repository string             `json:"repository"`
-	TagGroups  []tagGroupResponse `json:"tagGroups"`
+type discoveryResponse struct {
+	ID           int64              `json:"id"`
+	Status       string             `json:"status"`
+	TagGroups    []tagGroupResponse `json:"tagGroups,omitempty"`
+	TagCount     int                `json:"tagCount,omitempty"`
+	IgnoredCount int                `json:"ignoredCount,omitempty"`
+	TagsSeen     int                `json:"tagsSeen,omitempty"`
+	Error        string             `json:"error,omitempty"`
 }
 
-func newInspectRepositoryResponse(registry string, repository string, analysis taganalyzer.Analysis) inspectRepositoryResponse {
-	prerelease := make(map[string]bool, len(analysis.Tags))
-	for _, tag := range analysis.Tags {
-		prerelease[tag.Tag] = taganalyzer.IsPrerelease(tag)
+func newDiscoveryResponse(discovery model.TagDiscovery) discoveryResponse {
+	resp := discoveryResponse{
+		ID:     discovery.ID,
+		Status: string(discovery.Status),
+		Error:  discovery.Error,
 	}
 
-	tagGroups := make([]tagGroupResponse, 0, len(analysis.Ordered))
+	if discovery.Status == model.TagDiscoveryCompleted {
+		resp.TagGroups = tagGroupResponsesFromDiscoveryGroups(discovery.TagGroups)
+		resp.TagCount = discovery.TagCount
+		resp.IgnoredCount = discovery.RawTagCount - discovery.TagCount
+	}
 
-	for _, family := range analysis.Ordered {
-		tags := make([]tagResponse, 0, len(family.OrderedTags))
+	if discovery.Status == model.TagDiscoveryRunning {
+		resp.TagsSeen = discovery.TagsSeen
+	}
 
-		for _, tag := range family.OrderedTags {
+	return resp
+}
+
+func tagGroupResponsesFromDiscoveryGroups(groups []model.TagDiscoveryGroup) []tagGroupResponse {
+	responses := make([]tagGroupResponse, 0, len(groups))
+
+	for _, group := range groups {
+		tags := make([]tagResponse, 0, len(group.Tags))
+
+		for _, tag := range group.Tags {
 			tags = append(tags, tagResponse{
-				Tag:        tag,
-				Prerelease: prerelease[tag],
+				Tag:        tag.Tag,
+				Prerelease: tag.Prerelease,
 			})
 		}
 
-		tagGroups = append(tagGroups, tagGroupResponse{
-			FamilyType: string(family.Kind),
-			FamilyID:   int64(family.ID),
+		responses = append(responses, tagGroupResponse{
+			FamilyType: group.FamilyType,
+			FamilyID:   group.FamilyID,
 			Tags:       tags,
 		})
 	}
 
-	return inspectRepositoryResponse{
-		Registry:   registry,
-		Repository: repository,
-		TagGroups:  tagGroups,
-	}
+	return responses
 }
 
 type imageTagsResponse struct {

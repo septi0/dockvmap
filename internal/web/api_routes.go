@@ -107,6 +107,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/images/inspect", apiMethod(http.MethodPost, w.apiInspectRepository))
 
+	mux.HandleFunc("/discoveries/{id}", apiMethod(http.MethodGet, w.apiGetDiscovery))
+
 	mux.HandleFunc("/images/{id}", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
