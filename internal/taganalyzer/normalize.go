@@ -51,7 +51,7 @@ func NormalizeSegments(tokens []TokenClassification) []SegmentAnalysis {
 			}
 		}
 
-		if hasMatch(token.Matches, TokenVersion) {
+		if hasMatch(token.Matches, TokenVersion) && !looksLikeHash(raw) {
 			if version, ok := parseVersionStructure(raw); ok {
 				segments = append(segments, SegmentAnalysis{
 					Raw: raw, OrderType: OrderVersion, Prefix: version.Prefix,

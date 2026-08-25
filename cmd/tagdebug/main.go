@@ -30,6 +30,11 @@ func main() {
 
 	fmt.Printf("fetched %d tags from %s/%s\n\n", len(tags), *registry, *repository)
 
+	// list all tags raw
+	for _, tag := range tags {
+		fmt.Println(tag)
+	}
+
 	analysis := taganalyzer.AnalyzeWithOptions(tags, taganalyzer.AnalysisOptions{})
 
 	printFamilies(analysis)

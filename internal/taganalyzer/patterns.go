@@ -15,6 +15,8 @@ var (
 	)
 
 	timeRE = regexp.MustCompile(`^(?:[01][0-9]|2[0-3])[0-5][0-9][0-5][0-9]$`)
+
+	hashRE = regexp.MustCompile(`^[0-9a-f]{7,40}$`)
 )
 
 const dateLayout = "20060102"
@@ -85,4 +87,9 @@ func hasASCIIDigit(s string) bool {
 
 func startsWithASCIIAlpha(s string) bool {
 	return len(s) > 0 && isASCIIAlpha(s[0])
+}
+
+// looksLikeHash matches a truncated git hash or similar opaque build ID, not a version.
+func looksLikeHash(s string) bool {
+	return hashRE.MatchString(s)
 }

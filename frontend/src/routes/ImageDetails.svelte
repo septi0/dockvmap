@@ -175,7 +175,7 @@
           <h1>{image.name}</h1>
         </div>
         <p class="subtitle">
-          <strong>{image.registry}</strong> / {image.repository}
+          <strong>{image.registry}</strong>/{image.repository}
         </p>
       </div>
 
