@@ -109,10 +109,24 @@ Key options:
 | `smtp` / `webhooks` | Notification channels for tag changes |
 | `proxy_auth` | Gate the registry proxy itself behind issued Basic Auth tokens |
 
+## Tag filtering
+
+Tags fetched from upstream registries can be excluded from tracking/categorization before DockVMap groups them into families — useful for CI-generated tags (`commit-<sha>`, `pr-<n>`, etc.) that would otherwise pollute the tag list. This is separate from `config.yaml`: it's policy, not runtime configuration, and lives in its own YAML file.
+
+```yaml
+tag_filters:
+  exclude:
+    - "^commit-.*"
+    - "^pr-.*"
+```
+
+Each entry is a regular expression matched against the raw tag name; any match excludes the tag. The built-in default (shown above) ships compiled into the binary (`internal/tagfilter/filters.yaml`) and is used whenever no filters file is found at the configured path — so filtering works out of the box with no setup. To customize it, write your own `filters.yaml` at the path given by `-filters` (`filters.yaml` by default, `/config/filters.yaml` in the Docker image) — your file's `exclude` list fully replaces the built-in one (it isn't merged), so include the defaults yourself if you want to keep them alongside your own patterns. An empty `exclude` list disables filtering entirely.
+
 ## CLI
 
 ```
 dockvmap -config <path>              # path to config file (optional; default: config.yaml)
+dockvmap -filters <path>             # path to tag-filters file (optional; default: filters.yaml, falls back to the built-in default)
 dockvmap -reset-password <username>  # generate and print a new password, invalidate their sessions, exit
 dockvmap -refresh-tags               # refresh tags for all configured images from their upstream registries, exit
 dockvmap -version                    # print version and exit

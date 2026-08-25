@@ -1,5 +1,6 @@
 BINARY := bin/dockvmap
 CONFIG := config/config.yaml
+FILTERS := config/filters.yaml
 VERSION := $(shell git describe --tags --always 2>/dev/null || echo dev)
 
 .DEFAULT_GOAL := help
@@ -23,13 +24,13 @@ frontend-deps: ## npm install in frontend/ only
 	cd frontend && npm install
 
 run: build-backend ## Build then run the backend binary
-	./$(BINARY) -config $(CONFIG)
+	./$(BINARY) -config $(CONFIG) -filters $(FILTERS)
 
 dev: ## Run backend + frontend dev server together (Ctrl+C stops both)
 	$(MAKE) -j2 dev-backend dev-frontend
 
 dev-backend: frontend/dist
-	go run -ldflags "-X main.version=$(VERSION)" ./cmd/dockvmap -config $(CONFIG)
+	go run -ldflags "-X main.version=$(VERSION)" ./cmd/dockvmap -config $(CONFIG) -filters $(FILTERS)
 
 dev-frontend: frontend/node_modules
 	cd frontend && npm run dev
