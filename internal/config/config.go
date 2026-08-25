@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -16,8 +15,8 @@ type Config struct {
 	ProxyServerListen       string               `yaml:"proxy_server_listen" env:"DOCKVMAP_PROXY_SERVER_LISTEN" default:":5000"`
 	ProxyPublicHost         string               `yaml:"proxy_public_host" env:"DOCKVMAP_PROXY_PUBLIC_HOST"`
 	WebServerListen         string               `yaml:"web_server_listen" env:"DOCKVMAP_WEB_SERVER_LISTEN" default:":8080"`
-	DataPath                string               `yaml:"data_path" env:"DOCKVMAP_DATA_PATH" default:"./data"`
 	LogsPath                string               `yaml:"logs_path" env:"DOCKVMAP_LOGS_PATH"`
+	TagFiltersPath          string               `yaml:"tag_filters_path" env:"DOCKVMAP_TAG_FILTERS_PATH"`
 	CredentialEncryptionKey string               `yaml:"credential_encryption_key" env:"DOCKVMAP_CREDENTIAL_ENCRYPTION_KEY"`
 	SessionLifetime         string               `yaml:"session_lifetime" env:"DOCKVMAP_SESSION_LIFETIME" default:"168h"`
 	SecureCookies           *bool                `yaml:"secure_cookies" env:"DOCKVMAP_SECURE_COOKIES"`
@@ -32,7 +31,6 @@ type Config struct {
 
 type BlobCacheConfig struct {
 	Enabled         *bool  `yaml:"enabled" env:"DOCKVMAP_BLOB_CACHE_ENABLED" default:"true"`
-	Path            string `yaml:"path" env:"DOCKVMAP_BLOB_CACHE_PATH"`
 	Lifetime        string `yaml:"lifetime" env:"DOCKVMAP_BLOB_CACHE_LIFETIME" default:"24h"`
 	CleanupInterval string `yaml:"cleanup_interval" env:"DOCKVMAP_BLOB_CACHE_CLEANUP_INTERVAL" default:"1h"`
 }
@@ -77,10 +75,6 @@ func (c *Config) applyDerivedDefaults() {
 		secure := c.TLS.Enabled
 		c.SecureCookies = &secure
 	}
-
-	if c.BlobCache.Path == "" {
-		c.BlobCache.Path = filepath.Join(c.DataPath, "cache")
-	}
 }
 
 func (c *Config) validate() error {
@@ -121,12 +115,16 @@ func (c *Config) TagDiscoveryTTLDuration() time.Duration {
 func Load(path string) (*Config, error) {
 	var cfg Config
 
-	if data, err := os.ReadFile(path); err == nil {
+	if path != "" {
+		data, err := os.ReadFile(path)
+
+		if err != nil {
+			return nil, fmt.Errorf("reading config: %w", err)
+		}
+
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
 			return nil, fmt.Errorf("parsing config: %w", err)
 		}
-	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("reading config: %w", err)
 	}
 
 	if err := applyEnvOverrides(&cfg); err != nil {

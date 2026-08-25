@@ -19,12 +19,12 @@ import (
 
 const credentialEncryptionKeyFile = "credential_encryption.key"
 
-func resolveCredentialEncryptionKey(cfg *config.Config) (string, error) {
+func resolveCredentialEncryptionKey(cfg *config.Config, dataPath string) (string, error) {
 	if cfg.CredentialEncryptionKey != "" {
 		return cfg.CredentialEncryptionKey, nil
 	}
 
-	keyPath := filepath.Join(cfg.DataPath, credentialEncryptionKeyFile)
+	keyPath := filepath.Join(dataPath, credentialEncryptionKeyFile)
 
 	data, err := os.ReadFile(keyPath)
 
@@ -53,18 +53,20 @@ func resolveCredentialEncryptionKey(cfg *config.Config) (string, error) {
 	return encoded, nil
 }
 
-func initBlobCache(cfg *config.Config, db *store.Store) (*blobcache.Cache, error) {
+func initBlobCache(cfg *config.Config, dataPath string, db *store.Store) (*blobcache.Cache, error) {
 	if !*cfg.BlobCache.Enabled {
 		return nil, nil
 	}
 
-	cache, err := blobcache.New(cfg.BlobCache.Path, cfg.BlobCache.Lifetime, db)
+	cachePath := filepath.Join(dataPath, "cache")
+
+	cache, err := blobcache.New(cachePath, cfg.BlobCache.Lifetime, db)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize blob cache: %w", err)
 	}
 
-	slog.Info("blob cache enabled", "path", cfg.BlobCache.Path, "lifetime", cache.Lifetime())
+	slog.Info("blob cache enabled", "path", cachePath, "lifetime", cache.Lifetime())
 
 	return cache, nil
 }

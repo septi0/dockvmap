@@ -25,11 +25,10 @@ RUN make build
 FROM alpine:3.20 AS runtime
 
 ARG DATA_DIR=/data
-ARG CONFIG_DIR=/config
 ARG UID=1000
 ARG GID=1000
 
-RUN apk add --no-cache ca-certificates tini
+RUN apk add --no-cache ca-certificates tini su-exec
 
 RUN addgroup -g ${GID} dockvmap && \
     adduser -D -H -u ${UID} -G dockvmap -h ${DATA_DIR} dockvmap
@@ -38,15 +37,11 @@ COPY --from=builder /src/bin/dockvmap /usr/local/bin/dockvmap
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-RUN mkdir -p ${DATA_DIR} ${CONFIG_DIR} && chown -R dockvmap:dockvmap ${DATA_DIR} ${CONFIG_DIR}
-
-# USER dockvmap
+RUN mkdir -p ${DATA_DIR} && chown -R dockvmap:dockvmap ${DATA_DIR}
 
 WORKDIR ${DATA_DIR}
 
-ENV DOCKVMAP_DATA_PATH=${DATA_DIR}
-
-VOLUME ["${DATA_DIR}", "${CONFIG_DIR}"]
+VOLUME ["${DATA_DIR}"]
 
 EXPOSE 8080 5000
 

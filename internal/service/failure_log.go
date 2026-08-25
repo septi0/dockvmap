@@ -8,9 +8,11 @@ import (
 type FailureSource string
 
 const (
-	FailureSourceWebhook FailureSource = "webhook"
-	FailureSourceEmail   FailureSource = "email"
-	FailureSourceRefresh FailureSource = "refresh"
+	FailureSourceWebhook           FailureSource = "webhook"
+	FailureSourceEmail             FailureSource = "email"
+	FailureSourceRefresh           FailureSource = "refresh"
+	FailureSourceDiscoveryRefresh  FailureSource = "discovery_refresh"
+	FailureSourceEventRegistration FailureSource = "event_registration"
 )
 
 type Failure struct {

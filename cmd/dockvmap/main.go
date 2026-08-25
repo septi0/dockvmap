@@ -28,8 +28,8 @@ func main() {
 }
 
 func run() error {
-	configPath := flag.String("config", "config.yaml", "path to configuration file (optional; falls back to DOCKVMAP_* env vars and defaults if not found)")
-	filtersPath := flag.String("filters", "filters.yaml", "path to tag-filters file (optional; falls back to the built-in default if not found)")
+	configPath := flag.String("config", "", "path to configuration file (optional; falls back to DOCKVMAP_* env vars and defaults if unset, but a specified path that doesn't exist is a startup error)")
+	dataPath := flag.String("data-path", "./data", "path to the data directory (SQLite database, blob cache, credential encryption key)")
 	resetPassword := flag.String("reset-password", "", "generate a new random password for the given username, print it, and exit")
 	refreshTags := flag.Bool("refresh-tags", false, "refresh tags for all configured images from their upstream registries, then exit")
 	showVersion := flag.Bool("version", false, "print the version and exit")
@@ -46,7 +46,7 @@ func run() error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
-	tagFilter, err := tagfilter.Load(*filtersPath)
+	tagFilter, err := tagfilter.Load(cfg.TagFiltersPath)
 
 	if err != nil {
 		return fmt.Errorf("failed to load tag filters: %w", err)
@@ -64,17 +64,17 @@ func run() error {
 
 	slog.Info("starting dockvmap", "version", version)
 
-	if err := os.MkdirAll(cfg.DataPath, 0o755); err != nil {
+	if err := os.MkdirAll(*dataPath, 0o755); err != nil {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	credentialEncryptionKey, err := resolveCredentialEncryptionKey(cfg)
+	credentialEncryptionKey, err := resolveCredentialEncryptionKey(cfg, *dataPath)
 
 	if err != nil {
 		return fmt.Errorf("failed to resolve credential encryption key: %w", err)
 	}
 
-	db, err := store.New(filepath.Join(cfg.DataPath, "dockvmap.db"), credentialEncryptionKey)
+	db, err := store.New(filepath.Join(*dataPath, "dockvmap.db"), credentialEncryptionKey)
 
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
@@ -117,7 +117,7 @@ func run() error {
 
 	defer workerCancel()
 
-	discoveries := service.NewDiscoveries(db, db, ociClient, ociClient, tagFilter, workerCtx, cfg.TagDiscoveryTTLDuration())
+	discoveries := service.NewDiscoveries(db, db, ociClient, ociClient, tagFilter, failureLog, workerCtx, cfg.TagDiscoveryTTLDuration())
 
 	if err := discoveries.RecoverFromRestart(context.Background()); err != nil {
 		return fmt.Errorf("failed to recover tag discoveries: %w", err)
@@ -127,7 +127,7 @@ func run() error {
 	proxyTokens := service.NewProxyTokens(db, audit)
 	metrics := proxy.NewMetrics()
 
-	cache, err := initBlobCache(cfg, db)
+	cache, err := initBlobCache(cfg, *dataPath, db)
 
 	if err != nil {
 		return err

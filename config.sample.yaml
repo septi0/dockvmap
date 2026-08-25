@@ -1,6 +1,6 @@
-data_path: ./data
 logs_path:
-credential_encryption_key: "" # leave blank to auto-generate and persist a key at <data_path>/credential_encryption.key
+tag_filters_path: # leave blank to use the built-in default filters
+credential_encryption_key: "" # leave blank to auto-generate and persist a key at <data-path>/credential_encryption.key
 virtual_tag: current
 tags_check_interval: 24h
 tag_discovery_ttl: 1h # how long a repository's tag list is cached before it's refreshed
@@ -21,7 +21,6 @@ login_rate_limit:
   bypass_ips: []
 blob_cache:
   enabled: true
-  path: "" # defaults to <data_path>/cache; set explicitly to store the cache elsewhere
   lifetime: 24h
   cleanup_interval: 1h
 smtp:
