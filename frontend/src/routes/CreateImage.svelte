@@ -363,7 +363,7 @@
         {:else}
           <p class="recap">
             <span class="recap-text">
-              <strong>{selectedRegistry?.registry}</strong> / {repository}
+              <strong>{selectedRegistry?.registry}</strong>/{repository}
             </span>
             <button type="button" class="link" onclick={backToSource}
               >Edit</button

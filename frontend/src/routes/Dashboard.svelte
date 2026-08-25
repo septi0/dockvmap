@@ -174,7 +174,7 @@
                 <span class="item-main">
                   <span class="item-title">{image.name}</span>
                   <span class="item-sub muted"
-                    >{image.registry} / {image.repository}</span
+                    >{image.registry}/{image.repository}</span
                   >
                   {#if image.updateAvailableTag}
                     <span class="item-sub muted"

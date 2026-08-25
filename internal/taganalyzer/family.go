@@ -9,10 +9,11 @@ import (
 
 func analyzeFamilies(tags []TagAnalysis) []Family {
 	knownMajors := collectKnownMajors(tags)
+	hashLengths := collectHashLengths(tags)
 
 	identities := make(map[string][]string, len(tags))
 	for _, tag := range tags {
-		identities[tag.Tag] = segmentIdentities(tag.Segments, knownMajors)
+		identities[tag.Tag] = segmentIdentities(tag.Segments, knownMajors, hashLengths)
 	}
 
 	bloodGroups := map[string][]TagAnalysis{}
@@ -63,7 +64,7 @@ func analyzeFamilies(tags []TagAnalysis) []Family {
 	for _, index := range remaining {
 		stepSingletons = append(stepSingletons, singletons[index])
 	}
-	stepFamilies, _ := buildStepFamilies(stepSingletons, nextID, knownMajors)
+	stepFamilies, _ := buildStepFamilies(stepSingletons, nextID, knownMajors, hashLengths)
 	families = append(families, stepFamilies...)
 
 	return families
@@ -91,12 +92,74 @@ func majorKey(prefix string, major int64) string {
 	return prefix + "\x00" + strconv.FormatInt(major, 10)
 }
 
+const (
+	hashMinSamples    = 5
+	hashMinUniqueRate = 0.9
+)
+
+type hashSlot struct {
+	Index  int
+	Length int
+}
+
+func collectHashLengths(tags []TagAnalysis) map[hashSlot]bool {
+	// slot -> hash value -> distinct leading-segment (release) contexts it appears under
+	contexts := map[hashSlot]map[string]map[string]bool{}
+	for _, tag := range tags {
+		if len(tag.Segments) == 0 {
+			continue
+		}
+		leadingRaw := tag.Segments[0].Raw
+		for i, segment := range tag.Segments {
+			if segment.IsVariable || !looksLikeHash(segment.Raw) {
+				continue
+			}
+			slot := hashSlot{Index: i, Length: len(segment.Raw)}
+			if contexts[slot] == nil {
+				contexts[slot] = map[string]map[string]bool{}
+			}
+			if contexts[slot][segment.Raw] == nil {
+				contexts[slot][segment.Raw] = map[string]bool{}
+			}
+			contexts[slot][segment.Raw][leadingRaw] = true
+		}
+	}
+
+	dynamic := make(map[hashSlot]bool, len(contexts))
+	for slot, values := range contexts {
+		total, unique := 0, 0
+		for _, ctxSet := range values {
+			n := len(ctxSet)
+			total += n
+			if n == 1 {
+				unique++
+			}
+		}
+		if total >= hashMinSamples && float64(unique)/float64(total) >= hashMinUniqueRate {
+			dynamic[slot] = true
+		}
+	}
+	return dynamic
+}
+
+// hashSegmentIdentity returns a shape-only identity for a confirmed-hash-slot segment.
+func hashSegmentIdentity(segment SegmentAnalysis, index int, hashLengths map[hashSlot]bool) (string, bool) {
+	if segment.IsVariable || !looksLikeHash(segment.Raw) {
+		return "", false
+	}
+	slot := hashSlot{Index: index, Length: len(segment.Raw)}
+	if !hashLengths[slot] {
+		return "", false
+	}
+	return fmt.Sprintf("HASH:len=%d", slot.Length), true
+}
+
 type stepPrefixKeys struct {
 	ids   [][]int
 	texts []string // Indexed by the corresponding interned prefix ID.
 }
 
-func buildStepFamilies(singletons []TagAnalysis, nextID int, knownMajors map[string]bool) ([]Family, []TagAnalysis) {
+func buildStepFamilies(singletons []TagAnalysis, nextID int, knownMajors map[string]bool, hashLengths map[hashSlot]bool) ([]Family, []TagAnalysis) {
 	if len(singletons) == 0 {
 		return nil, nil
 	}
@@ -104,7 +167,7 @@ func buildStepFamilies(singletons []TagAnalysis, nextID int, knownMajors map[str
 		tag := singletons[0]
 		return []Family{{
 			ID:        nextID,
-			Key:       "singleton:" + segmentPrefixKey(tag.Segments, knownMajors),
+			Key:       "singleton:" + segmentPrefixKey(tag.Segments, knownMajors, hashLengths),
 			TagCount:  1,
 			Tags:      []string{tag.Tag},
 			Kind:      FamilyStep,
@@ -112,7 +175,7 @@ func buildStepFamilies(singletons []TagAnalysis, nextID int, knownMajors map[str
 		}}, nil
 	}
 
-	prefixKeys := precomputeStepPrefixKeys(singletons, knownMajors)
+	prefixKeys := precomputeStepPrefixKeys(singletons, knownMajors, hashLengths)
 	remaining := make([]int, len(singletons))
 	for i := range remaining {
 		remaining[i] = i
@@ -394,7 +457,10 @@ func looksLikeCalVer(segment SegmentAnalysis) bool {
 	return year >= 2000 && year <= 2099 && month >= 1 && month <= 12
 }
 
-func segmentIdentity(segment SegmentAnalysis, isLeading bool, knownMajors map[string]bool) string {
+func segmentIdentity(segment SegmentAnalysis, index int, isLeading bool, knownMajors map[string]bool, hashLengths map[hashSlot]bool) string {
+	if id, ok := hashSegmentIdentity(segment, index, hashLengths); ok {
+		return id
+	}
 	if !segment.IsVariable {
 		return "S:" + segment.Raw
 	}
@@ -411,26 +477,26 @@ func segmentIdentity(segment SegmentAnalysis, isLeading bool, knownMajors map[st
 	}
 }
 
-func segmentIdentities(segments []SegmentAnalysis, knownMajors map[string]bool) []string {
+func segmentIdentities(segments []SegmentAnalysis, knownMajors map[string]bool, hashLengths map[hashSlot]bool) []string {
 	ids := make([]string, len(segments))
 	for i, segment := range segments {
-		ids[i] = segmentIdentity(segment, i == 0, knownMajors)
+		ids[i] = segmentIdentity(segment, i, i == 0, knownMajors, hashLengths)
 	}
 	return ids
 }
 
-func segmentPrefixKey(segments []SegmentAnalysis, knownMajors map[string]bool) string {
-	return strings.Join(segmentIdentities(segments, knownMajors), "|")
+func segmentPrefixKey(segments []SegmentAnalysis, knownMajors map[string]bool, hashLengths map[hashSlot]bool) string {
+	return strings.Join(segmentIdentities(segments, knownMajors, hashLengths), "|")
 }
 
-func precomputeStepPrefixKeys(tags []TagAnalysis, knownMajors map[string]bool) stepPrefixKeys {
+func precomputeStepPrefixKeys(tags []TagAnalysis, knownMajors map[string]bool, hashLengths map[hashSlot]bool) stepPrefixKeys {
 	result := stepPrefixKeys{ids: make([][]int, len(tags)), texts: []string{""}}
 	interned := make(map[string]int)
 	for tagIndex, tag := range tags {
 		parts := make([]string, len(tag.Segments))
 		keys := make([]int, len(tag.Segments)+1)
 		for i, segment := range tag.Segments {
-			parts[i] = stepSegmentKey(segment, i == 0, knownMajors)
+			parts[i] = stepSegmentKey(segment, i, i == 0, knownMajors, hashLengths)
 			text := fmt.Sprintf("prefix=%d:%s", i+1, strings.Join(parts[:i+1], "|"))
 			id, ok := interned[text]
 			if !ok {
@@ -445,7 +511,10 @@ func precomputeStepPrefixKeys(tags []TagAnalysis, knownMajors map[string]bool) s
 	return result
 }
 
-func stepSegmentKey(segment SegmentAnalysis, isLeading bool, knownMajors map[string]bool) string {
+func stepSegmentKey(segment SegmentAnalysis, index int, isLeading bool, knownMajors map[string]bool, hashLengths map[hashSlot]bool) string {
+	if id, ok := hashSegmentIdentity(segment, index, hashLengths); ok {
+		return id
+	}
 	if !segment.IsVariable {
 		return "S:" + segment.Raw
 	}
