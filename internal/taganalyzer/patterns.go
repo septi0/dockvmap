@@ -89,7 +89,6 @@ func startsWithASCIIAlpha(s string) bool {
 	return len(s) > 0 && isASCIIAlpha(s[0])
 }
 
-// looksLikeHash matches a truncated git hash or similar opaque build ID, not a version.
 func looksLikeHash(s string) bool {
 	return hashRE.MatchString(s)
 }

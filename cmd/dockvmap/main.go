@@ -19,6 +19,7 @@ import (
 )
 
 var version = "dev"
+var defaultDataPath = "./data" // overridden via -ldflags at Docker build time to match the image's data dir
 
 func main() {
 	if err := run(); err != nil {
@@ -29,7 +30,7 @@ func main() {
 
 func run() error {
 	configPath := flag.String("config", "", "path to configuration file (optional; falls back to DOCKVMAP_* env vars and defaults if unset, but a specified path that doesn't exist is a startup error)")
-	dataPath := flag.String("data-path", "./data", "path to the data directory (SQLite database, blob cache, credential encryption key)")
+	dataPath := flag.String("data-path", defaultDataPath, "path to the data directory (SQLite database, blob cache, credential encryption key)")
 	resetPassword := flag.String("reset-password", "", "generate a new random password for the given username, print it, and exit")
 	refreshTags := flag.Bool("refresh-tags", false, "refresh tags for all configured images from their upstream registries, then exit")
 	showVersion := flag.Bool("version", false, "print the version and exit")

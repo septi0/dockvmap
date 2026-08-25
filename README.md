@@ -131,7 +131,7 @@ Each entry is a regular expression matched against the raw tag name; any match e
 
 ```
 dockvmap -config <path>              # path to config file (optional; falls back to DOCKVMAP_* env vars and defaults if unset)
-dockvmap -data-path <path>           # path to the data directory: SQLite database, blob cache, credential key (optional; default: ./data)
+dockvmap -data-path <path>           # path to the data directory: SQLite database, blob cache, credential key (optional)
 dockvmap -reset-password <username>  # generate and print a new password, invalidate their sessions, exit
 dockvmap -refresh-tags               # refresh tags for all configured images from their upstream registries, exit
 dockvmap -version                    # print version and exit
