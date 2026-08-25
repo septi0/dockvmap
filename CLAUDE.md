@@ -4,7 +4,7 @@ dockvmap ("Docker Virtual Mapper") is a Docker/OCI registry proxy: clients pull 
 
 ## Commands
 
-`make help` lists all targets. Common ones: `make build` (frontend + backend, → `bin/dockvmap`), `make dev` (backend `go run` + frontend Vite dev server together, Ctrl+C stops both), `make run` (build then run the binary), `make test`, `make vet`, `make lint` (gofmt check + vet, + golangci-lint if installed), `make check` (frontend svelte-check + tsc). No CI config — the Makefile is the whole toolchain.
+`make help` lists all targets. Common ones: `make build` (frontend + backend, → `bin/dockvmap`), `make dev` (backend `go run` + frontend Vite dev server together, Ctrl+C stops both), `make test`, `make vet`, `make lint` (gofmt check + vet, + golangci-lint if installed), `make check` (frontend svelte-check + tsc). No CI config — the Makefile is the whole toolchain. To run the built binary directly (not via `go run`), just invoke it: `./bin/dockvmap -config data/config.yaml`.
 
 Raw equivalents still work: `go build ./...`, `go vet ./...`, `go test ./...` (no test files currently exist), `go run ./cmd/dockvmap -config data/config.yaml` (`-config` has no default filename — omit it entirely and the app runs on `DOCKVMAP_*` env vars/built-in defaults only). Frontend commands run from `frontend/`: `npm run dev`, `npm run check`, `npm run build` (→ `frontend/dist`, embedded via `embed.go`).
 

@@ -5,8 +5,8 @@ if [ "$(id -u)" = "0" ]; then
     # fix ownership if docker auto-created the bind mount as root
     dockvmap_uid="$(id -u dockvmap)"
 
-    if [ "$(stat -c '%u' "$PWD")" != "$dockvmap_uid" ]; then
-        chown -R dockvmap:dockvmap "$PWD"
+    if [ "$(stat -c '%u' "$ENTRYPOINT_DATA_DIR")" != "$dockvmap_uid" ]; then
+        chown -R dockvmap:dockvmap "$ENTRYPOINT_DATA_DIR"
     fi
 
     # copy TLS cert/key somewhere dockvmap can read, if it can't read the original
@@ -37,8 +37,8 @@ if [ "$(id -u)" = "0" ]; then
     fi
 
     # drop to dockvmap for the actual process
-    exec su-exec dockvmap dockvmap -data-path "$PWD" "$@"
+    exec su-exec dockvmap dockvmap "$@"
 fi
 
 # already non-root (e.g. --user override) - nothing above applies
-exec dockvmap -data-path "$PWD" "$@"
+exec dockvmap "$@"

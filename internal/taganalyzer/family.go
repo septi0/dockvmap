@@ -103,7 +103,6 @@ type hashSlot struct {
 }
 
 func collectHashLengths(tags []TagAnalysis) map[hashSlot]bool {
-	// slot -> hash value -> distinct leading-segment (release) contexts it appears under
 	contexts := map[hashSlot]map[string]map[string]bool{}
 	for _, tag := range tags {
 		if len(tag.Segments) == 0 {
@@ -142,7 +141,6 @@ func collectHashLengths(tags []TagAnalysis) map[hashSlot]bool {
 	return dynamic
 }
 
-// hashSegmentIdentity returns a shape-only identity for a confirmed-hash-slot segment.
 func hashSegmentIdentity(segment SegmentAnalysis, index int, hashLengths map[hashSlot]bool) (string, bool) {
 	if segment.IsVariable || !looksLikeHash(segment.Raw) {
 		return "", false

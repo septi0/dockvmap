@@ -1,14 +1,14 @@
 BINARY := bin/dockvmap
-CONFIG := config/config.yaml
 VERSION := $(shell git describe --tags --always 2>/dev/null || echo dev)
+DEFAULT_DATA_PATH := ./data
 
 .DEFAULT_GOAL := help
-.PHONY: build build-backend build-frontend frontend-deps run dev dev-backend dev-frontend test vet fmt lint check clean help
+.PHONY: build build-backend build-frontend frontend-deps dev dev-backend dev-frontend test vet fmt lint check clean help
 
 build: build-frontend build-backend ## Build frontend + backend (bin/dockvmap)
 
 build-backend: frontend/dist ## Build the Go binary only
-	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) ./cmd/dockvmap
+	go build -ldflags "-X main.version=$(VERSION) -X main.defaultDataPath=$(DEFAULT_DATA_PATH)" -o $(BINARY) ./cmd/dockvmap
 
 build-frontend: ## npm install + build frontend/dist
 	cd frontend && npm install && npm run build
@@ -22,14 +22,15 @@ frontend/node_modules: frontend/package.json frontend/package-lock.json
 frontend-deps: ## npm install in frontend/ only
 	cd frontend && npm install
 
-run: build-backend ## Build then run the backend binary
-	./$(BINARY) -config $(CONFIG)
-
 dev: ## Run backend + frontend dev server together (Ctrl+C stops both)
 	$(MAKE) -j2 dev-backend dev-frontend
 
-dev-backend: frontend/dist
-	go run -ldflags "-X main.version=$(VERSION)" ./cmd/dockvmap -config $(CONFIG)
+dev-backend: frontend/dist config/config.yaml
+	go run -ldflags "-X main.version=$(VERSION)" ./cmd/dockvmap -config config/config.yaml
+
+config/config.yaml:
+	mkdir -p config
+	cp config.sample.yaml config/config.yaml
 
 dev-frontend: frontend/node_modules
 	cd frontend && npm run dev
