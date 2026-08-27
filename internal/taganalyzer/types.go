@@ -1,14 +1,14 @@
 package taganalyzer
 
-type TokenType string
+type tokenType string
 
 const (
-	TokenVersion  TokenType = "version"
-	TokenDate     TokenType = "date"
-	TokenDateTime TokenType = "datetime"
-	TokenTime     TokenType = "time"
-	TokenInteger  TokenType = "integer"
-	TokenString   TokenType = "string"
+	tokenVersionType  tokenType = "version"
+	tokenDateType     tokenType = "date"
+	tokenDateTimeType tokenType = "datetime"
+	tokenTimeType     tokenType = "time"
+	tokenIntegerType  tokenType = "integer"
+	tokenStringType   tokenType = "string"
 )
 
 type OrderType string
@@ -22,14 +22,14 @@ const (
 	OrderUnknown      OrderType = "unknown"
 )
 
-type Token struct {
+type rawToken struct {
 	Value     string
 	Separator string // Separators immediately preceding this token.
 }
 
-type TokenClassification struct {
-	Token   Token
-	Matches []TokenType
+type tokenClassification struct {
+	Token   rawToken
+	Matches []tokenType
 }
 
 type PrereleaseIdentifier struct {
@@ -39,8 +39,6 @@ type PrereleaseIdentifier struct {
 }
 
 type Prerelease struct {
-	Type        string
-	Number      *int64
 	Identifiers []PrereleaseIdentifier
 }
 
@@ -64,7 +62,6 @@ type SegmentAnalysis struct {
 
 type TagAnalysis struct {
 	Tag      string
-	Tokens   []TokenClassification
 	Segments []SegmentAnalysis
 }
 
@@ -77,12 +74,12 @@ const (
 )
 
 type Family struct {
-	ID        int
-	Key       string
-	TagCount  int
-	Tags      []string
-	Kind      FamilyKind
-	StepLevel int
+	ID       int64
+	Key      string
+	TagCount int
+	Tags     []string
+	Kind     FamilyKind
+	HasOrder bool
 }
 
 type OrderedFamily struct {
@@ -91,11 +88,6 @@ type OrderedFamily struct {
 }
 
 type Analysis struct {
-	Tags     []TagAnalysis
-	Families []Family
-	Ordered  []OrderedFamily
-}
-
-type AnalysisOptions struct {
-	IncludeTokens bool
+	Tags    []TagAnalysis
+	Ordered []OrderedFamily
 }

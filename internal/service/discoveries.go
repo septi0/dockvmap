@@ -39,44 +39,11 @@ type discoveryStore interface {
 	GetTagDiscoveryByID(ctx context.Context, id int64) (*model.TagDiscovery, error)
 	GetTagDiscoveryByRegistryRepo(ctx context.Context, registryID int64, repository string) (*model.TagDiscovery, error)
 	StartOrGetTagDiscovery(ctx context.Context, registryID int64, repository string) (*model.TagDiscovery, bool, error)
+	RestartStaleTagDiscovery(ctx context.Context, id int64) (bool, error)
 	CompleteTagDiscovery(ctx context.Context, id int64, groups []model.TagDiscoveryGroup, tagCount int, rawTagCount int) error
 	FailTagDiscovery(ctx context.Context, id int64, errMessage string) error
-	RecordTagDiscoveryRefreshFailure(ctx context.Context, id int64, errMessage string) error
 	MarkStaleRunningTagDiscoveriesAsFailed(ctx context.Context) (int64, error)
 	DeleteOldTagDiscoveries(ctx context.Context, olderThan time.Time) (int64, error)
-}
-
-type keySet struct {
-	mu   sync.Mutex
-	keys map[string]struct{}
-}
-
-func newKeySet() *keySet {
-	return &keySet{keys: make(map[string]struct{})}
-}
-
-func (s *keySet) tryLock(key string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, ok := s.keys[key]; ok {
-		return false
-	}
-
-	s.keys[key] = struct{}{}
-
-	return true
-}
-
-func (s *keySet) unlock(key string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	delete(s.keys, key)
-}
-
-func discoveryRefreshKey(registryID int64, repository string) string {
-	return fmt.Sprintf("%d/%s", registryID, repository)
 }
 
 type discoveryProgress struct {
@@ -120,7 +87,6 @@ type Discoveries struct {
 	failures   failureRecorder
 	bgCtx      context.Context
 	ttl        time.Duration
-	refreshing *keySet
 	progress   *discoveryProgress
 }
 
@@ -134,7 +100,6 @@ func NewDiscoveries(store discoveryStore, registries discoveryRegistryLookup, ch
 		failures:   failures,
 		bgCtx:      bgCtx,
 		ttl:        ttl,
-		refreshing: newKeySet(),
 		progress:   newDiscoveryProgress(),
 	}
 }
@@ -194,11 +159,21 @@ func (d *Discoveries) Check(ctx context.Context, registryHost, repository string
 	}
 
 	if existing != nil && existing.Status == model.TagDiscoveryCompleted {
-		if existing.CompletedAt == nil || time.Since(*existing.CompletedAt) >= d.ttl {
-			d.maybeRefresh(registryInfo.ID, registryHost, repository, existing.ID)
+		if !d.isStale(existing) {
+			return *existing, nil
 		}
 
-		return *existing, nil
+		restarted, err := d.store.RestartStaleTagDiscovery(ctx, existing.ID)
+
+		if err != nil {
+			return model.TagDiscovery{}, err
+		}
+
+		if restarted {
+			d.spawnScan(existing.ID, registryHost, repository)
+		}
+
+		return d.waitBriefly(ctx, existing.ID), nil
 	}
 
 	discovery, started, err := d.store.StartOrGetTagDiscovery(ctx, registryInfo.ID, repository)
@@ -297,36 +272,20 @@ func (d *Discoveries) waitBriefly(ctx context.Context, discoveryID int64) model.
 	}
 }
 
+func (d *Discoveries) isStale(discovery *model.TagDiscovery) bool {
+	return discovery.CompletedAt == nil || time.Since(*discovery.CompletedAt) >= d.ttl
+}
+
 func (d *Discoveries) spawnScan(discoveryID int64, registryHost, repository string) {
 	go d.runScan(discoveryID, registryHost, repository, func(err error) {
 		if failErr := d.store.FailTagDiscovery(context.Background(), discoveryID, err.Error()); failErr != nil {
 			slog.Error("recording tag discovery failure failed", "registry", registryHost, "repository", repository, "error", failErr)
 		}
 
+		d.failures.Record(FailureSourceDiscovery, repository, err)
+
 		slog.Error("tag discovery failed", "registry", registryHost, "repository", repository, "error", err)
 	})
-}
-
-func (d *Discoveries) maybeRefresh(registryID int64, registryHost, repository string, discoveryID int64) {
-	key := discoveryRefreshKey(registryID, repository)
-
-	if !d.refreshing.tryLock(key) {
-		return
-	}
-
-	go func() {
-		defer d.refreshing.unlock(key)
-
-		d.runScan(discoveryID, registryHost, repository, func(err error) {
-			if failErr := d.store.RecordTagDiscoveryRefreshFailure(context.Background(), discoveryID, err.Error()); failErr != nil {
-				slog.Error("recording tag discovery refresh failure failed", "registry", registryHost, "repository", repository, "error", failErr)
-			}
-
-			d.failures.Record(FailureSourceDiscoveryRefresh, repository, err)
-
-			slog.Error("background tag discovery refresh failed", "registry", registryHost, "repository", repository, "error", err)
-		})
-	}()
 }
 
 func (d *Discoveries) runScan(discoveryID int64, registryHost, repository string, onFailure func(error)) {
@@ -352,7 +311,7 @@ func (d *Discoveries) runScan(discoveryID int64, registryHost, repository string
 	}
 
 	filtered := d.tagFilter.Apply(tags)
-	analysis := taganalyzer.AnalyzeWithOptions(filtered, taganalyzer.AnalysisOptions{IncludeTokens: false})
+	analysis := taganalyzer.Analyze(filtered)
 	groups := tagDiscoveryGroupsFromAnalysis(analysis)
 
 	if err := d.store.CompleteTagDiscovery(context.Background(), discoveryID, groups, len(filtered), len(tags)); err != nil {
@@ -379,8 +338,9 @@ func tagDiscoveryGroupsFromAnalysis(analysis taganalyzer.Analysis) []model.TagDi
 		}
 
 		groups = append(groups, model.TagDiscoveryGroup{
-			FamilyID:   int64(family.ID),
+			FamilyID:   family.ID,
 			FamilyType: string(family.Kind),
+			HasOrder:   family.HasOrder,
 			Tags:       tags,
 		})
 	}

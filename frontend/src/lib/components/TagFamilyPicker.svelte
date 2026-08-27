@@ -64,6 +64,7 @@
           {#each visibleTags as tagInfo, index (tagInfo.tag)}
             {@const isNewer =
               isCurrentFamily &&
+              group.hasOrder &&
               index < currentIndex &&
               (currentIsPrerelease || !tagInfo.prerelease)}
             <button

@@ -44,7 +44,7 @@ func Load(path string) (*Filter, error) {
 	exclude := make([]*regexp.Regexp, 0, len(cfg.TagFilters.Exclude))
 
 	for _, pattern := range cfg.TagFilters.Exclude {
-		re, err := regexp.Compile(pattern)
+		re, err := regexp.Compile("(?i)" + pattern)
 
 		if err != nil {
 			return nil, fmt.Errorf("invalid tag_filters.exclude pattern %q: %w", pattern, err)

@@ -11,13 +11,13 @@
   import AppShell from "../lib/components/AppShell.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import DetailRow from "../lib/components/DetailRow.svelte";
-  import Field from "../lib/components/Field.svelte";
   import Button from "../lib/components/Button.svelte";
   import ChangeTagModal from "../lib/components/ChangeTagModal.svelte";
   import TagHistoryModal from "../lib/components/TagHistoryModal.svelte";
   import RefreshTagsButton from "../lib/components/RefreshTagsButton.svelte";
+  import RenameImageModal from "../lib/components/RenameImageModal.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
-  import { getImage, deleteImage, renameImage } from "../lib/api/images";
+  import { getImage, deleteImage } from "../lib/api/images";
   import { getPullInfo } from "../lib/api/metrics";
   import { ApiError } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
@@ -43,13 +43,7 @@
   let deleting = $state(false);
   let deleteError = $state<string | null>(null);
 
-  let renameValue = $state("");
-  let showRenameConfirm = $state(false);
-  let renaming = $state(false);
-  let renameError = $state<string | null>(null);
-  const renameDisabled = $derived(
-    !renameValue.trim() || renameValue.trim() === image?.name,
-  );
+  let showRenameModal = $state(false);
 
   async function load() {
     const requestId = ++loadToken;
@@ -61,7 +55,6 @@
       if (requestId !== loadToken) return;
       image = img;
       pullInfo = info;
-      renameValue = img.name;
     } catch (err) {
       if (requestId !== loadToken) return;
       error =
@@ -115,29 +108,9 @@
     deleteError = null;
   }
 
-  function cancelRename() {
-    showRenameConfirm = false;
-    renameError = null;
-  }
-
-  async function handleRename() {
-    if (!image || renameDisabled) return;
-
-    renameError = null;
-    renaming = true;
-
-    try {
-      const newName = renameValue.trim();
-      await renameImage(imageId, newName);
-      toast.success(`Virtual image renamed to "${newName}".`);
-      showRenameConfirm = false;
-      await refreshImageDetails();
-    } catch (err) {
-      renameError =
-        err instanceof ApiError ? err.message : "Failed to rename virtual image";
-    } finally {
-      renaming = false;
-    }
+  async function handleRenamed(name: string) {
+    toast.success(`Virtual image renamed to "${name}".`);
+    await refreshImageDetails();
   }
 
   async function handleDelete() {
@@ -295,12 +268,7 @@
               >{image.name}:{pullInfo?.virtualTag}</code
             > will stop working immediately once renamed.
           </p>
-          <Field label="New name" bind:value={renameValue} />
-          <Button
-            variant="danger"
-            disabled={renameDisabled}
-            onclick={() => (showRenameConfirm = true)}
-          >
+          <Button variant="secondary" onclick={() => (showRenameModal = true)}>
             <ArrowLeftRight size={16} strokeWidth={1.75} />
             Rename virtual image
           </Button>
@@ -338,6 +306,15 @@
     onClose={() => (showHistoryModal = false)}
     onRestored={handleTagRestored}
   />
+
+  <RenameImageModal
+    open={showRenameModal}
+    imageId={image.id}
+    currentName={image.name}
+    virtualTag={pullInfo?.virtualTag}
+    onClose={() => (showRenameModal = false)}
+    onRenamed={handleRenamed}
+  />
 {/if}
 
 <ConfirmDialog
@@ -352,17 +329,6 @@
   onCancel={cancelDelete}
 />
 
-<ConfirmDialog
-  open={showRenameConfirm}
-  title="Rename virtual image"
-  message={`Rename "${image?.name ?? ""}" to "${renameValue.trim()}"? Any client currently pulling "${image?.name ?? ""}" will stop working immediately.`}
-  confirmLabel="Rename"
-  danger
-  error={renameError}
-  submitting={renaming}
-  onConfirm={handleRename}
-  onCancel={cancelRename}
-/>
 
 <style>
   .back-link {

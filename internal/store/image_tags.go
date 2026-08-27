@@ -11,7 +11,7 @@ import (
 
 func (s *Store) GetImageTags(ctx context.Context, imageId int64) ([]model.ImageTag, error) {
 	query := `
-		SELECT id, family_id, family_type, tag, tag_order, prerelease, first_seen, last_seen, new
+		SELECT id, family_id, family_type, family_has_order, tag, tag_order, prerelease, first_seen, last_seen, new
 		FROM image_tags
 		WHERE image_id = ?
 		ORDER BY tag_order ASC`
@@ -36,6 +36,7 @@ func (s *Store) GetImageTags(ctx context.Context, imageId int64) ([]model.ImageT
 			&tag.ID,
 			&tag.FamilyID,
 			&tag.FamilyType,
+			&tag.FamilyHasOrder,
 			&tag.Tag,
 			&tag.TagOrder,
 			&tag.Prerelease,
@@ -60,7 +61,7 @@ func (s *Store) GetImageTag(ctx context.Context, imageId int64, name string) (*m
 	var imageTag model.ImageTag
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, family_id, family_type, tag, tag_order, prerelease, first_seen, last_seen, new
+		SELECT id, family_id, family_type, family_has_order, tag, tag_order, prerelease, first_seen, last_seen, new
 		FROM image_tags
 		WHERE image_id = ? AND tag = ?
 		LIMIT 1
@@ -68,6 +69,7 @@ func (s *Store) GetImageTag(ctx context.Context, imageId int64, name string) (*m
 		&imageTag.ID,
 		&imageTag.FamilyID,
 		&imageTag.FamilyType,
+		&imageTag.FamilyHasOrder,
 		&imageTag.Tag,
 		&imageTag.TagOrder,
 		&imageTag.Prerelease,
@@ -95,11 +97,12 @@ func (s *Store) SetImageTags(ctx context.Context, tx DBTX, imageId int64, tags [
 	}
 
 	stmt, err := db.PrepareContext(ctx, `
-		INSERT INTO image_tags (image_id, family_id, family_type, tag, tag_order, prerelease, first_seen, last_seen, new)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO image_tags (image_id, family_id, family_type, family_has_order, tag, tag_order, prerelease, first_seen, last_seen, new)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(image_id, tag) DO UPDATE SET
 			family_id = excluded.family_id,
     		family_type = excluded.family_type,
+			family_has_order = excluded.family_has_order,
 			tag_order = excluded.tag_order,
 			prerelease = excluded.prerelease,
 			last_seen = excluded.last_seen
@@ -116,6 +119,7 @@ func (s *Store) SetImageTags(ctx context.Context, tx DBTX, imageId int64, tags [
 			imageId,
 			tag.FamilyID,
 			tag.FamilyType,
+			tag.FamilyHasOrder,
 			tag.Tag,
 			tag.TagOrder,
 			tag.Prerelease,

@@ -164,7 +164,7 @@ func (c *Client) CheckRepository(ctx context.Context, registry, repository strin
 	host := RegistryAPIHost(registry)
 	path := RepositoryPath(registry, repository)
 
-	endpoint := fmt.Sprintf("https://%s/v2/%s/tags/list?n=1", host, path)
+	endpoint := fmt.Sprintf("https://%s/v2/%s/tags/list", host, path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 

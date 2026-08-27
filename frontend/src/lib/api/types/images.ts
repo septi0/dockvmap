@@ -36,6 +36,7 @@ export interface Tag {
 export interface TagGroup {
   familyType: string
   familyId: number
+  hasOrder: boolean
   tags: Tag[]
 }
 

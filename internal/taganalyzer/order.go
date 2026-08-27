@@ -10,26 +10,20 @@ type sortableTag struct {
 	analysis *TagAnalysis
 }
 
-func OrderFamilies(analysis *Analysis) {
-	if analysis == nil {
-		return
+func orderFamilies(tags []TagAnalysis, families []Family) []OrderedFamily {
+	ordered := make([]OrderedFamily, 0, len(families))
+	tagIndex := make(map[string]*TagAnalysis, len(tags))
+	for i := range tags {
+		tagIndex[tags[i].Tag] = &tags[i]
 	}
 
-	ordered := make([]OrderedFamily, 0, len(analysis.Families))
-	tagIndex := make(map[string]*TagAnalysis, len(analysis.Tags))
-	for i := range analysis.Tags {
-		tagIndex[analysis.Tags[i].Tag] = &analysis.Tags[i]
-	}
-
-	families := append([]Family(nil), analysis.Families...)
-
-	orderTypes := make(map[int]OrderType, len(families))
+	relevance := make(map[int64]familyRelevance, len(families))
 	for _, family := range families {
-		orderTypes[family.ID] = familyOrderType(family, tagIndex)
+		relevance[family.ID] = relevanceOf(family, tagIndex)
 	}
 
 	sort.SliceStable(families, func(i, j int) bool {
-		return compareFamilies(families[i], families[j], orderTypes) < 0
+		return compareFamilies(families[i], families[j], relevance) < 0
 	})
 
 	for _, family := range families {
@@ -67,68 +61,147 @@ func OrderFamilies(analysis *Analysis) {
 		})
 	}
 
-	analysis.Ordered = ordered
+	return ordered
 }
 
-func compareFamilies(left, right Family, orderTypes map[int]OrderType) int {
-	if left.Kind != right.Kind {
-		return compareFamilyKind(left.Kind, right.Kind)
-	}
-
-	leftOrderType := orderTypes[left.ID]
-	rightOrderType := orderTypes[right.ID]
-	if leftOrderType != rightOrderType {
-		return compareFamilyOrderType(leftOrderType, rightOrderType)
-	}
-
-	return compareString(left.Key, right.Key)
+// familyRelevance ranks how likely a family is to be the one someone opening this
+// repository for the first time is looking for. Everything is derived from the
+// family's root: its most general member, the tag with the fewest segments.
+type familyRelevance struct {
+	singleton    bool
+	rootHasHash  bool
+	rootOrder    int
+	rootDepth    int
+	releaseShape int
+	tagCount     int
 }
 
-func compareFamilyKind(left, right FamilyKind) int {
-	rank := func(kind FamilyKind) int {
-		switch kind {
-		case FamilyBlood:
-			return 0
-		case FamilyAncestor:
-			return 1
-		case FamilyStep:
-			return 2
-		default:
-			return 3
-		}
+const (
+	releaseShapeMultiPlain = iota
+	releaseShapeMultiNamed
+	releaseShapeSoloPlain
+	releaseShapeOther
+)
+
+func relevanceOf(family Family, tagIndex map[string]*TagAnalysis) familyRelevance {
+	relevance := familyRelevance{
+		singleton:    family.TagCount == 1,
+		tagCount:     family.TagCount,
+		rootOrder:    orderTypeRank(OrderUnknown),
+		releaseShape: releaseShapeOther,
+		rootHasHash:  true,
 	}
 
-	l, r := rank(left), rank(right)
-	switch {
-	case l < r:
-		return -1
-	case l > r:
-		return 1
-	default:
-		return 0
-	}
-}
-
-func familyOrderType(family Family, tagIndex map[string]*TagAnalysis) OrderType {
-	best := OrderUnknown
-	bestRank := orderTypeRank(OrderUnknown)
-
+	rootDepth := 0
 	for _, tag := range family.Tags {
 		analysis := tagIndex[tag]
 		if analysis == nil || len(analysis.Segments) == 0 {
 			continue
 		}
+		if rootDepth == 0 || len(analysis.Segments) < rootDepth {
+			rootDepth = len(analysis.Segments)
+		}
+	}
+	if rootDepth == 0 {
+		relevance.rootHasHash = false
+		return relevance
+	}
 
-		orderType := analysis.Segments[0].OrderType
-		if rank := orderTypeRank(orderType); rank < bestRank {
-			best, bestRank = orderType, rank
-			if rank == 0 {
-				break
-			}
+	// Several members can be equally general; judge the family by the best of them.
+	relevance.rootDepth = rootDepth
+	for _, tag := range family.Tags {
+		analysis := tagIndex[tag]
+		if analysis == nil || len(analysis.Segments) != rootDepth {
+			continue
+		}
+		segments := analysis.Segments
+		if rank := orderTypeRank(segments[0].OrderType); rank < relevance.rootOrder {
+			relevance.rootOrder = rank
+		}
+		if shape := releaseShapeRank(segments[0]); shape < relevance.releaseShape {
+			relevance.releaseShape = shape
+		}
+		if relevance.rootHasHash && !containsHashLiteral(segments) {
+			relevance.rootHasHash = false
 		}
 	}
 
-	return best
+	return relevance
+}
+
+func containsHashLiteral(segments []SegmentAnalysis) bool {
+	for _, segment := range segments {
+		if !segment.IsVariable && looksLikeHash(segment.Raw) {
+			return true
+		}
+	}
+	return false
+}
+
+func releaseShapeRank(segment SegmentAnalysis) int {
+	if segment.OrderType != OrderVersion {
+		return releaseShapeOther
+	}
+
+	plainPrefix := segment.Prefix == "" || strings.EqualFold(segment.Prefix, "v")
+	if len(segment.Numbers) >= 2 || segment.Prerelease != nil {
+		if plainPrefix {
+			return releaseShapeMultiPlain
+		}
+		return releaseShapeMultiNamed
+	}
+	if plainPrefix {
+		return releaseShapeSoloPlain
+	}
+
+	return releaseShapeOther
+}
+
+// relevanceCriteria decides which family someone opening a repository sees first.
+// Each scores lower-is-better, and the order is load-bearing: plainness must come
+// before release shape, or a bare JDK major like "26" loses to "8u492-b09-jdk".
+// Reordering or adding a criterion changes what every repository shows, so re-run
+// the audit over sampledata/ before and after.
+var relevanceCriteria = []struct {
+	name  string
+	score func(familyRelevance) int
+}{
+	{"multi-tag family before a lone tag", func(r familyRelevance) int { return boolScore(r.singleton) }},
+	{"hash-free root before a commit build", func(r familyRelevance) int { return boolScore(r.rootHasHash) }},
+	{"version-led root, then date, then name", func(r familyRelevance) int { return r.rootOrder }},
+	{"shallowest root first", func(r familyRelevance) int { return r.rootDepth }},
+	{"plainest version shape first", func(r familyRelevance) int { return r.releaseShape }},
+	{"more tags first", func(r familyRelevance) int { return -r.tagCount }},
+}
+
+func compareFamilies(left, right Family, relevance map[int64]familyRelevance) int {
+	l, r := relevance[left.ID], relevance[right.ID]
+
+	for _, criterion := range relevanceCriteria {
+		if result := compareInt(criterion.score(l), criterion.score(r)); result != 0 {
+			return result
+		}
+	}
+
+	return compareString(left.Key, right.Key)
+}
+
+func boolScore(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+func compareInt(left, right int) int {
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func orderTypeRank(orderType OrderType) int {
@@ -145,18 +218,6 @@ func orderTypeRank(orderType OrderType) int {
 		return 4
 	default:
 		return 5
-	}
-}
-
-func compareFamilyOrderType(left, right OrderType) int {
-	l, r := orderTypeRank(left), orderTypeRank(right)
-	switch {
-	case l < r:
-		return -1
-	case l > r:
-		return 1
-	default:
-		return 0
 	}
 }
 
@@ -221,7 +282,15 @@ func compareSegment(left, right SegmentAnalysis) int {
 }
 
 func compareOrderType(left, right OrderType) int {
-	return strings.Compare(string(left), string(right))
+	l, r := orderTypeRank(left), orderTypeRank(right)
+	switch {
+	case l < r:
+		return 1
+	case l > r:
+		return -1
+	default:
+		return 0
+	}
 }
 
 func compareTemporalMismatch(left, right SegmentAnalysis) (int, bool) {
@@ -287,12 +356,6 @@ func comparePrerelease(left, right *Prerelease) int {
 
 	li := left.Identifiers
 	ri := right.Identifiers
-	if len(li) == 0 {
-		li = []PrereleaseIdentifier{{Value: left.Type, Number: left.Number}}
-	}
-	if len(ri) == 0 {
-		ri = []PrereleaseIdentifier{{Value: right.Type, Number: right.Number}}
-	}
 
 	n := len(li)
 	if len(ri) < n {
@@ -345,23 +408,24 @@ func comparePrerelease(left, right *Prerelease) int {
 	return 0
 }
 
-func prereleaseRank(value string) int {
-	switch strings.ToLower(value) {
-	case "dev":
-		return 10
-	case "snapshot":
-		return 20
-	case "alpha", "a":
-		return 30
-	case "beta", "b":
-		return 40
-	case "pre":
-		return 50
-	case "preview":
-		return 60
-	case "rc":
-		return 70
-	default:
-		return 80
+var unrankedPrerelease = len(prereleaseKeywords)
+
+var prereleaseRanks = buildPrereleaseRanks()
+
+func buildPrereleaseRanks() map[string]int {
+	ranks := make(map[string]int, len(prereleaseKeywords)+len(gluedPrereleaseAliases))
+	for rank, keyword := range prereleaseKeywords {
+		ranks[keyword] = rank
 	}
+	for alias, keyword := range gluedPrereleaseAliases {
+		ranks[alias] = ranks[keyword]
+	}
+	return ranks
+}
+
+func prereleaseRank(value string) int {
+	if rank, ok := prereleaseRanks[strings.ToLower(value)]; ok {
+		return rank
+	}
+	return unrankedPrerelease
 }
