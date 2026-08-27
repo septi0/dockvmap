@@ -8,13 +8,7 @@ import (
 	"github.com/septi0/dockvmap/internal/taganalyzer"
 )
 
-// shapeOf describes a string by its character classes rather than its content, so
-// unrelated repositories using the same convention land in the same bucket.
-//
-// Hex runs collapse to a single "x" class before anything else. Without that a sha
-// splits on wherever its letters happen to fall - "gb73411456155" and "g8c9715c8"
-// are the same convention but would land in different buckets - and a real
-// convention would never gather enough weight in one bucket to be noticed.
+// character-class fingerprint of a string; hex runs collapse first so shas bucket together
 func shapeOf(value string) string {
 	if value == "" {
 		return "(empty)"
@@ -87,8 +81,6 @@ func bucket(n int) string {
 	}
 }
 
-// blockingSegment returns the literal that keeps a lone tag from joining others:
-// the segment whose position varies most across otherwise identical tags.
 func blockingSegment(repo analysedRepo, tag string, cardinality map[string]map[string]bool) (string, bool) {
 	segments := repo.segments[tag]
 	best, bestCount := "", 0
@@ -104,8 +96,7 @@ func blockingSegment(repo analysedRepo, tag string, cardinality map[string]map[s
 	return best, bestCount >= 2
 }
 
-// holeKey identifies a tag with one segment blanked out, so tags differing only at
-// that position share a key.
+// key for a tag with segment[hole] blanked, so tags differing only there collide
 func holeKey(segments []taganalyzer.SegmentAnalysis, hole int) string {
 	parts := make([]string, 0, len(segments))
 	for i, segment := range segments {
@@ -185,8 +176,7 @@ func reportShapes(repos []analysedRepo, minRepos int) {
 			ranked = append(ranked, stat)
 		}
 	}
-	// A real convention is high volume, spread across repos, and nearly one distinct
-	// value per tag. A named axis (alpine, bookworm) reuses few values many times.
+	// rank by volume x distinct-rate: a real convention has ~one distinct value per tag
 	sort.Slice(ranked, func(i, j int) bool {
 		si := float64(ranked[i].tags) * distinctRate(ranked[i])
 		sj := float64(ranked[j].tags) * distinctRate(ranked[j])

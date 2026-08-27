@@ -44,8 +44,7 @@ func buildBloodFamilies(tags []TagAnalysis, identities map[string][]string) []Fa
 
 	families := make([]Family, 0, len(groups))
 	for _, key := range keys {
-		// Canonical member order: everything downstream breaks ties by "first wins",
-		// and a registry may hand us the same tags in a different order each fetch.
+		// registries return tags in any order; downstream tie-breaks are "first wins"
 		group := groups[key]
 		sort.Strings(group)
 		family := Family{Key: key, Kind: FamilyBlood, Tags: group, TagCount: len(group)}
@@ -166,9 +165,6 @@ func collectHashLengths(tags []TagAnalysis) map[hashSlot]bool {
 	return dynamic
 }
 
-// normalizeHashSegments collapses every confirmed hash to a plain literal, so a sha
-// that happens to parse as a version (a953921 -> prefix "a", 953921) stops being
-// ordered by its digits. Identity and ordering then agree on what a hash is.
 func normalizeHashSegments(tags []TagAnalysis, hashLengths map[hashSlot]bool) {
 	for _, tag := range tags {
 		for i := range tag.Segments {
@@ -226,9 +222,6 @@ func collectFamilyReps(families []Family, identities map[string][]string, tagSeg
 	return reps
 }
 
-// attachAncestors repeatedly folds each family into the single other family whose
-// pattern extends it, until no more merges are possible. Ambiguity - zero or two
-// or more candidate targets - always leaves the family where it is.
 func attachAncestors(families []Family, identities map[string][]string, tagSegments map[string][]SegmentAnalysis, hashLengths map[hashSlot]bool) []Family {
 	for {
 		merged, changed := mergeAncestorPass(families, identities, tagSegments, hashLengths)
@@ -270,8 +263,7 @@ func mergeAncestorPass(families []Family, identities map[string][]string, tagSeg
 				continue
 			}
 			for _, rep := range reps[candidate] {
-				// A release line must not dissolve into commit builds: a hash-free root
-				// keeps its own family rather than joining one that varies by hash.
+				// a hash-free root must not join a hash-varying family (release line vs commit builds)
 				if !root.hasHash && rep.hasHash {
 					continue
 				}
@@ -415,8 +407,7 @@ func isPlainVersionSegment(segment SegmentAnalysis) bool {
 		segment.Prerelease == nil
 }
 
-// familyID keeps the low 52 bits so the value survives a round-trip through a
-// JSON number without losing precision.
+// 52 bits keeps the id exact through a JSON number
 func familyID(key string) int64 {
 	h := fnv.New64a()
 	h.Write([]byte(key))

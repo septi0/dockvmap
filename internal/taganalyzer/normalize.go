@@ -55,8 +55,7 @@ func normalizeSegments(tokens []tokenClassification) []SegmentAnalysis {
 				continue
 			}
 
-			// Alpine/apk package revision: 1.2.3-r1 is a rebuild of 1.2.3, so it folds
-			// into the version rather than becoming a segment that blocks grouping.
+			// apk -rN is a rebuild of the same version; fold it in, don't start a segment
 			last := &segments[len(segments)-1]
 			if revision, ok := parseRevisionSuffix(raw); ok && last.Prerelease == nil {
 				last.Numbers = append(last.Numbers, revision)

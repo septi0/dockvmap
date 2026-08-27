@@ -1,6 +1,4 @@
-// Command tagaudit looks for tagging conventions internal/taganalyzer does not yet
-// understand, by analysing a large sample of real repositories and reporting the
-// shapes that stop tags from grouping.
+// Command tagaudit reports tagging conventions internal/taganalyzer does not yet handle.
 package main
 
 import (

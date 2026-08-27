@@ -46,8 +46,6 @@ func isVersionLed(family taganalyzer.OrderedFamily, repo analysedRepo) bool {
 	return len(root) > 0 && root[0].OrderType == taganalyzer.OrderVersion
 }
 
-// reportRanking flags repositories whose first family looks like the wrong pick,
-// so a human reads a handful instead of every repository in the corpus.
 func reportRanking(repos []analysedRepo) {
 	type flag struct {
 		repo   string

@@ -49,7 +49,7 @@ docker pull registry.internal:5000/myimage:current
 - **Tag discovery**: when adding a virtual image, scans the upstream repository in the background (result cached) so you pick from its real tags instead of typing one blind.
 - **Tag history**: per-image record of every real tag the virtual tag has resolved to, and when each change happened.
 - **Web UI**: Svelte SPA for managing registries, virtual images, and reviewing what changed and when.
-- **Notifications**: email (SMTP) and/or generic webhooks when a tracked image's tags change.
+- **Notifications**: email (SMTP) and/or generic webhooks when a tracked image's tags change. Email volume is selectable per account (every tag change / only when an upgrade becomes available / off); webhooks always fire and carry an `updateAvailable` flag.
 - **Optional blob cache**: on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.
 - **Login rate limiting**: configurable per-IP lockout on the web UI's login, with a trusted-proxies-aware IP resolution so it works correctly behind a reverse proxy.
 - **Proxy authentication**: optional HTTP Basic Auth (via issued tokens) in front of the registry proxy itself.

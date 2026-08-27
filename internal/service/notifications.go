@@ -70,7 +70,7 @@ func (n *Notifications) SendPendingTagNotifications(ctx context.Context) (int, e
 		return 0, nil
 	}
 
-	var recipients []string
+	var recipients []mailRecipient
 
 	if n.mailEnabled {
 		var err error
@@ -95,10 +95,10 @@ func (n *Notifications) SendPendingTagNotifications(ctx context.Context) (int, e
 	sent := 0
 
 	for _, event := range events {
-		if len(recipients) > 0 {
+		if to := mailTargets(recipients, event.Type); len(to) > 0 {
 			subject, textBody, htmlBody := tagNotificationContent(event)
 
-			if err := n.mailer.Send(ctx, recipients, subject, textBody, htmlBody); err != nil {
+			if err := n.mailer.Send(ctx, to, subject, textBody, htmlBody); err != nil {
 				slog.Error("failed to send tag notification email", "eventId", event.ID, "error", err)
 				n.failures.Record(FailureSourceEmail, "", err)
 			}
@@ -138,39 +138,58 @@ func (n *Notifications) sendWebhooks(ctx context.Context, event model.ImageEvent
 }
 
 type tagWebhookPayload struct {
-	Event      string    `json:"event"`
-	ImageName  string    `json:"imageName"`
-	Tags       []string  `json:"tags"`
-	OccurredAt time.Time `json:"occurredAt"`
+	Event           string    `json:"event"`
+	ImageName       string    `json:"imageName"`
+	Tags            []string  `json:"tags"`
+	UpdateAvailable bool      `json:"updateAvailable"`
+	OccurredAt      time.Time `json:"occurredAt"`
 }
 
 func tagNotificationWebhookPayload(event model.ImageEvent) ([]byte, error) {
 	return json.Marshal(tagWebhookPayload{
-		Event:      event.Type,
-		ImageName:  event.ImageName,
-		Tags:       event.Data.Tags,
-		OccurredAt: event.CreatedAt,
+		Event:           event.Type,
+		ImageName:       event.ImageName,
+		Tags:            event.Data.Tags,
+		UpdateAvailable: event.Type == EventTypeUpgradeAvailable,
+		OccurredAt:      event.CreatedAt,
 	})
 }
 
-func (n *Notifications) tagNotificationRecipients(ctx context.Context) ([]string, error) {
+type mailRecipient struct {
+	email string
+	level model.NotifyLevel
+}
+
+func (n *Notifications) tagNotificationRecipients(ctx context.Context) ([]mailRecipient, error) {
 	users, err := n.users.ListUsers(ctx)
 
 	if err != nil {
 		return nil, err
 	}
 
-	recipients := make([]string, 0, len(users))
+	recipients := make([]mailRecipient, 0, len(users))
 
 	for _, user := range users {
-		if user.Email == "" || !user.Preferences.NotifyNewTags {
+		if user.Email == "" || user.Preferences.NotifyLevel == model.NotifyLevelNone {
 			continue
 		}
 
-		recipients = append(recipients, user.Email)
+		recipients = append(recipients, mailRecipient{email: user.Email, level: user.Preferences.NotifyLevel})
 	}
 
 	return recipients, nil
+}
+
+func mailTargets(recipients []mailRecipient, eventType string) []string {
+	to := make([]string, 0, len(recipients))
+
+	for _, recipient := range recipients {
+		if recipient.level == model.NotifyLevelAll || eventType == EventTypeUpgradeAvailable {
+			to = append(to, recipient.email)
+		}
+	}
+
+	return to
 }
 
 type tagEmailData struct {
@@ -187,8 +206,11 @@ var tagEmailTemplate = template.Must(template.ParseFS(tagEmailTemplateFS, "templ
 func tagNotificationContent(event model.ImageEvent) (subject, textBody, htmlBody string) {
 	action := "New tag(s) discovered"
 
-	if event.Type == EventTypeTagRemoved {
+	switch event.Type {
+	case EventTypeTagRemoved:
 		action = "Tag(s) removed"
+	case EventTypeUpgradeAvailable:
+		action = "Upgrade available"
 	}
 
 	subject = fmt.Sprintf("dockvmap: %s for %s", action, event.ImageName)

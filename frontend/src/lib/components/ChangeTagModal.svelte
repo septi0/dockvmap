@@ -129,7 +129,7 @@
 
   <div class="current-banner">
     <Check size={14} strokeWidth={2.5} />
-    Currently tracking <strong>{currentTag}</strong>
+    <span>Currently tracking <strong>{currentTag}</strong></span>
   </div>
 
   {#if tagsError}
@@ -154,9 +154,11 @@
   {#if isFamilyMismatch}
     <p class="family-warning">
       <span class="icon"><TriangleAlert size={16} strokeWidth={2} /></span>
-      <strong>{selectedTag}</strong> is from a different tag family than <strong
-        >{currentTag}</strong
-      >, so they might not be compatible for an in-place update.
+      <span class="text">
+        <strong>{selectedTag}</strong> is from a different tag family than
+        <strong>{currentTag}</strong>, so they might not be compatible for an
+        in-place update.
+      </span>
     </p>
   {/if}
 
@@ -232,6 +234,10 @@
     display: inline-flex;
     flex-shrink: 0;
     margin-top: 1px;
+  }
+
+  .family-warning .text {
+    min-width: 0;
   }
 
   .tags-scroll {

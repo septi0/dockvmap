@@ -1,6 +1,5 @@
 <script lang="ts">
   import Check from "@lucide/svelte/icons/check";
-  import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import type { TagGroup } from "../api/types/images";
 
   let {
@@ -56,28 +55,17 @@
         ? group.tags.findIndex((t) => t.tag === currentTag)
         : -1}
       {@const isCurrentFamily = currentIndex !== -1}
-      {@const currentIsPrerelease = isCurrentFamily
-        ? (group.tags[currentIndex].prerelease ?? false)
-        : false}
       <div class="family" class:current={isCurrentFamily}>
         <div class="tags">
-          {#each visibleTags as tagInfo, index (tagInfo.tag)}
-            {@const isNewer =
-              isCurrentFamily &&
-              group.hasOrder &&
-              index < currentIndex &&
-              (currentIsPrerelease || !tagInfo.prerelease)}
+          {#each visibleTags as tagInfo (tagInfo.tag)}
             <button
               type="button"
               class="tag-chip"
               class:selected={selectedTag === tagInfo.tag}
-              class:newer={isNewer}
               onclick={() => (selectedTag = tagInfo.tag)}
             >
               {#if tagInfo.tag === currentTag}
                 <Check size={12} strokeWidth={3} />
-              {:else if isNewer}
-                <ArrowUp size={12} strokeWidth={2.5} />
               {/if}
               {tagInfo.tag}
               {#if tagInfo.new}
@@ -150,12 +138,6 @@
 
   .tag-chip:hover {
     border-color: var(--color-accent);
-  }
-
-  .tag-chip.newer {
-    border-color: color-mix(in srgb, var(--color-warning) 50%, transparent);
-    background: var(--color-warning-bg);
-    color: var(--color-warning);
   }
 
   .tag-chip.selected {

@@ -109,17 +109,25 @@ func (w *Web) apiUpdateUserPreferences(rw http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	var notifyLevel *model.NotifyLevel
+	if request.NotifyLevel != nil {
+		level := model.NotifyLevel(*request.NotifyLevel)
+		notifyLevel = &level
+	}
+
 	err := w.users.UpdatePreferences(r.Context(), model.UserPreferencesUpdate{
-		NotifyNewTags: request.NotifyNewTags,
+		NotifyLevel: notifyLevel,
 	})
 
 	if err != nil {
-		if errors.Is(err, service.ErrUserNotFound) {
+		switch {
+		case errors.Is(err, service.ErrUserNotFound):
 			apiError(rw, http.StatusUnauthorized, "authentication required")
-			return
+		case errors.Is(err, service.ErrInvalidUser):
+			apiError(rw, http.StatusBadRequest, err.Error())
+		default:
+			apiError(rw, http.StatusInternalServerError, "internal server error")
 		}
-
-		apiError(rw, http.StatusInternalServerError, "internal server error")
 
 		return
 	}

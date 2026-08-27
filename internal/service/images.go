@@ -517,6 +517,10 @@ func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string)
 			continue
 		}
 
+		if versionContains(current.VersionSegments, t.VersionSegments) {
+			continue
+		}
+
 		if target == nil || t.TagOrder < target.TagOrder {
 			target = t
 		}
@@ -527,6 +531,40 @@ func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string)
 	}
 
 	return true, target.Tag
+}
+
+func versionContains(outer, inner [][]int64) bool {
+	if len(outer) == 0 || len(outer) != len(inner) {
+		return false
+	}
+
+	strictlyShorter := false
+
+	for i := range outer {
+		if !numberPrefix(outer[i], inner[i]) {
+			return false
+		}
+
+		if len(outer[i]) < len(inner[i]) {
+			strictlyShorter = true
+		}
+	}
+
+	return strictlyShorter
+}
+
+func numberPrefix(prefix, full []int64) bool {
+	if len(prefix) > len(full) {
+		return false
+	}
+
+	for i := range prefix {
+		if prefix[i] != full[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, options RefreshTagsOpts) error {
@@ -605,7 +643,7 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 		return err
 	}
 
-	if err := i.events.HandleEvent(ctx, options.RegisterEvent, image, oldTags, tags); err != nil {
+	if err := i.events.HandleEvent(ctx, options.RegisterEvent, image, oldTags, tags, updateAvailable, updateAvailableTag); err != nil {
 		return fmt.Errorf("%w: registering image event for %q: %w", ErrFailedToRegisterEvent, image.Name, err)
 	}
 
@@ -721,28 +759,43 @@ func validRegistry(value string) bool {
 	return !strings.Contains(value, ":")
 }
 
+func versionSegments(tag taganalyzer.TagAnalysis) [][]int64 {
+	var segments [][]int64
+
+	for _, segment := range tag.Segments {
+		if segment.OrderType == taganalyzer.OrderVersion && len(segment.Numbers) > 0 {
+			segments = append(segments, segment.Numbers)
+		}
+	}
+
+	return segments
+}
+
 func imageTagsFromAnalysis(analysis taganalyzer.Analysis, imageID int64, seenAt time.Time, flagAsNew bool) []model.ImageTag {
 	var tags []model.ImageTag
 	order := 0
 
 	prerelease := make(map[string]bool, len(analysis.Tags))
+	versions := make(map[string][][]int64, len(analysis.Tags))
 	for _, tag := range analysis.Tags {
 		prerelease[tag.Tag] = taganalyzer.IsPrerelease(tag)
+		versions[tag.Tag] = versionSegments(tag)
 	}
 
 	for _, family := range analysis.Ordered {
 		for _, tag := range family.OrderedTags {
 			tags = append(tags, model.ImageTag{
-				ImageID:        imageID,
-				FamilyID:       family.ID,
-				FamilyType:     string(family.Kind),
-				FamilyHasOrder: family.HasOrder,
-				Tag:            tag,
-				TagOrder:       order,
-				Prerelease:     prerelease[tag],
-				FirstSeen:      seenAt,
-				LastSeen:       seenAt,
-				New:            flagAsNew,
+				ImageID:         imageID,
+				FamilyID:        family.ID,
+				FamilyType:      string(family.Kind),
+				FamilyHasOrder:  family.HasOrder,
+				Tag:             tag,
+				TagOrder:        order,
+				Prerelease:      prerelease[tag],
+				VersionSegments: versions[tag],
+				FirstSeen:       seenAt,
+				LastSeen:        seenAt,
+				New:             flagAsNew,
 			})
 
 			order++

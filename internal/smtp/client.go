@@ -3,6 +3,8 @@ package smtp
 import (
 	"context"
 	"crypto/tls"
+	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,6 +14,11 @@ import (
 )
 
 const sendTimeout = 15 * time.Second
+
+const logoContentID = "dockvmap-logo"
+
+//go:embed assets/dockvmap-logo.png
+var logoPNG []byte
 
 type Config struct {
 	Host     string
@@ -131,21 +138,56 @@ func buildMessage(from, subject, textBody, htmlBody string) []byte {
 		return []byte(b.String())
 	}
 
-	boundary := fmt.Sprintf("dockvmap-%d", time.Now().UnixNano())
+	now := time.Now().UnixNano()
+	related := fmt.Sprintf("dockvmap-rel-%d", now)
+	alt := fmt.Sprintf("dockvmap-alt-%d", now)
 
-	fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=\"%s\"\r\n\r\n", boundary)
+	fmt.Fprintf(&b, "Content-Type: multipart/related; boundary=\"%s\"; type=\"multipart/alternative\"\r\n\r\n", related)
 
-	fmt.Fprintf(&b, "--%s\r\n", boundary)
+	fmt.Fprintf(&b, "--%s\r\n", related)
+	fmt.Fprintf(&b, "Content-Type: multipart/alternative; boundary=\"%s\"\r\n\r\n", alt)
+
+	fmt.Fprintf(&b, "--%s\r\n", alt)
 	b.WriteString("Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n")
 	b.WriteString(textBody)
 	b.WriteString("\r\n\r\n")
 
-	fmt.Fprintf(&b, "--%s\r\n", boundary)
+	fmt.Fprintf(&b, "--%s\r\n", alt)
 	b.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n\r\n")
 	b.WriteString(htmlBody)
 	b.WriteString("\r\n\r\n")
 
-	fmt.Fprintf(&b, "--%s--\r\n", boundary)
+	fmt.Fprintf(&b, "--%s--\r\n\r\n", alt)
+
+	if len(logoPNG) > 0 {
+		fmt.Fprintf(&b, "--%s\r\n", related)
+		b.WriteString("Content-Type: image/png\r\n")
+		b.WriteString("Content-Transfer-Encoding: base64\r\n")
+		fmt.Fprintf(&b, "Content-ID: <%s>\r\n", logoContentID)
+		b.WriteString("Content-Disposition: inline; filename=\"dockvmap-logo.png\"\r\n\r\n")
+		b.WriteString(base64Lines(logoPNG))
+		b.WriteString("\r\n")
+	}
+
+	fmt.Fprintf(&b, "--%s--\r\n", related)
 
 	return []byte(b.String())
+}
+
+func base64Lines(data []byte) string {
+	const lineLen = 76
+
+	encoded := base64.StdEncoding.EncodeToString(data)
+
+	var b strings.Builder
+
+	for len(encoded) > lineLen {
+		b.WriteString(encoded[:lineLen])
+		b.WriteString("\r\n")
+		encoded = encoded[lineLen:]
+	}
+
+	b.WriteString(encoded)
+
+	return b.String()
 }
