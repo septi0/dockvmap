@@ -64,9 +64,6 @@ func orderFamilies(tags []TagAnalysis, families []Family) []OrderedFamily {
 	return ordered
 }
 
-// familyRelevance ranks how likely a family is to be the one someone opening this
-// repository for the first time is looking for. Everything is derived from the
-// family's root: its most general member, the tag with the fewest segments.
 type familyRelevance struct {
 	singleton    bool
 	rootHasHash  bool
@@ -157,11 +154,7 @@ func releaseShapeRank(segment SegmentAnalysis) int {
 	return releaseShapeOther
 }
 
-// relevanceCriteria decides which family someone opening a repository sees first.
-// Each scores lower-is-better, and the order is load-bearing: plainness must come
-// before release shape, or a bare JDK major like "26" loses to "8u492-b09-jdk".
-// Reordering or adding a criterion changes what every repository shows, so re-run
-// the audit over sampledata/ before and after.
+// lower-is-better; order is load-bearing — re-run cmd/tagaudit over sampledata/ before changing it
 var relevanceCriteria = []struct {
 	name  string
 	score func(familyRelevance) int

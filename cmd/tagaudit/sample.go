@@ -20,8 +20,7 @@ type repository struct {
 
 func (r repository) String() string { return r.Registry + "/" + r.Name }
 
-// searchTerms are deliberately broad and unrelated to each other: the point is a
-// sample nobody hand-picked, not a sample of interesting repositories.
+// deliberately broad and arbitrary — an unbiased sample, not a curated one
 var searchTerms = []string{
 	"server", "api", "database", "proxy", "agent", "worker", "gateway", "monitor",
 	"cache", "queue", "search", "auth", "backup", "build", "cli", "dashboard",

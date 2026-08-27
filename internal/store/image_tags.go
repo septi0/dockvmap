@@ -3,15 +3,44 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
 )
 
+func marshalVersionSegments(segments [][]int64) string {
+	if len(segments) == 0 {
+		return ""
+	}
+
+	encoded, err := json.Marshal(segments)
+
+	if err != nil {
+		return ""
+	}
+
+	return string(encoded)
+}
+
+func scanVersionSegments(raw string) ([][]int64, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	var segments [][]int64
+
+	if err := json.Unmarshal([]byte(raw), &segments); err != nil {
+		return nil, fmt.Errorf("decoding version segments %q: %w", raw, err)
+	}
+
+	return segments, nil
+}
+
 func (s *Store) GetImageTags(ctx context.Context, imageId int64) ([]model.ImageTag, error) {
 	query := `
-		SELECT id, family_id, family_type, family_has_order, tag, tag_order, prerelease, first_seen, last_seen, new
+		SELECT id, family_id, family_type, family_has_order, tag, tag_order, prerelease, version_segments, first_seen, last_seen, new
 		FROM image_tags
 		WHERE image_id = ?
 		ORDER BY tag_order ASC`
@@ -31,6 +60,7 @@ func (s *Store) GetImageTags(ctx context.Context, imageId int64) ([]model.ImageT
 
 	for rows.Next() {
 		var tag model.ImageTag
+		var versionSegments string
 
 		if err := rows.Scan(
 			&tag.ID,
@@ -40,11 +70,16 @@ func (s *Store) GetImageTags(ctx context.Context, imageId int64) ([]model.ImageT
 			&tag.Tag,
 			&tag.TagOrder,
 			&tag.Prerelease,
+			&versionSegments,
 			&tag.FirstSeen,
 			&tag.LastSeen,
 			&tag.New,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image tag row: %w", err)
+		}
+
+		if tag.VersionSegments, err = scanVersionSegments(versionSegments); err != nil {
+			return nil, err
 		}
 
 		tags = append(tags, tag)
@@ -59,9 +94,10 @@ func (s *Store) GetImageTags(ctx context.Context, imageId int64) ([]model.ImageT
 
 func (s *Store) GetImageTag(ctx context.Context, imageId int64, name string) (*model.ImageTag, error) {
 	var imageTag model.ImageTag
+	var versionSegments string
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, family_id, family_type, family_has_order, tag, tag_order, prerelease, first_seen, last_seen, new
+		SELECT id, family_id, family_type, family_has_order, tag, tag_order, prerelease, version_segments, first_seen, last_seen, new
 		FROM image_tags
 		WHERE image_id = ? AND tag = ?
 		LIMIT 1
@@ -73,12 +109,17 @@ func (s *Store) GetImageTag(ctx context.Context, imageId int64, name string) (*m
 		&imageTag.Tag,
 		&imageTag.TagOrder,
 		&imageTag.Prerelease,
+		&versionSegments,
 		&imageTag.FirstSeen,
 		&imageTag.LastSeen,
 		&imageTag.New,
 	)
 
 	if err == nil {
+		if imageTag.VersionSegments, err = scanVersionSegments(versionSegments); err != nil {
+			return nil, err
+		}
+
 		return &imageTag, nil
 	}
 
@@ -97,14 +138,15 @@ func (s *Store) SetImageTags(ctx context.Context, tx DBTX, imageId int64, tags [
 	}
 
 	stmt, err := db.PrepareContext(ctx, `
-		INSERT INTO image_tags (image_id, family_id, family_type, family_has_order, tag, tag_order, prerelease, first_seen, last_seen, new)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO image_tags (image_id, family_id, family_type, family_has_order, tag, tag_order, prerelease, version_segments, first_seen, last_seen, new)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(image_id, tag) DO UPDATE SET
 			family_id = excluded.family_id,
     		family_type = excluded.family_type,
 			family_has_order = excluded.family_has_order,
 			tag_order = excluded.tag_order,
 			prerelease = excluded.prerelease,
+			version_segments = excluded.version_segments,
 			last_seen = excluded.last_seen
 	`)
 
@@ -123,6 +165,7 @@ func (s *Store) SetImageTags(ctx context.Context, tx DBTX, imageId int64, tags [
 			tag.Tag,
 			tag.TagOrder,
 			tag.Prerelease,
+			marshalVersionSegments(tag.VersionSegments),
 			tag.FirstSeen,
 			tag.LastSeen,
 			tag.New,

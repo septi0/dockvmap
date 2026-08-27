@@ -279,7 +279,7 @@ type updateUserEmailRequest struct {
 }
 
 type updateUserPreferencesRequest struct {
-	NotifyNewTags *bool `json:"notifyNewTags,omitempty"`
+	NotifyLevel *string `json:"notifyLevel,omitempty"`
 }
 
 type loginRequest struct {
@@ -288,18 +288,18 @@ type loginRequest struct {
 }
 
 type currentUserResponse struct {
-	ID            int64  `json:"id"`
-	Username      string `json:"username"`
-	Email         string `json:"email"`
-	NotifyNewTags bool   `json:"notifyNewTags"`
+	ID          int64  `json:"id"`
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	NotifyLevel string `json:"notifyLevel"`
 }
 
 func newCurrentUserResponse(user model.User) currentUserResponse {
 	return currentUserResponse{
-		ID:            user.ID,
-		Username:      user.Username,
-		Email:         user.Email,
-		NotifyNewTags: user.Preferences.NotifyNewTags,
+		ID:          user.ID,
+		Username:    user.Username,
+		Email:       user.Email,
+		NotifyLevel: string(user.Preferences.NotifyLevel),
 	}
 }
 

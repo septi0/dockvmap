@@ -16,8 +16,9 @@ const (
 )
 
 const (
-	EventTypeTagAdded   = "TAG_ADDED"
-	EventTypeTagRemoved = "TAG_REMOVED"
+	EventTypeTagAdded         = "TAG_ADDED"
+	EventTypeTagRemoved       = "TAG_REMOVED"
+	EventTypeUpgradeAvailable = "UPGRADE_AVAILABLE"
 )
 
 type eventStore interface {
@@ -26,7 +27,7 @@ type eventStore interface {
 }
 
 type eventHandler interface {
-	HandleEvent(ctx context.Context, mode EventMode, image *model.Image, oldTags []model.ImageTag, newTags []model.ImageTag) error
+	HandleEvent(ctx context.Context, mode EventMode, image *model.Image, oldTags []model.ImageTag, newTags []model.ImageTag, updateAvailable bool, updateAvailableTag string) error
 }
 
 type Events struct {
@@ -37,7 +38,7 @@ func NewEvents(store eventStore) *Events {
 	return &Events{store: store}
 }
 
-func (e *Events) HandleEvent(ctx context.Context, mode EventMode, image *model.Image, oldTags []model.ImageTag, newTags []model.ImageTag) error {
+func (e *Events) HandleEvent(ctx context.Context, mode EventMode, image *model.Image, oldTags []model.ImageTag, newTags []model.ImageTag, updateAvailable bool, updateAvailableTag string) error {
 	if mode == EventNone {
 		return nil
 	}
@@ -60,7 +61,27 @@ func (e *Events) HandleEvent(ctx context.Context, mode EventMode, image *model.I
 		}
 	}
 
+	if upgradeBecameAvailable(image, updateAvailable, updateAvailableTag) {
+		data := model.TagsEventData{Tags: []string{updateAvailableTag}}
+
+		if err := e.store.AddTagsEvent(ctx, image.ID, EventTypeUpgradeAvailable, (mode == EventNormal), data); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func upgradeBecameAvailable(image *model.Image, updateAvailable bool, updateAvailableTag string) bool {
+	if !updateAvailable || updateAvailableTag == "" {
+		return false
+	}
+
+	if !image.UpdateAvailable {
+		return true
+	}
+
+	return image.UpdateAvailableTag == nil || *image.UpdateAvailableTag != updateAvailableTag
 }
 
 func (e *Events) List(ctx context.Context, offset, limit int) ([]model.ImageEvent, error) {

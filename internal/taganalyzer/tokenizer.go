@@ -24,8 +24,6 @@ var (
 	compactTimestampRE    = regexp.MustCompile(`^(\d{8})T(\d{6})Z?`)
 )
 
-// rewriteTimestamp folds an ISO 8601 timestamp into the bare 14-digit form the
-// classifier understands, so the separators don't survive into tokenization.
 func rewriteTimestamp(tag string) (string, bool) {
 	if m := punctuatedTimestampRE.FindStringSubmatch(tag); m != nil {
 		rewritten := m[2] + m[3] + m[4] + m[5] + m[6] + m[7]

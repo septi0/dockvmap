@@ -5,8 +5,6 @@ import (
 	"strings"
 )
 
-// reportRepository prints one repository's families, for when a report points at a
-// repo and the next question is always "so what does it actually look like".
 func reportRepository(repos []analysedRepo, name string) {
 	for _, repo := range repos {
 		if repo.name != name {

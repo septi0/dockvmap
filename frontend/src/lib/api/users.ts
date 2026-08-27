@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { NotifyLevel } from './types/auth'
 
 export function updatePassword(currentPassword: string, newPassword: string) {
   return api.put<{ status: string }>(
@@ -12,7 +13,7 @@ export function updateEmail(email: string) {
 }
 
 export interface UpdateUserPreferences {
-  notifyNewTags?: boolean
+  notifyLevel?: NotifyLevel
 }
 
 export function updatePreferences(preferences: UpdateUserPreferences) {

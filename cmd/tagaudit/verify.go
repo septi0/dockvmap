@@ -8,8 +8,7 @@ import (
 	"github.com/septi0/dockvmap/internal/taganalyzer"
 )
 
-// reportInvariants re-checks everything internal/taganalyzer promises, over whatever
-// corpus is on disk. Every counter here must stay at zero.
+// every counter reported here must stay at zero
 func reportInvariants(repos []analysedRepo) {
 	var (
 		tags, families, multi, grouped   int
@@ -103,8 +102,7 @@ func percent(a, b int) float64 {
 	return 100 * float64(a) / float64(b)
 }
 
-// sameAnalysis re-runs the repo with its tags shuffled: a registry pages its tag
-// list, so the order it arrives in must not change the result.
+// shuffled re-run: input order must not change the result
 func sameAnalysis(repo analysedRepo) bool {
 	shuffled := append([]string(nil), repo.tags...)
 	rand.New(rand.NewSource(1)).Shuffle(len(shuffled), func(i, j int) {

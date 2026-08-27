@@ -19,6 +19,7 @@
   import { auth } from "../lib/services/auth";
   import { formatDate } from "../lib/utils/format";
   import type { Session } from "../lib/api/types/sessions";
+  import type { NotifyLevel } from "../lib/api/types/auth";
 
   let initial = $derived($auth.user?.username?.[0]?.toUpperCase() ?? "?");
 
@@ -27,9 +28,15 @@
   let emailError = $state<string | null>(null);
   let emailSubmitting = $state(false);
 
-  let notifyNewTags = $state($auth.user?.notifyNewTags ?? false);
+  let notifyLevel = $state<NotifyLevel>($auth.user?.notifyLevel ?? "all");
   let notifyError = $state<string | null>(null);
   let notifySubmitting = $state(false);
+
+  const notifyLevelOptions: { value: NotifyLevel; label: string }[] = [
+    { value: "all", label: "Any new or removed tag" },
+    { value: "upgrades", label: "Only when an upgrade is available" },
+    { value: "none", label: "Never" },
+  ];
 
   let showPasswordModal = $state(false);
 
@@ -124,15 +131,16 @@
   }
 
   async function handleNotifyChange() {
-    const previous = !notifyNewTags;
+    const previous = $auth.user?.notifyLevel ?? "all";
+    const next = notifyLevel;
     notifyError = null;
     notifySubmitting = true;
 
     try {
-      await updatePreferences({ notifyNewTags });
+      await updatePreferences({ notifyLevel: next });
       await auth.refresh();
     } catch (err) {
-      notifyNewTags = previous;
+      notifyLevel = previous;
       notifyError =
         err instanceof ApiError
           ? err.message
@@ -218,7 +226,7 @@
   <div class="card section-card">
     <h2>Preferences</h2>
 
-    <DetailRow label="New tag alerts">
+    <DetailRow label="Tag alert emails">
       <div class="detail-cell">
         {#if notifyError}
           <p class="error">
@@ -227,24 +235,27 @@
           </p>
         {/if}
 
-        <label class="checkbox">
-          <input
-            type="checkbox"
-            bind:checked={notifyNewTags}
+        <label class="field">
+          <span class="field-label"
+            >Email me about tag changes for my virtual images</span
+          >
+          <select
+            class="input"
+            bind:value={notifyLevel}
             disabled={notifySubmitting}
             onchange={handleNotifyChange}
-          />
-          <span
-            >Notify me when a newer tag becomes available for one of my virtual
-            images</span
           >
+            {#each notifyLevelOptions as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
         </label>
 
-        {#if notifyNewTags && !smtpEnabled}
+        {#if notifyLevel !== "none" && !smtpEnabled}
           <p class="warning-text">
             <TriangleAlert size={14} strokeWidth={2} />
-            SMTP is not configured, so new tag alert emails won't be sent
-            until an administrator sets it up.
+            SMTP is not configured, so tag alert emails won't be sent until
+            an administrator sets it up.
           </p>
         {/if}
       </div>

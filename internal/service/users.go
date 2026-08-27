@@ -121,7 +121,7 @@ func (u *Users) createUser(ctx context.Context, username, email, password string
 		Username:     username,
 		Email:        email,
 		PasswordHash: hash,
-		Preferences:  model.UserPreferences{NotifyNewTags: true},
+		Preferences:  model.UserPreferences{NotifyLevel: model.NotifyLevelUpgrades},
 	}
 
 	if err := u.store.CreateUser(ctx, user); err != nil {
@@ -314,8 +314,12 @@ func (u *Users) UpdatePreferences(ctx context.Context, patch model.UserPreferenc
 
 	preferences := user.Preferences
 
-	if patch.NotifyNewTags != nil {
-		preferences.NotifyNewTags = *patch.NotifyNewTags
+	if patch.NotifyLevel != nil {
+		if !patch.NotifyLevel.Valid() {
+			return fmt.Errorf("%w: invalid notification level %q", ErrInvalidUser, *patch.NotifyLevel)
+		}
+
+		preferences.NotifyLevel = *patch.NotifyLevel
 	}
 
 	updated, err := u.store.UpdateUserPreferences(ctx, currentUser.ID, preferences)
