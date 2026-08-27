@@ -8,6 +8,7 @@ import (
 
 	"github.com/septi0/dockvmap/internal/oci"
 	"github.com/septi0/dockvmap/internal/taganalyzer"
+	"github.com/septi0/dockvmap/internal/tagfilter"
 )
 
 func main() {
@@ -30,12 +31,16 @@ func main() {
 
 	fmt.Printf("fetched %d tags from %s/%s\n\n", len(tags), *registry, *repository)
 
-	// list all tags raw
-	for _, tag := range tags {
-		fmt.Println(tag)
+	filter, err := tagfilter.Load("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "loading tag filters: %v\n", err)
+		os.Exit(1)
 	}
+	tags = filter.Apply(tags)
 
-	analysis := taganalyzer.AnalyzeWithOptions(tags, taganalyzer.AnalysisOptions{})
+	fmt.Printf("%d tags after filtering\n\n", len(tags))
+
+	analysis := taganalyzer.Analyze(tags)
 
 	printFamilies(analysis)
 }
@@ -43,7 +48,7 @@ func main() {
 func printFamilies(analysis taganalyzer.Analysis) {
 	fmt.Println("=== families (ordered, newest first) ===")
 	for _, family := range analysis.Ordered {
-		fmt.Printf("\nfamily #%d [%s] stepLevel=%d key=%q tags=%d\n", family.ID, family.Kind, family.StepLevel, family.Key, family.TagCount)
+		fmt.Printf("\nfamily #%d [%s] key=%q tags=%d\n", family.ID, family.Kind, family.Key, family.TagCount)
 		for i, tag := range family.OrderedTags {
 			fmt.Printf("  %2d. %s\n", i+1, tag)
 		}

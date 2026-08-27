@@ -7,26 +7,34 @@ import (
 	"time"
 )
 
-var prereleaseRE = regexp.MustCompile(`(?i)^(alpha|beta|rc|pre|preview|dev|snapshot)(?:[._]?([0-9]+))?$`)
+var prereleaseRE = regexp.MustCompile(`(?i)^(` + prereleaseAlternation + `)(?:[._]?([0-9]+))?$`)
 
-func NormalizeSegments(tokens []TokenClassification) []SegmentAnalysis {
+var gluedPrereleaseRE = regexp.MustCompile(`(?i)^(a|b)([0-9]+)?$`)
+
+var patchSuffixRE = regexp.MustCompile(`(?i)^p([0-9]+)$`)
+
+var updateSuffixRE = regexp.MustCompile(`(?i)^u([0-9]+)$`)
+
+var revisionSuffixRE = regexp.MustCompile(`(?i)^r([0-9]+)$`)
+
+func normalizeSegments(tokens []tokenClassification) []SegmentAnalysis {
 	segments := make([]SegmentAnalysis, 0, len(tokens))
 
 	for i := 0; i < len(tokens); i++ {
 		token := tokens[i]
 		raw := token.Token.Value
 
-		if hasMatch(token.Matches, TokenDateTime) {
+		if hasMatch(token.Matches, tokenDateTimeType) {
 			segments = append(segments, SegmentAnalysis{Raw: raw, OrderType: OrderDateTime, IsVariable: true, sortKey: temporalSortKey(raw, dateTimeLayout)})
 			continue
 		}
-		if hasMatch(token.Matches, TokenDate) {
+		if hasMatch(token.Matches, tokenDateType) {
 			numbers, sortKey := parseDate(raw)
 			segments = append(segments, SegmentAnalysis{Raw: raw, OrderType: OrderDate, IsVariable: true, Numbers: numbers, sortKey: sortKey})
 			continue
 		}
 
-		if hasMatch(token.Matches, TokenTime) && i > 0 && len(segments) > 0 &&
+		if hasMatch(token.Matches, tokenTimeType) && i > 0 && len(segments) > 0 &&
 			(segments[len(segments)-1].OrderType == OrderDate || segments[len(segments)-1].OrderType == OrderDateTime) &&
 			token.Token.Separator == "_" {
 			segments = append(segments, SegmentAnalysis{Raw: raw, OrderType: OrderTime, IsVariable: true})
@@ -34,24 +42,29 @@ func NormalizeSegments(tokens []TokenClassification) []SegmentAnalysis {
 		}
 
 		if i > 0 && len(segments) > 0 && segments[len(segments)-1].OrderType == OrderVersion {
-			if prerelease, ok := parsePrereleaseToken(raw); ok {
-				appendPrerelease(segments[len(segments)-1:], prerelease)
+			if parsed, ok := parsePrereleaseToken(raw); ok {
+				prerelease := appendPrerelease(segments[len(segments)-1:], parsed)
 
-				if prerelease.Number == nil && i+1 < len(tokens) && hasMatch(tokens[i+1].Matches, TokenInteger) {
+				if last := len(prerelease.Identifiers) - 1; last >= 0 && prerelease.Identifiers[last].Number == nil &&
+					i+1 < len(tokens) && hasMatch(tokens[i+1].Matches, tokenIntegerType) {
 					if n, err := strconv.ParseInt(tokens[i+1].Token.Value, 10, 64); err == nil {
-						prerelease.Number = &n
-						if len(prerelease.Identifiers) > 0 {
-							prerelease.Identifiers[len(prerelease.Identifiers)-1].Number = &n
-							prerelease.Identifiers[len(prerelease.Identifiers)-1].IsNumber = false
-						}
+						prerelease.Identifiers[last].Number = &n
 						i++
 					}
 				}
 				continue
 			}
+
+			// Alpine/apk package revision: 1.2.3-r1 is a rebuild of 1.2.3, so it folds
+			// into the version rather than becoming a segment that blocks grouping.
+			last := &segments[len(segments)-1]
+			if revision, ok := parseRevisionSuffix(raw); ok && last.Prerelease == nil {
+				last.Numbers = append(last.Numbers, revision)
+				continue
+			}
 		}
 
-		if hasMatch(token.Matches, TokenVersion) && !looksLikeHash(raw) {
+		if hasMatch(token.Matches, tokenVersionType) {
 			if version, ok := parseVersionStructure(raw); ok {
 				segments = append(segments, SegmentAnalysis{
 					Raw: raw, OrderType: OrderVersion, Prefix: version.Prefix,
@@ -78,12 +91,20 @@ func temporalSortKey(value, layout string) string {
 }
 
 func parseDate(value string) (numbers []int64, sortKey string) {
-	parsed, err := time.Parse(dateLayout, value)
+	base := value
+	var respin int64
+	if m := dateRespinRE.FindStringSubmatch(value); m != nil {
+		base = m[1]
+		respin, _ = strconv.ParseInt(m[2], 10, 64)
+	}
+
+	parsed, err := time.Parse(dateLayout, base)
 	if err != nil {
 		return nil, ""
 	}
-	y, m, d := parsed.Date()
-	return []int64{int64(y), int64(m), int64(d)}, parsed.UTC().Format("20060102150405.000000000Z")
+	y, mo, d := parsed.Date()
+	sortTime := parsed.Add(time.Duration(respin) * time.Second)
+	return []int64{int64(y), int64(mo), int64(d)}, sortTime.UTC().Format("20060102150405.000000000Z")
 }
 
 func parseVersionStructure(value string) (VersionStructure, bool) {
@@ -108,11 +129,7 @@ func parseVersionStructure(value string) (VersionStructure, bool) {
 			i++
 		}
 		component := base[start:i]
-		if prefix == "" && len(numbers) == 0 {
-			if !isCanonicalInteger(component) {
-				return VersionStructure{}, false
-			}
-		} else if !isDigits(component) {
+		if !isDigits(component) {
 			return VersionStructure{}, false
 		}
 		n, err := strconv.ParseInt(component, 10, 64)
@@ -121,7 +138,7 @@ func parseVersionStructure(value string) (VersionStructure, bool) {
 		}
 		numbers = append(numbers, n)
 
-		if i >= len(base) || base[i] != '.' {
+		if i >= len(base) || base[i] != '.' || i+1 >= len(base) || !isASCIIDigit(base[i+1]) {
 			break
 		}
 		i++
@@ -132,6 +149,21 @@ func parseVersionStructure(value string) (VersionStructure, bool) {
 	if suffix != "" {
 		prerelease = parsePrereleaseSequence(suffix)
 		if prerelease == nil && prefix == "" {
+			prerelease = parseGluedPrereleaseSuffix(suffix)
+		}
+		if prerelease == nil && prefix == "" {
+			if patch, ok := parsePatchSuffix(suffix); ok {
+				numbers = append(numbers, patch)
+				suffix = ""
+			}
+		}
+		if prerelease == nil && prefix == "" {
+			if update, ok := parseUpdateSuffix(suffix); ok {
+				numbers = append(numbers, update)
+				suffix = ""
+			}
+		}
+		if prerelease == nil && suffix != "" && prefix == "" {
 			return VersionStructure{}, false
 		}
 	}
@@ -182,7 +214,7 @@ func parsePrereleaseSequence(value string) *Prerelease {
 
 			if len(result.Identifiers) > 0 {
 				last := &result.Identifiers[len(result.Identifiers)-1]
-				if last.Number == nil && !last.IsNumber && prereleaseRank(last.Value) < 80 {
+				if last.Number == nil && !last.IsNumber && prereleaseRank(last.Value) < unrankedPrerelease {
 					last.Number = &n
 					continue
 				}
@@ -196,26 +228,74 @@ func parsePrereleaseSequence(value string) *Prerelease {
 	if len(result.Identifiers) == 0 || !sawKeyword {
 		return nil
 	}
-	result.Type = result.Identifiers[0].Value
-	if len(result.Identifiers) == 1 && result.Identifiers[0].Number != nil && !result.Identifiers[0].IsNumber {
-		result.Number = result.Identifiers[0].Number
-	}
 	return result
 }
 
-func appendPrerelease(dst []SegmentAnalysis, p *Prerelease) {
+func parseGluedPrereleaseSuffix(value string) *Prerelease {
+	m := gluedPrereleaseRE.FindStringSubmatch(value)
+	if m == nil {
+		return nil
+	}
+
+	id := PrereleaseIdentifier{Value: strings.ToLower(m[1])}
+	if m[2] != "" {
+		n, err := strconv.ParseInt(m[2], 10, 64)
+		if err != nil {
+			return nil
+		}
+		id.Number = &n
+	}
+
+	return &Prerelease{Identifiers: []PrereleaseIdentifier{id}}
+}
+
+func parsePatchSuffix(value string) (int64, bool) {
+	m := patchSuffixRE.FindStringSubmatch(value)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+func parseRevisionSuffix(value string) (int64, bool) {
+	m := revisionSuffixRE.FindStringSubmatch(value)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+func parseUpdateSuffix(value string) (int64, bool) {
+	m := updateSuffixRE.FindStringSubmatch(value)
+	if m == nil {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
+func appendPrerelease(dst []SegmentAnalysis, p *Prerelease) *Prerelease {
 	if len(dst) == 0 || p == nil {
-		return
+		return p
 	}
 	current := dst[0].Prerelease
 	if current == nil {
 		dst[0].Prerelease = p
-		return
+		return p
 	}
 	current.Identifiers = append(current.Identifiers, p.Identifiers...)
-	if len(current.Identifiers) > 0 {
-		current.Type = current.Identifiers[0].Value
-	}
+	return current
 }
 
 func normalizeVersionSuffix(version VersionStructure) string {
@@ -225,7 +305,7 @@ func normalizeVersionSuffix(version VersionStructure) string {
 	return version.Suffix
 }
 
-func hasMatch(matches []TokenType, wanted TokenType) bool {
+func hasMatch(matches []tokenType, wanted tokenType) bool {
 	for _, match := range matches {
 		if match == wanted {
 			return true
@@ -234,7 +314,6 @@ func hasMatch(matches []TokenType, wanted TokenType) bool {
 	return false
 }
 
-func isCanonicalInteger(s string) bool { return s == "0" || (len(s) > 0 && s[0] != '0' && isDigits(s)) }
 func isDigits(s string) bool {
 	if s == "" {
 		return false

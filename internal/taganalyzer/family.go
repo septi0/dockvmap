@@ -2,147 +2,194 @@ package taganalyzer
 
 import (
 	"fmt"
+	"hash/fnv"
 	"sort"
-	"strconv"
 	"strings"
 )
 
 func analyzeFamilies(tags []TagAnalysis) []Family {
-	knownMajors := collectKnownMajors(tags)
 	hashLengths := collectHashLengths(tags)
+	normalizeHashSegments(tags, hashLengths)
+	knownMajors := collectKnownMajors(tags, hashLengths)
 
 	identities := make(map[string][]string, len(tags))
+	tagSegments := make(map[string][]SegmentAnalysis, len(tags))
 	for _, tag := range tags {
 		identities[tag.Tag] = segmentIdentities(tag.Segments, knownMajors, hashLengths)
+		tagSegments[tag.Tag] = tag.Segments
 	}
 
-	bloodGroups := map[string][]TagAnalysis{}
-	for _, tag := range tags {
-		key := strings.Join(identities[tag.Tag], "|")
-		bloodGroups[key] = append(bloodGroups[key], tag)
+	families := buildBloodFamilies(tags, identities)
+	families = attachAncestors(families, identities, tagSegments, hashLengths)
+
+	for i := range families {
+		families[i].ID = familyID(families[i].Key)
+		families[i].HasOrder = familyHasOrder(families[i], tagSegments, hashLengths)
 	}
-
-	families := make([]Family, 0, len(bloodGroups))
-	singletons := make([]TagAnalysis, 0)
-	nextID := 1
-
-	keys := make([]string, 0, len(bloodGroups))
-	for key := range bloodGroups {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	for _, key := range keys {
-		group := bloodGroups[key]
-		if len(group) == 1 {
-			singletons = append(singletons, group[0])
-			continue
-		}
-
-		family := Family{
-			ID:       nextID,
-			Key:      key,
-			TagCount: len(group),
-			Kind:     FamilyBlood,
-		}
-		nextID++
-		for _, tag := range group {
-			family.Tags = append(family.Tags, tag.Tag)
-		}
-		families = append(families, family)
-	}
-
-	ancestorIndexes := make([]int, len(singletons))
-	for i := range ancestorIndexes {
-		ancestorIndexes[i] = i
-	}
-
-	ancestorFamilies, remaining, nextID := attachAncestorFamilies(singletons, ancestorIndexes, nil, nextID, identities)
-	families = append(families, ancestorFamilies...)
-
-	stepSingletons := make([]TagAnalysis, 0, len(remaining))
-	for _, index := range remaining {
-		stepSingletons = append(stepSingletons, singletons[index])
-	}
-	stepFamilies, _ := buildStepFamilies(stepSingletons, nextID, knownMajors, hashLengths)
-	families = append(families, stepFamilies...)
 
 	return families
 }
 
-func collectKnownMajors(tags []TagAnalysis) map[string]bool {
-	known := make(map[string]bool)
+func buildBloodFamilies(tags []TagAnalysis, identities map[string][]string) []Family {
+	groups := map[string][]string{}
 	for _, tag := range tags {
-		if len(tag.Segments) == 0 {
+		groups[strings.Join(identities[tag.Tag], "|")] = append(groups[strings.Join(identities[tag.Tag], "|")], tag.Tag)
+	}
+
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	families := make([]Family, 0, len(groups))
+	for _, key := range keys {
+		// Canonical member order: everything downstream breaks ties by "first wins",
+		// and a registry may hand us the same tags in a different order each fetch.
+		group := groups[key]
+		sort.Strings(group)
+		family := Family{Key: key, Kind: FamilyBlood, Tags: group, TagCount: len(group)}
+		if len(group) == 1 {
+			family.Key, family.Kind = "singleton:"+key, FamilyStep
+		}
+		families = append(families, family)
+	}
+
+	return families
+}
+
+func familyHasOrder(family Family, tagSegments map[string][]SegmentAnalysis, hashLengths map[hashSlot]bool) bool {
+	if len(family.Tags) < 2 {
+		return true
+	}
+
+	first := tagSegments[family.Tags[0]]
+	for _, tag := range family.Tags[1:] {
+		if len(tagSegments[tag]) != len(first) {
+			return true
+		}
+	}
+
+	varying := false
+	for i := range first {
+		differs := false
+		for _, tag := range family.Tags[1:] {
+			if tagSegments[tag][i].Raw != first[i].Raw {
+				differs = true
+				break
+			}
+		}
+		if !differs {
 			continue
 		}
-		segment := tag.Segments[0]
-		if !segment.IsVariable || segment.OrderType != OrderVersion || len(segment.Numbers) == 0 {
-			continue
+		varying = true
+		if _, isHash := hashSegmentIdentity(first[i], i, hashLengths); !isHash {
+			return true
 		}
-		if len(segment.Numbers) < 2 && segment.Prerelease == nil {
-			continue
+	}
+
+	return !varying
+}
+
+type majorSlot struct {
+	Context string
+	Prefix  string
+	Major   int64
+}
+
+func collectKnownMajors(tags []TagAnalysis, hashLengths map[hashSlot]bool) map[majorSlot]bool {
+	known := make(map[majorSlot]bool)
+	for _, tag := range tags {
+		context := ""
+		for i, segment := range tag.Segments {
+			if segment.IsVariable && segment.OrderType == OrderVersion && len(segment.Numbers) > 0 &&
+				(len(segment.Numbers) >= 2 || segment.Prerelease != nil) {
+				known[majorSlot{Context: context, Prefix: segment.Prefix, Major: segment.Numbers[0]}] = true
+			}
+			context = appendSegmentContext(context, segment, i, hashLengths)
 		}
-		known[majorKey(segment.Prefix, segment.Numbers[0])] = true
 	}
 	return known
 }
 
-func majorKey(prefix string, major int64) string {
-	return prefix + "\x00" + strconv.FormatInt(major, 10)
+func appendSegmentContext(context string, segment SegmentAnalysis, index int, hashLengths map[hashSlot]bool) string {
+	part := string(segment.OrderType)
+	if id, ok := hashSegmentIdentity(segment, index, hashLengths); ok {
+		part = id
+	} else if !segment.IsVariable {
+		part = "S:" + segment.Raw
+	}
+	if context == "" {
+		return part
+	}
+	return context + "|" + part
 }
 
-const (
-	hashMinSamples    = 5
-	hashMinUniqueRate = 0.9
-)
+const hashMinDistinctValues = 5
 
 type hashSlot struct {
 	Index  int
 	Length int
 }
 
+type hashSlotStats struct {
+	distinct map[string]bool
+	hasHex   bool
+}
+
 func collectHashLengths(tags []TagAnalysis) map[hashSlot]bool {
-	contexts := map[hashSlot]map[string]map[string]bool{}
+	stats := map[hashSlot]*hashSlotStats{}
 	for _, tag := range tags {
-		if len(tag.Segments) == 0 {
-			continue
-		}
-		leadingRaw := tag.Segments[0].Raw
 		for i, segment := range tag.Segments {
-			if segment.IsVariable || !looksLikeHash(segment.Raw) {
+			if !isHashCandidate(segment) {
 				continue
 			}
 			slot := hashSlot{Index: i, Length: len(segment.Raw)}
-			if contexts[slot] == nil {
-				contexts[slot] = map[string]map[string]bool{}
+			slotStats := stats[slot]
+			if slotStats == nil {
+				slotStats = &hashSlotStats{distinct: map[string]bool{}}
+				stats[slot] = slotStats
 			}
-			if contexts[slot][segment.Raw] == nil {
-				contexts[slot][segment.Raw] = map[string]bool{}
+			slotStats.distinct[segment.Raw] = true
+			if hasHexLetter(segment.Raw) {
+				slotStats.hasHex = true
 			}
-			contexts[slot][segment.Raw][leadingRaw] = true
 		}
 	}
 
-	dynamic := make(map[hashSlot]bool, len(contexts))
-	for slot, values := range contexts {
-		total, unique := 0, 0
-		for _, ctxSet := range values {
-			n := len(ctxSet)
-			total += n
-			if n == 1 {
-				unique++
-			}
-		}
-		if total >= hashMinSamples && float64(unique)/float64(total) >= hashMinUniqueRate {
+	dynamic := make(map[hashSlot]bool, len(stats))
+	for slot, slotStats := range stats {
+		if slotStats.hasHex && len(slotStats.distinct) >= hashMinDistinctValues {
 			dynamic[slot] = true
 		}
 	}
 	return dynamic
 }
 
+// normalizeHashSegments collapses every confirmed hash to a plain literal, so a sha
+// that happens to parse as a version (a953921 -> prefix "a", 953921) stops being
+// ordered by its digits. Identity and ordering then agree on what a hash is.
+func normalizeHashSegments(tags []TagAnalysis, hashLengths map[hashSlot]bool) {
+	for _, tag := range tags {
+		for i := range tag.Segments {
+			if _, ok := hashSegmentIdentity(tag.Segments[i], i, hashLengths); !ok {
+				continue
+			}
+			tag.Segments[i] = SegmentAnalysis{Raw: tag.Segments[i].Raw, OrderType: OrderAlphabetical}
+		}
+	}
+}
+
+func isHashCandidate(segment SegmentAnalysis) bool {
+	switch segment.OrderType {
+	case OrderDate, OrderDateTime, OrderTime:
+		return false
+	}
+	return looksLikeHash(segment.Raw)
+}
+
 func hashSegmentIdentity(segment SegmentAnalysis, index int, hashLengths map[hashSlot]bool) (string, bool) {
-	if segment.IsVariable || !looksLikeHash(segment.Raw) {
+	if !isHashCandidate(segment) {
 		return "", false
 	}
 	slot := hashSlot{Index: index, Length: len(segment.Raw)}
@@ -152,310 +199,187 @@ func hashSegmentIdentity(segment SegmentAnalysis, index int, hashLengths map[has
 	return fmt.Sprintf("HASH:len=%d", slot.Length), true
 }
 
-type stepPrefixKeys struct {
-	ids   [][]int
-	texts []string // Indexed by the corresponding interned prefix ID.
+type familyRep struct {
+	identity []string
+	segments []SegmentAnalysis
+	hasHash  bool
 }
 
-func buildStepFamilies(singletons []TagAnalysis, nextID int, knownMajors map[string]bool, hashLengths map[hashSlot]bool) ([]Family, []TagAnalysis) {
-	if len(singletons) == 0 {
-		return nil, nil
-	}
-	if len(singletons) == 1 {
-		tag := singletons[0]
-		return []Family{{
-			ID:        nextID,
-			Key:       "singleton:" + segmentPrefixKey(tag.Segments, knownMajors, hashLengths),
-			TagCount:  1,
-			Tags:      []string{tag.Tag},
-			Kind:      FamilyStep,
-			StepLevel: 0,
-		}}, nil
-	}
-
-	prefixKeys := precomputeStepPrefixKeys(singletons, knownMajors, hashLengths)
-	remaining := make([]int, len(singletons))
-	for i := range remaining {
-		remaining[i] = i
-	}
-
-	maxSegments := 0
-	for _, tag := range singletons {
-		if len(tag.Segments) > maxSegments {
-			maxSegments = len(tag.Segments)
-		}
-	}
-
-	families := make([]Family, 0)
-
-	for prefixLen := maxSegments; prefixLen >= 1; prefixLen-- {
-		groups := make(map[int][]int)
-		for _, index := range remaining {
-			if len(singletons[index].Segments) < prefixLen {
+func collectFamilyReps(families []Family, identities map[string][]string, tagSegments map[string][]SegmentAnalysis) [][]familyRep {
+	reps := make([][]familyRep, len(families))
+	for fi, family := range families {
+		seen := make(map[string]bool, 1)
+		for _, tag := range family.Tags {
+			identity := identities[tag]
+			key := strings.Join(identity, "|")
+			if seen[key] {
 				continue
 			}
-			groups[prefixKeys.ids[index][prefixLen]] = append(groups[prefixKeys.ids[index][prefixLen]], index)
-		}
-
-		keys := make([]int, 0, len(groups))
-		for key := range groups {
-			keys = append(keys, key)
-		}
-		sort.Ints(keys)
-
-		consumed := make(map[int]bool)
-		for _, key := range keys {
-			indexes := groups[key]
-			if len(indexes) < 2 {
-				continue
-			}
-			sort.Ints(indexes)
-
-			family := Family{
-				ID:        nextID,
-				Key:       "step:" + prefixKeys.texts[key],
-				TagCount:  len(indexes),
-				Kind:      FamilyStep,
-				StepLevel: prefixLen,
-			}
-			nextID++
-			for _, index := range indexes {
-				family.Tags = append(family.Tags, singletons[index].Tag)
-				consumed[index] = true
-			}
-			families = append(families, family)
-		}
-
-		if len(consumed) == 0 {
-			continue
-		}
-		newRemaining := make([]int, 0, len(remaining)-len(consumed))
-		for _, index := range remaining {
-			if !consumed[index] {
-				newRemaining = append(newRemaining, index)
-			}
-		}
-		remaining = newRemaining
-		if len(remaining) < 2 {
-			break
+			seen[key] = true
+			reps[fi] = append(reps[fi], familyRep{
+				identity: identity,
+				segments: tagSegments[tag],
+				hasHash:  containsHashLiteral(tagSegments[tag]),
+			})
 		}
 	}
-
-	if len(remaining) >= 2 {
-		lengthGroups := make(map[int][]int)
-		for _, index := range remaining {
-			lengthGroups[len(singletons[index].Segments)] = append(lengthGroups[len(singletons[index].Segments)], index)
-		}
-
-		lengths := make([]int, 0, len(lengthGroups))
-		for length := range lengthGroups {
-			lengths = append(lengths, length)
-		}
-		sort.Ints(lengths)
-
-		for _, length := range lengths {
-			indexes := lengthGroups[length]
-			if len(indexes) < 2 {
-				continue
-			}
-			sort.Ints(indexes)
-
-			family := Family{
-				ID:        nextID,
-				Key:       fmt.Sprintf("step:len=%d", length),
-				TagCount:  len(indexes),
-				Kind:      FamilyStep,
-				StepLevel: 0,
-			}
-			nextID++
-			for _, index := range indexes {
-				family.Tags = append(family.Tags, singletons[index].Tag)
-			}
-			families = append(families, family)
-		}
-
-		assigned := make(map[int]bool)
-		for _, length := range lengths {
-			indexes := lengthGroups[length]
-			if len(indexes) >= 2 {
-				for _, index := range indexes {
-					assigned[index] = true
-				}
-			}
-		}
-		newRemaining := make([]int, 0, len(remaining))
-		for _, index := range remaining {
-			if !assigned[index] {
-				newRemaining = append(newRemaining, index)
-			}
-		}
-		remaining = newRemaining
-	}
-
-	sort.Ints(remaining)
-	for _, index := range remaining {
-		tag := singletons[index]
-		families = append(families, Family{
-			ID:        nextID,
-			Key:       "step:singleton",
-			TagCount:  1,
-			Tags:      []string{tag.Tag},
-			Kind:      FamilyStep,
-			StepLevel: 0,
-		})
-		nextID++
-	}
-
-	return families, nil
+	return reps
 }
 
-func attachAncestorFamilies(singletons []TagAnalysis, remaining []int, families []Family, nextID int, identities map[string][]string) ([]Family, []int, int) {
-	if len(remaining) == 0 {
-		return families, remaining, nextID
-	}
-
-	remainingSet := make(map[int]bool, len(remaining))
-	for _, index := range remaining {
-		remainingSet[index] = true
-	}
-
-	rootIndexes := append([]int(nil), remaining...)
-	sort.Slice(rootIndexes, func(i, j int) bool {
-		li := len(singletons[rootIndexes[i]].Segments)
-		lj := len(singletons[rootIndexes[j]].Segments)
-		if li != lj {
-			return li < lj
+// attachAncestors repeatedly folds each family into the single other family whose
+// pattern extends it, until no more merges are possible. Ambiguity - zero or two
+// or more candidate targets - always leaves the family where it is.
+func attachAncestors(families []Family, identities map[string][]string, tagSegments map[string][]SegmentAnalysis, hashLengths map[hashSlot]bool) []Family {
+	for {
+		merged, changed := mergeAncestorPass(families, identities, tagSegments, hashLengths)
+		if !changed {
+			return families
 		}
-		return singletons[rootIndexes[i]].Tag < singletons[rootIndexes[j]].Tag
+		families = merged
+	}
+}
+
+func mergeAncestorPass(families []Family, identities map[string][]string, tagSegments map[string][]SegmentAnalysis, hashLengths map[hashSlot]bool) ([]Family, bool) {
+	reps := collectFamilyReps(families, identities, tagSegments)
+
+	// Longest pattern first, so a more specific root claims a target before a shorter one can.
+	order := make([]int, len(families))
+	for i := range order {
+		order[i] = i
+	}
+	sort.Slice(order, func(a, b int) bool {
+		ra, rb := rootRep(reps[order[a]]), rootRep(reps[order[b]])
+		if len(ra.identity) != len(rb.identity) {
+			return len(ra.identity) > len(rb.identity)
+		}
+		return families[order[a]].Key < families[order[b]].Key
 	})
 
-	consumedFamilies := make(map[int]bool)
-	consumedRoots := make(map[int]bool)
-	ancestorFamilies := make([]Family, 0)
+	consumed := make(map[int]bool)
+	result := make([]Family, 0, len(families))
 
-	for _, rootIndex := range rootIndexes {
-		if !remainingSet[rootIndex] || consumedRoots[rootIndex] {
+	for _, rootIndex := range order {
+		if consumed[rootIndex] || len(reps[rootIndex]) == 0 {
 			continue
 		}
-		root := singletons[rootIndex]
-		rootIdentity := identities[root.Tag]
+		root := rootRep(reps[rootIndex])
 
-		familyIndexes := make([]int, 0)
-		for fi := range families {
-			if families[fi].Kind == FamilyBlood || consumedFamilies[fi] || len(families[fi].Tags) == 0 {
+		target, matches := -1, 0
+		for candidate := range families {
+			if candidate == rootIndex || consumed[candidate] {
 				continue
 			}
-			matched := false
-			for _, descendantTag := range families[fi].Tags {
-				if isStrictSegmentPrefix(rootIdentity, identities[descendantTag]) {
-					matched = true
+			for _, rep := range reps[candidate] {
+				// A release line must not dissolve into commit builds: a hash-free root
+				// keeps its own family rather than joining one that varies by hash.
+				if !root.hasHash && rep.hasHash {
+					continue
+				}
+				if isSkeletonExtension(root.identity, rep.identity, root.segments, rep.segments, hashLengths) {
+					target, matches = candidate, matches+1
 					break
 				}
 			}
-			if matched {
-				familyIndexes = append(familyIndexes, fi)
+			if matches > 1 {
+				break
 			}
 		}
-		sort.Ints(familyIndexes)
 
-		descendantRoots := make([]int, 0)
-		for _, candidate := range rootIndexes {
-			if candidate == rootIndex || !remainingSet[candidate] || consumedRoots[candidate] {
-				continue
-			}
-			if isStrictSegmentPrefix(rootIdentity, identities[singletons[candidate].Tag]) {
-				descendantRoots = append(descendantRoots, candidate)
-			}
-		}
-		sort.Slice(descendantRoots, func(i, j int) bool {
-			return singletons[descendantRoots[i]].Tag < singletons[descendantRoots[j]].Tag
-		})
-
-		if len(familyIndexes) == 0 && len(descendantRoots) == 0 {
+		if matches != 1 {
 			continue
 		}
 
 		family := Family{
-			ID:        nextID,
-			Key:       "ancestor:" + strings.Join(rootIdentity, "|"),
-			Kind:      FamilyAncestor,
-			StepLevel: len(root.Segments),
-			Tags:      []string{root.Tag},
-			TagCount:  1,
+			Key:  "ancestor:" + strings.Join(root.identity, "|"),
+			Kind: FamilyAncestor,
+			Tags: append(append([]string(nil), families[rootIndex].Tags...), families[target].Tags...),
 		}
-		nextID++
+		family.TagCount = len(family.Tags)
 
-		for _, fi := range familyIndexes {
-			family.Tags = append(family.Tags, families[fi].Tags...)
-			family.TagCount += len(families[fi].Tags)
-			consumedFamilies[fi] = true
-		}
-		for _, descendantIndex := range descendantRoots {
-			family.Tags = append(family.Tags, singletons[descendantIndex].Tag)
-			family.TagCount++
-			consumedRoots[descendantIndex] = true
-		}
-
-		ancestorFamilies = append(ancestorFamilies, family)
-		consumedRoots[rootIndex] = true
+		consumed[rootIndex] = true
+		consumed[target] = true
+		result = append(result, family)
 	}
 
-	if len(ancestorFamilies) == 0 {
-		return families, remaining, nextID
+	if len(result) == 0 {
+		return families, false
 	}
 
-	newFamilies := make([]Family, 0, len(families)-len(consumedFamilies)+len(ancestorFamilies))
-	for fi, family := range families {
-		if !consumedFamilies[fi] {
-			newFamilies = append(newFamilies, family)
-		}
-	}
-	newFamilies = append(newFamilies, ancestorFamilies...)
-
-	newRemaining := make([]int, 0, len(remaining))
-	for _, index := range remaining {
-		if !consumedRoots[index] {
-			newRemaining = append(newRemaining, index)
+	for i, family := range families {
+		if !consumed[i] {
+			result = append(result, family)
 		}
 	}
 
-	return newFamilies, newRemaining, nextID
+	return result, true
 }
 
-func isStrictSegmentPrefix(prefix, full []string) bool {
-	if len(prefix) == 0 || len(prefix) >= len(full) {
+// rootRep is a family's most general member: the one other families extend.
+func rootRep(reps []familyRep) familyRep {
+	best := reps[0]
+	for _, rep := range reps[1:] {
+		if len(rep.identity) != len(best.identity) {
+			if len(rep.identity) < len(best.identity) {
+				best = rep
+			}
+			continue
+		}
+		if strings.Join(rep.identity, "|") < strings.Join(best.identity, "|") {
+			best = rep
+		}
+	}
+	return best
+}
+
+func isSkeletonExtension(skeleton, full []string, skeletonSegments, fullSegments []SegmentAnalysis, hashLengths map[hashSlot]bool) bool {
+	if len(skeleton) == 0 || len(skeleton) >= len(full) {
 		return false
 	}
-	for i := range prefix {
-		if prefix[i] != full[i] {
+	si := 0
+	skippedAny := false
+	for i, id := range full {
+		if si < len(skeleton) && id == skeleton[si] {
+			si++
+			continue
+		}
+		if !isOmittableSegment(fullSegments[i], i, hashLengths) {
 			return false
 		}
+		if si < len(skeleton) && fullSegments[i].OrderType == OrderVersion && skeletonSegments[si].OrderType == OrderVersion {
+			return false
+		}
+		skippedAny = true
 	}
-	return true
+	return si == len(skeleton) && skippedAny
 }
 
-func versionShape(segment SegmentAnalysis, isLeading bool, knownMajors map[string]bool) string {
+func isOmittableSegment(segment SegmentAnalysis, index int, hashLengths map[hashSlot]bool) bool {
+	if segment.IsVariable && segment.Prefix == "" && segment.Suffix == "" {
+		return true
+	}
+	_, isHash := hashSegmentIdentity(segment, index, hashLengths)
+	return isHash
+}
+
+func versionShape(segment SegmentAnalysis, context string, knownMajors map[majorSlot]bool) string {
 	if len(segment.Numbers) >= 2 {
 		if looksLikeCalVer(segment) {
 			return "calver"
 		}
 		return "multi"
 	}
-	if segment.Prerelease != nil {
-		return "multi"
-	}
-	if isLeading && len(segment.Numbers) == 1 && knownMajors[majorKey(segment.Prefix, segment.Numbers[0])] {
+	if len(segment.Numbers) == 1 && knownMajors[majorSlot{Context: context, Prefix: segment.Prefix, Major: segment.Numbers[0]}] {
 		return "multi"
 	}
 	return "solo"
 }
 
 func looksLikeCalVer(segment SegmentAnalysis) bool {
-	year, month := segment.Numbers[0], segment.Numbers[1]
-	return year >= 2000 && year <= 2099 && month >= 1 && month <= 12
+	year := segment.Numbers[0]
+	return year >= 2000 && year <= 2099
 }
 
-func segmentIdentity(segment SegmentAnalysis, index int, isLeading bool, knownMajors map[string]bool, hashLengths map[hashSlot]bool) string {
+func segmentIdentity(segment SegmentAnalysis, index int, context string, knownMajors map[majorSlot]bool, hashLengths map[hashSlot]bool) string {
 	if id, ok := hashSegmentIdentity(segment, index, hashLengths); ok {
 		return id
 	}
@@ -471,81 +395,30 @@ func segmentIdentity(segment SegmentAnalysis, index int, isLeading bool, knownMa
 	case OrderTime:
 		return "T"
 	default:
-		return "V:P=" + segment.Prefix + ":S=" + segment.Suffix + ":" + versionShape(segment, isLeading, knownMajors)
+		return "V:P=" + segment.Prefix + ":S=" + segment.Suffix + ":" + versionShape(segment, context, knownMajors)
 	}
 }
 
-func segmentIdentities(segments []SegmentAnalysis, knownMajors map[string]bool, hashLengths map[hashSlot]bool) []string {
+func segmentIdentities(segments []SegmentAnalysis, knownMajors map[majorSlot]bool, hashLengths map[hashSlot]bool) []string {
 	ids := make([]string, len(segments))
+	context := ""
 	for i, segment := range segments {
-		ids[i] = segmentIdentity(segment, i, i == 0, knownMajors, hashLengths)
+		ids[i] = segmentIdentity(segment, i, context, knownMajors, hashLengths)
+		context = appendSegmentContext(context, segment, i, hashLengths)
 	}
 	return ids
-}
-
-func segmentPrefixKey(segments []SegmentAnalysis, knownMajors map[string]bool, hashLengths map[hashSlot]bool) string {
-	return strings.Join(segmentIdentities(segments, knownMajors, hashLengths), "|")
-}
-
-func precomputeStepPrefixKeys(tags []TagAnalysis, knownMajors map[string]bool, hashLengths map[hashSlot]bool) stepPrefixKeys {
-	result := stepPrefixKeys{ids: make([][]int, len(tags)), texts: []string{""}}
-	interned := make(map[string]int)
-	for tagIndex, tag := range tags {
-		parts := make([]string, len(tag.Segments))
-		keys := make([]int, len(tag.Segments)+1)
-		for i, segment := range tag.Segments {
-			parts[i] = stepSegmentKey(segment, i, i == 0, knownMajors, hashLengths)
-			text := fmt.Sprintf("prefix=%d:%s", i+1, strings.Join(parts[:i+1], "|"))
-			id, ok := interned[text]
-			if !ok {
-				id = len(result.texts)
-				interned[text] = id
-				result.texts = append(result.texts, text)
-			}
-			keys[i+1] = id
-		}
-		result.ids[tagIndex] = keys
-	}
-	return result
-}
-
-func stepSegmentKey(segment SegmentAnalysis, index int, isLeading bool, knownMajors map[string]bool, hashLengths map[hashSlot]bool) string {
-	if id, ok := hashSegmentIdentity(segment, index, hashLengths); ok {
-		return id
-	}
-	if !segment.IsVariable {
-		return "S:" + segment.Raw
-	}
-
-	if segment.OrderType == OrderDate {
-		return "D"
-	}
-	if segment.OrderType == OrderDateTime {
-		return "DT"
-	}
-	if segment.OrderType == OrderTime {
-		return "T"
-	}
-	if isPlainVersionSegment(segment) {
-		switch versionShape(segment, isLeading, knownMajors) {
-		case "solo":
-			return "V:plain:solo"
-		case "calver":
-			return "V:plain"
-		default:
-			return "V:plain:trad"
-		}
-	}
-
-	pre := ""
-	if segment.Prerelease != nil {
-		pre = ":pre"
-	}
-	return fmt.Sprintf("V:%s:%s:%s%s:%s", segment.OrderType, segment.Prefix, segment.Suffix, pre, versionShape(segment, isLeading, knownMajors))
 }
 
 func isPlainVersionSegment(segment SegmentAnalysis) bool {
 	return segment.OrderType == OrderVersion &&
 		segment.Prefix == "" && segment.Suffix == "" &&
 		segment.Prerelease == nil
+}
+
+// familyID keeps the low 52 bits so the value survives a round-trip through a
+// JSON number without losing precision.
+func familyID(key string) int64 {
+	h := fnv.New64a()
+	h.Write([]byte(key))
+	return int64(h.Sum64() & 0x000FFFFFFFFFFFFF)
 }

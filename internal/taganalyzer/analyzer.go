@@ -1,14 +1,14 @@
 package taganalyzer
 
-func AnalyzeWithOptions(tags []string, options AnalysisOptions) Analysis {
+func Analyze(tags []string) Analysis {
 	result := Analysis{
 		Tags: make([]TagAnalysis, 0, len(tags)),
 	}
-	classificationCache := make(map[string][]TokenType)
+	classificationCache := make(map[string][]tokenType)
 
 	for _, tag := range tags {
-		rawTokens := Tokenize(tag)
-		classified := make([]TokenClassification, 0, len(rawTokens))
+		rawTokens := tokenize(tag)
+		classified := make([]tokenClassification, 0, len(rawTokens))
 
 		for _, token := range rawTokens {
 			matches, ok := classificationCache[token.Value]
@@ -16,27 +16,16 @@ func AnalyzeWithOptions(tags []string, options AnalysisOptions) Analysis {
 				matches = classifyToken(token.Value)
 				classificationCache[token.Value] = matches
 			}
-			if options.IncludeTokens {
-				matches = append([]TokenType(nil), matches...)
-			}
-			classified = append(classified, TokenClassification{Token: token, Matches: matches})
+			classified = append(classified, tokenClassification{Token: token, Matches: matches})
 		}
 
 		result.Tags = append(result.Tags, TagAnalysis{
 			Tag:      tag,
-			Tokens:   classified,
-			Segments: NormalizeSegments(classified),
+			Segments: normalizeSegments(classified),
 		})
 	}
 
-	result.Families = analyzeFamilies(result.Tags)
-	OrderFamilies(&result)
-
-	if !options.IncludeTokens {
-		for i := range result.Tags {
-			result.Tags[i].Tokens = nil
-		}
-	}
+	result.Ordered = orderFamilies(result.Tags, analyzeFamilies(result.Tags))
 
 	return result
 }

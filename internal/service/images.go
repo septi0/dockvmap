@@ -500,7 +500,7 @@ func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string)
 		}
 	}
 
-	if current == nil {
+	if current == nil || !current.FamilyHasOrder {
 		return false, ""
 	}
 
@@ -569,9 +569,7 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 		sourceTags = i.tagFilter.Apply(sourceTags)
 	}
 
-	analyzedTags := taganalyzer.AnalyzeWithOptions(sourceTags, taganalyzer.AnalysisOptions{
-		IncludeTokens: false,
-	})
+	analyzedTags := taganalyzer.Analyze(sourceTags)
 
 	tags := imageTagsFromAnalysis(analyzedTags, image.ID, checkedAt, options.FlagAsNew)
 
@@ -735,15 +733,16 @@ func imageTagsFromAnalysis(analysis taganalyzer.Analysis, imageID int64, seenAt 
 	for _, family := range analysis.Ordered {
 		for _, tag := range family.OrderedTags {
 			tags = append(tags, model.ImageTag{
-				ImageID:    imageID,
-				FamilyID:   int64(family.ID),
-				FamilyType: string(family.Kind),
-				Tag:        tag,
-				TagOrder:   order,
-				Prerelease: prerelease[tag],
-				FirstSeen:  seenAt,
-				LastSeen:   seenAt,
-				New:        flagAsNew,
+				ImageID:        imageID,
+				FamilyID:       family.ID,
+				FamilyType:     string(family.Kind),
+				FamilyHasOrder: family.HasOrder,
+				Tag:            tag,
+				TagOrder:       order,
+				Prerelease:     prerelease[tag],
+				FirstSeen:      seenAt,
+				LastSeen:       seenAt,
+				New:            flagAsNew,
 			})
 
 			order++

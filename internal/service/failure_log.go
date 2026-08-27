@@ -11,7 +11,7 @@ const (
 	FailureSourceWebhook           FailureSource = "webhook"
 	FailureSourceEmail             FailureSource = "email"
 	FailureSourceRefresh           FailureSource = "refresh"
-	FailureSourceDiscoveryRefresh  FailureSource = "discovery_refresh"
+	FailureSourceDiscovery         FailureSource = "discovery"
 	FailureSourceEventRegistration FailureSource = "event_registration"
 )
 

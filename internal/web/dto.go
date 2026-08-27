@@ -140,6 +140,7 @@ type tagResponse struct {
 type tagGroupResponse struct {
 	FamilyType string        `json:"familyType"`
 	FamilyID   int64         `json:"familyId"`
+	HasOrder   bool          `json:"hasOrder"`
 	Tags       []tagResponse `json:"tags"`
 }
 
@@ -189,6 +190,7 @@ func tagGroupResponsesFromDiscoveryGroups(groups []model.TagDiscoveryGroup) []ta
 		responses = append(responses, tagGroupResponse{
 			FamilyType: group.FamilyType,
 			FamilyID:   group.FamilyID,
+			HasOrder:   group.HasOrder,
 			Tags:       tags,
 		})
 	}
@@ -218,6 +220,7 @@ func newImageTagsResponse(tags []model.ImageTag, currentTag string) imageTagsRes
 			tagGroups = append(tagGroups, tagGroupResponse{
 				FamilyType: tag.FamilyType,
 				FamilyID:   tag.FamilyID,
+				HasOrder:   tag.FamilyHasOrder,
 				Tags:       make([]tagResponse, 0),
 			})
 
@@ -395,8 +398,8 @@ func failureMessage(failure service.Failure) string {
 	case service.FailureSourceRefresh:
 		return fmt.Sprintf("Image %q failed to refresh: %s", failure.Detail, failure.Error)
 
-	case service.FailureSourceDiscoveryRefresh:
-		return fmt.Sprintf("Repository %q tag discovery refresh failed: %s", failure.Detail, failure.Error)
+	case service.FailureSourceDiscovery:
+		return fmt.Sprintf("Repository %q tag discovery failed: %s", failure.Detail, failure.Error)
 
 	case service.FailureSourceEventRegistration:
 		return fmt.Sprintf("Image %q refreshed but its tag-change notification failed to register: %s", failure.Detail, failure.Error)

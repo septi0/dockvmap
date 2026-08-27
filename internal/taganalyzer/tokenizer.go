@@ -1,57 +1,58 @@
 package taganalyzer
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 var pretokenizeRewrites = []func(string) (string, bool){
-	rewriteReleaseTimestamp,
-	rewriteRevisionSuffix,
+	rewriteTimestamp,
 }
 
 func pretokenize(tag string) string {
 	for _, rewrite := range pretokenizeRewrites {
 		if rewritten, ok := rewrite(tag); ok {
-			return rewritten
+			tag = rewritten
 		}
 	}
 
 	return tag
 }
 
-var releaseTimestampRE = regexp.MustCompile(`^([A-Za-z]+)\.(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})Z(\.[A-Za-z0-9]+)?`)
+var (
+	punctuatedTimestampRE = regexp.MustCompile(`^(?:([A-Za-z]+)[.\-_])?(\d{4})-(\d{2})-(\d{2})T(\d{2})[-:.](\d{2})[-:.](\d{2})Z?([.\-][A-Za-z0-9]+)?`)
+	compactTimestampRE    = regexp.MustCompile(`^(\d{8})T(\d{6})Z?`)
+)
 
-func rewriteReleaseTimestamp(tag string) (string, bool) {
-	m := releaseTimestampRE.FindStringSubmatch(tag)
-	if m == nil {
-		return tag, false
+// rewriteTimestamp folds an ISO 8601 timestamp into the bare 14-digit form the
+// classifier understands, so the separators don't survive into tokenization.
+func rewriteTimestamp(tag string) (string, bool) {
+	if m := punctuatedTimestampRE.FindStringSubmatch(tag); m != nil {
+		rewritten := m[2] + m[3] + m[4] + m[5] + m[6] + m[7]
+		if m[1] != "" {
+			rewritten = m[1] + "-" + rewritten
+		}
+		if m[8] != "" {
+			rewritten += "-" + m[8][1:]
+		}
+		return rewritten + tag[len(m[0]):], true
 	}
 
-	rewritten := m[1] + "-" + m[2] + m[3] + m[4] + m[5] + m[6] + m[7]
-	if m[8] != "" {
-		rewritten += "-" + m[8][1:]
+	if m := compactTimestampRE.FindStringSubmatch(tag); m != nil {
+		return m[1] + m[2] + tag[len(m[0]):], true
 	}
 
-	return rewritten + tag[len(m[0]):], true
+	return tag, false
 }
 
-var revisionSuffixRE = regexp.MustCompile(`^([A-Za-z]*[0-9]+(?:\.[0-9]+)+)-([0-9]{1,2})$`)
-
-func rewriteRevisionSuffix(tag string) (string, bool) {
-	m := revisionSuffixRE.FindStringSubmatch(tag)
-	if m == nil {
-		return tag, false
-	}
-
-	return m[1] + "." + m[2], true
-}
-
-func Tokenize(tag string) []Token {
+func tokenize(tag string) []rawToken {
 	if tag == "" {
 		return nil
 	}
 
 	tag = pretokenize(tag)
 
-	var result []Token
+	var result []rawToken
 	separator := ""
 	for i := 0; i < len(tag); {
 		if tag[i] == '-' || tag[i] == '_' {
@@ -67,13 +68,43 @@ func Tokenize(tag string) []Token {
 		for i < len(tag) && tag[i] != '-' && tag[i] != '_' {
 			i++
 		}
-		result = append(result, Token{Value: tag[start:i], Separator: separator})
+		result = append(result, splitDottedToken(rawToken{Value: tag[start:i], Separator: separator})...)
 		separator = ""
 	}
 
 	if separator != "" && len(result) == 0 {
-		result = append(result, Token{Separator: separator})
+		result = append(result, rawToken{Separator: separator})
 	}
 
 	return result
+}
+
+func splitDottedToken(t rawToken) []rawToken {
+	if !strings.Contains(t.Value, ".") || isRecognizedShape(t.Value) {
+		return []rawToken{t}
+	}
+
+	for i := len(t.Value) - 1; i >= 0; i-- {
+		if t.Value[i] != '.' {
+			continue
+		}
+		left, right := t.Value[:i], t.Value[i+1:]
+		if left == "" || right == "" {
+			continue
+		}
+		if !isRecognizedShape(left) && !isRecognizedShape(right) {
+			continue
+		}
+		return append(splitDottedToken(rawToken{Value: left, Separator: t.Separator}), rawToken{Value: right, Separator: "."})
+	}
+
+	return []rawToken{t}
+}
+
+func isRecognizedShape(s string) bool {
+	if looksLikeHash(s) {
+		return true
+	}
+	matches := classifyToken(s)
+	return len(matches) != 1 || matches[0] != tokenStringType
 }

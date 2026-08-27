@@ -166,16 +166,24 @@ func (s *Store) FailTagDiscovery(ctx context.Context, id int64, errMessage strin
 	return nil
 }
 
-func (s *Store) RecordTagDiscoveryRefreshFailure(ctx context.Context, id int64, errMessage string) error {
-	if _, err := s.db.ExecContext(ctx, `
+func (s *Store) RestartStaleTagDiscovery(ctx context.Context, id int64) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `
 		UPDATE tag_discoveries
-		SET error = ?, completed_at = ?
+		SET status = ?, error = NULL, started_at = ?
 		WHERE id = ? AND status = ?
-	`, errMessage, time.Now().UTC(), id, model.TagDiscoveryCompleted); err != nil {
-		return fmt.Errorf("recording tag discovery refresh failure: %w", err)
+	`, model.TagDiscoveryRunning, time.Now().UTC(), id, model.TagDiscoveryCompleted)
+
+	if err != nil {
+		return false, fmt.Errorf("restarting stale tag discovery: %w", err)
 	}
 
-	return nil
+	affected, err := result.RowsAffected()
+
+	if err != nil {
+		return false, fmt.Errorf("checking restarted tag discovery: %w", err)
+	}
+
+	return affected > 0, nil
 }
 
 func (s *Store) MarkStaleRunningTagDiscoveriesAsFailed(ctx context.Context) (int64, error) {

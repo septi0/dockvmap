@@ -18,6 +18,7 @@ type TagDiscoveryTag struct {
 type TagDiscoveryGroup struct {
 	FamilyID   int64             `json:"familyId"`
 	FamilyType string            `json:"familyType"`
+	HasOrder   bool              `json:"hasOrder"`
 	Tags       []TagDiscoveryTag `json:"tags"`
 }
 

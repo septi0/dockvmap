@@ -1,0 +1,1 @@
+ALTER TABLE image_tags ADD COLUMN family_has_order BOOLEAN NOT NULL DEFAULT 1;

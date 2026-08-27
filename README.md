@@ -46,6 +46,8 @@ docker pull registry.internal:5000/myimage:current
 
 - **Virtual tag proxying**: OCI Distribution API proxy (`/v2/...`) that transparently resolves a stable tag to whatever real tag an image is currently pinned to.
 - **Tag family analysis**: inspects a repository's real tags, groups them into families, and tells you when a newer tag in the same family becomes available.
+- **Tag discovery**: when adding a virtual image, scans the upstream repository in the background (result cached) so you pick from its real tags instead of typing one blind.
+- **Tag history**: per-image record of every real tag the virtual tag has resolved to, and when each change happened.
 - **Web UI**: Svelte SPA for managing registries, virtual images, and reviewing what changed and when.
 - **Notifications**: email (SMTP) and/or generic webhooks when a tracked image's tags change.
 - **Optional blob cache**: on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.
@@ -125,7 +127,7 @@ tag_filters:
     - "^pr-.*"
 ```
 
-Each entry is a regular expression matched against the raw tag name; any match excludes the tag. The built-in default (shown above) ships compiled into the binary and is used whenever `tag_filters_path` is unset, so filtering works out of the box with no setup. To customize it, write your own `filters.yaml` somewhere and point `tag_filters_path` at it — the file must exist at that point, or startup fails with an error rather than silently using the built-in default. Your file's `exclude` list fully replaces the built-in one (it isn't merged), so include the defaults yourself if you want to keep them alongside your own patterns. An empty `exclude` list disables filtering entirely.
+Each entry is a regular expression matched against the raw tag name; any match excludes the tag. The snippet above just shows the format — a set of default patterns (CI commit/PR tags, cosign signature artifacts) ships compiled into the binary and is used whenever `tag_filters_path` is unset, so filtering works out of the box with no setup. See `internal/tagfilter/filters.yaml` for the current default list. To customize it, write your own `filters.yaml` somewhere and point `tag_filters_path` at it — the file must exist at that point, or startup fails with an error rather than silently using the built-in default. Your file's `exclude` list fully replaces the built-in one (it isn't merged), so include the defaults yourself if you want to keep them alongside your own patterns. An empty `exclude` list disables filtering entirely.
 
 ## CLI
 

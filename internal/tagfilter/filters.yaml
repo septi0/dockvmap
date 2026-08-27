@@ -2,3 +2,4 @@ tag_filters:
   exclude:
     - "^commit-.*"
     - "^pr-.*"
+    - "^sha256-[0-9a-f]{64}"
