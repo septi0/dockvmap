@@ -68,7 +68,7 @@ type tagLister interface {
 }
 
 type failureRecorder interface {
-	Record(source FailureSource, detail string, err error)
+	Record(ctx context.Context, source FailureSource, detail string, err error)
 }
 
 type tagFilterer interface {
@@ -616,7 +616,7 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 		if err != nil {
 			message := err.Error()
 
-			i.failures.Record(FailureSourceRefresh, image.Name, err)
+			i.failures.Record(ctx, FailureSourceRefresh, image.Name, err)
 
 			if _, updateErr := i.store.UpdateImageCheck(ctx, nil, image.ID, &message, checkedAt); updateErr != nil {
 				return fmt.Errorf("checking tags: %v; recording check failure: %w", err, updateErr)
@@ -761,7 +761,7 @@ func (i *Images) RefreshAll(ctx context.Context) (int, error) {
 				refreshed++
 
 			case errors.Is(err, ErrFailedToRegisterEvent):
-				i.failures.Record(FailureSourceEventRegistration, image.Name, err)
+				i.failures.Record(ctx, FailureSourceEventRegistration, image.Name, err)
 				refreshed++
 
 			default:

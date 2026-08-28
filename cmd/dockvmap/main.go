@@ -105,7 +105,7 @@ func run() error {
 	optionsAdapter := registryOptionsAdapter{registries: registries}
 	ociClient := oci.NewClient(nil, credentialsAdapter, optionsAdapter)
 
-	failureLog := service.NewFailureLog()
+	failureLog := service.NewFailureLog(db)
 
 	workerCtx, workerCancel := context.WithCancel(context.Background())
 
@@ -186,7 +186,7 @@ func run() error {
 
 	go func() {
 		defer close(workerDone)
-		startWorker(workerCtx, cfg, workerSchedule, images, discoveries, cache, notifications, sessions)
+		startWorker(workerCtx, cfg, workerSchedule, failureLog, images, discoveries, cache, notifications, sessions)
 	}()
 
 	awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)

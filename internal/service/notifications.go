@@ -100,7 +100,7 @@ func (n *Notifications) SendPendingTagNotifications(ctx context.Context) (int, e
 
 			if err := n.mailer.Send(ctx, to, subject, textBody, htmlBody); err != nil {
 				slog.Error("failed to send tag notification email", "eventId", event.ID, "error", err)
-				n.failures.Record(FailureSourceEmail, "", err)
+				n.failures.Record(ctx, FailureSourceEmail, "", err)
 			}
 		}
 
@@ -132,7 +132,7 @@ func (n *Notifications) sendWebhooks(ctx context.Context, event model.ImageEvent
 	for _, webhookURL := range n.webhookURLs {
 		if err := n.webhook.Send(ctx, webhookURL, payload); err != nil {
 			slog.Error("failed to send tag notification webhook", "eventId", event.ID, "url", webhookURL, "error", err)
-			n.failures.Record(FailureSourceWebhook, webhookURL, err)
+			n.failures.Record(ctx, FailureSourceWebhook, webhookURL, err)
 		}
 	}
 }
