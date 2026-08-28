@@ -59,6 +59,7 @@ type imageResponse struct {
 	LastCheckError     *string    `json:"lastCheckError,omitempty"`
 	UpdateAvailable    bool       `json:"updateAvailable"`
 	UpdateAvailableTag *string    `json:"updateAvailableTag,omitempty"`
+	RefreshStatus      string     `json:"refreshStatus"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
@@ -75,6 +76,7 @@ func newImageResponse(image model.Image) imageResponse {
 		LastCheckError:     image.LastCheckError,
 		UpdateAvailable:    image.UpdateAvailable,
 		UpdateAvailableTag: image.UpdateAvailableTag,
+		RefreshStatus:      image.RefreshStatus,
 		CreatedAt:          image.CreatedAt,
 		UpdatedAt:          image.UpdatedAt,
 	}

@@ -9,6 +9,7 @@ export interface Image {
   lastCheckError?: string
   updateAvailable: boolean
   updateAvailableTag?: string
+  refreshStatus: 'idle' | 'running'
   createdAt: string
   updatedAt: string
 }

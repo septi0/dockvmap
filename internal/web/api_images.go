@@ -1,16 +1,23 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
 	"github.com/septi0/dockvmap/internal/service"
 )
 
 const maxImagesLimit = 200
+
+const (
+	refreshInlineWaitBudget   = 2 * time.Second
+	refreshInlineWaitInterval = 150 * time.Millisecond
+)
 
 type listImagesResponse struct {
 	Images []imageResponse `json:"images"`
@@ -225,10 +232,7 @@ func (w *Web) apiRefreshImageTags(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = w.images.RefreshAvailableTags(r.Context(), id, service.RefreshTagsOpts{
-		FlagAsNew:     true,
-		RegisterEvent: service.EventSilent,
-	})
+	started, err := w.images.StartBackgroundRefresh(id)
 
 	if err != nil {
 		switch {
@@ -238,15 +242,6 @@ func (w *Web) apiRefreshImageTags(rw http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, service.ErrImageNotFound):
 			apiError(rw, http.StatusNotFound, "image not found")
 
-		case errors.Is(err, service.ErrTagRefreshFailed):
-			apiError(rw, http.StatusBadGateway, "upstream registry check failed")
-
-		case errors.Is(err, service.ErrFailedToRegisterEvent):
-			apiJSON(rw, http.StatusOK, map[string]any{
-				"status":          "refreshed",
-				"eventRegistered": false,
-			})
-
 		default:
 			apiError(rw, http.StatusInternalServerError, "internal server error")
 		}
@@ -254,10 +249,46 @@ func (w *Web) apiRefreshImageTags(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiJSON(rw, http.StatusOK, map[string]any{
-		"status":          "refreshed",
-		"eventRegistered": true,
-	})
+	if !started {
+		apiJSON(rw, http.StatusAccepted, map[string]any{"status": "running"})
+
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), refreshInlineWaitBudget)
+	defer cancel()
+
+	ticker := time.NewTicker(refreshInlineWaitInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			apiJSON(rw, http.StatusAccepted, map[string]any{"status": "running"})
+
+			return
+
+		case <-ticker.C:
+			img, err := w.images.GetByID(context.WithoutCancel(r.Context()), id)
+
+			if err != nil || img == nil || img.RefreshStatus == model.RefreshStatusRunning {
+				continue
+			}
+
+			if img.LastCheckError != nil {
+				apiJSON(rw, http.StatusOK, map[string]any{
+					"status": "error",
+					"error":  *img.LastCheckError,
+				})
+
+				return
+			}
+
+			apiJSON(rw, http.StatusOK, map[string]any{"status": "refreshed"})
+
+			return
+		}
+	}
 }
 
 func (w *Web) apiUpdateImageTag(rw http.ResponseWriter, r *http.Request) {

@@ -13,7 +13,9 @@
     variant = "link",
   }: {
     imageId: number;
-    onRefreshed?: () => void | Promise<void>;
+    onRefreshed?: (
+      status: "refreshed" | "running",
+    ) => void | Promise<void>;
     label?: string;
     variant?: "link" | "button";
   } = $props();
@@ -32,10 +34,21 @@
     refreshing = true;
 
     try {
-      await refreshImageTags(imageId);
+      const res = await refreshImageTags(imageId);
+
+      if (res.status === "error") {
+        error = res.error ?? "Failed to refresh tags";
+        return;
+      }
+
       showConfirm = false;
-      await onRefreshed?.();
-      toast.success("Tags refreshed.");
+      await onRefreshed?.(res.status);
+
+      toast.success(
+        res.status === "running"
+          ? "Refresh started - running in the background."
+          : "Tags refreshed.",
+      );
     } catch (err) {
       error = err instanceof ApiError ? err.message : "Failed to refresh tags";
     } finally {

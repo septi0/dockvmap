@@ -5,6 +5,7 @@
   import Button from "./Button.svelte";
   import TagFamilyPicker from "./TagFamilyPicker.svelte";
   import RefreshTagsButton from "./RefreshTagsButton.svelte";
+  import RefreshingIndicator from "./RefreshingIndicator.svelte";
   import {
     getImageTags,
     updateImageTag,
@@ -17,6 +18,7 @@
     open,
     imageId,
     currentTag,
+    refreshStatus = "idle",
     onClose,
     onTagUpdated,
     onTagsRefreshed,
@@ -24,6 +26,7 @@
     open: boolean;
     imageId: number;
     currentTag: string;
+    refreshStatus?: "idle" | "running";
     onClose: () => void;
     onTagUpdated: (tag: string) => void;
     onTagsRefreshed?: () => void;
@@ -38,6 +41,8 @@
   let updating = $state(false);
   let updateError = $state<string | null>(null);
   let loadToken = 0;
+
+  let wasRefreshing = false;
 
   const currentFamilyId = $derived(
     tagGroups.find((group) => group.tags.some((t) => t.tag === currentTag))
@@ -85,14 +90,32 @@
     markImageTagsAsSeen(imageId).catch(() => {});
   });
 
-  async function handleTagsRefreshed() {
+  $effect(() => {
+    const running = refreshStatus === "running";
+
+    if (open && wasRefreshing && !running) {
+      reloadTagsKeepingSelection();
+    }
+
+    wasRefreshing = running;
+  });
+
+  async function reloadTagsKeepingSelection() {
     await loadTags();
 
     const stillAvailable = tagGroups.some((group) =>
       group.tags.some((tagInfo) => tagInfo.tag === selectedTag),
     );
     if (!stillAvailable) selectedTag = currentTag;
+  }
 
+  async function handleTagsRefreshed(status: "refreshed" | "running") {
+    if (status === "running") {
+      onTagsRefreshed?.();
+      return;
+    }
+
+    await reloadTagsKeepingSelection();
     onTagsRefreshed?.();
   }
 
@@ -120,11 +143,17 @@
     <p class="hint muted">
       Pick which upstream tag this virtual image should resolve to.
     </p>
-    <RefreshTagsButton
-      {imageId}
-      onRefreshed={handleTagsRefreshed}
-      label="Refresh"
-    />
+    <div class="header-actions">
+      {#if refreshStatus === "running"}
+        <RefreshingIndicator text="Checking upstream…" />
+      {:else}
+        <RefreshTagsButton
+          {imageId}
+          onRefreshed={handleTagsRefreshed}
+          label="Refresh"
+        />
+      {/if}
+    </div>
   </div>
 
   <div class="current-banner">
@@ -196,6 +225,13 @@
     justify-content: space-between;
     gap: var(--space-3);
     margin-bottom: var(--space-4);
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-shrink: 0;
   }
 
   .hint {

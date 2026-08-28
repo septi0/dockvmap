@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { link, push } from "svelte-spa-router";
   import Package from "@lucide/svelte/icons/package";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
@@ -15,6 +16,7 @@
   import ChangeTagModal from "../lib/components/ChangeTagModal.svelte";
   import TagHistoryModal from "../lib/components/TagHistoryModal.svelte";
   import RefreshTagsButton from "../lib/components/RefreshTagsButton.svelte";
+  import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
   import RenameImageModal from "../lib/components/RenameImageModal.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import { getImage, deleteImage } from "../lib/api/images";
@@ -22,11 +24,15 @@
   import { ApiError } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
   import { formatDate } from "../lib/utils/format";
+  import { createPoller } from "../lib/utils/poller";
   import type { Image } from "../lib/api/types/images";
   import type { PullInfo } from "../lib/api/types/metrics";
 
   let { params }: { params: { id: string } } = $props();
   const imageId = $derived(Number(params.id));
+
+  const carriedQuery = window.location.hash.split("?")[1] ?? "";
+  const backHref = carriedQuery ? `/images?${carriedQuery}` : "/images";
 
   let image = $state<Image | null>(null);
   let pullInfo = $state<PullInfo | null>(null);
@@ -45,6 +51,38 @@
 
   let showRenameModal = $state(false);
 
+  const REFRESH_POLL_INTERVAL_MS = 2000;
+
+  function mergeImage(next: Image) {
+    if (!image) {
+      image = next;
+      return;
+    }
+    const target = image as unknown as Record<string, unknown>;
+    const source = next as unknown as Record<string, unknown>;
+    for (const key of new Set([...Object.keys(target), ...Object.keys(source)])) {
+      if (target[key] !== source[key]) target[key] = source[key];
+    }
+  }
+
+  const refreshPoll = createPoller(async () => {
+    let next: Image;
+    try {
+      next = await getImage(imageId);
+    } catch {
+      return true;
+    }
+    if (next.refreshStatus === "running") return true;
+    mergeImage(next);
+    return false;
+  }, REFRESH_POLL_INTERVAL_MS);
+
+  function syncRefreshPolling() {
+    if (image?.refreshStatus === "running" && !refreshPoll.active) {
+      refreshPoll.start();
+    }
+  }
+
   async function load() {
     const requestId = ++loadToken;
     loading = true;
@@ -55,6 +93,7 @@
       if (requestId !== loadToken) return;
       image = img;
       pullInfo = info;
+      syncRefreshPolling();
     } catch (err) {
       if (requestId !== loadToken) return;
       error =
@@ -66,8 +105,11 @@
 
   $effect(() => {
     imageId;
+    refreshPoll.stop();
     load();
   });
+
+  onDestroy(() => refreshPoll.stop());
 
   const pullCommand = $derived(
     image && pullInfo
@@ -77,7 +119,8 @@
 
   async function refreshImageDetails() {
     try {
-      image = await getImage(imageId);
+      mergeImage(await getImage(imageId));
+      syncRefreshPolling();
     } catch {}
   }
 
@@ -122,7 +165,7 @@
     try {
       await deleteImage(imageId);
       toast.success(`Virtual image "${image.name}" deleted.`);
-      push("/images");
+      push(backHref);
     } catch (err) {
       deleteError =
         err instanceof ApiError
@@ -135,7 +178,7 @@
 </script>
 
 <AppShell>
-  <a class="back-link" href="/images" use:link>
+  <a class="back-link" href={backHref} use:link>
     <ArrowLeft size={14} strokeWidth={2} />
     Virtual Images
   </a>
@@ -200,18 +243,24 @@
             {/if}
           </div>
         </DetailRow>
-        <DetailRow label="Last checked"
-          >{formatDate(image.lastChecked, "Never")}</DetailRow
-        >
+        <DetailRow label="Last checked">
+          {#if image.refreshStatus === "running"}
+            <RefreshingIndicator text="Checking upstream for tag changes…" />
+          {:else}
+            {formatDate(image.lastChecked, "Never")}
+          {/if}
+        </DetailRow>
         {#if image.lastCheckError}
           <DetailRow label="Last check error">
             <div class="check-error-cell">
               <span class="check-error">{image.lastCheckError}</span>
-              <RefreshTagsButton
-                imageId={image.id}
-                onRefreshed={refreshImageDetails}
-                variant="button"
-              />
+              {#if image.refreshStatus !== "running"}
+                <RefreshTagsButton
+                  imageId={image.id}
+                  onRefreshed={refreshImageDetails}
+                  variant="button"
+                />
+              {/if}
             </div>
           </DetailRow>
         {/if}
@@ -295,6 +344,7 @@
     open={showTagModal}
     imageId={image.id}
     currentTag={image.tag}
+    refreshStatus={image.refreshStatus}
     onClose={() => (showTagModal = false)}
     onTagUpdated={handleTagUpdated}
     onTagsRefreshed={refreshImageDetails}

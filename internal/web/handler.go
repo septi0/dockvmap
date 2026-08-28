@@ -23,7 +23,7 @@ type imageService interface {
 	GetTags(ctx context.Context, imageId int64) ([]model.ImageTag, error)
 	List(ctx context.Context, filters model.ImageListFilters) ([]model.Image, error)
 	Count(ctx context.Context, filters model.ImageListFilters) (int64, error)
-	RefreshAvailableTags(ctx context.Context, imageId int64, opts service.RefreshTagsOpts) error
+	StartBackgroundRefresh(imageId int64) (bool, error)
 	UpdateTag(ctx context.Context, imageId int64, tag string, source model.TagHistorySource) error
 	Rename(ctx context.Context, imageId int64, name string) error
 	MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, error)

@@ -15,6 +15,7 @@
   import { inspectRepository, getDiscovery, createImage } from "../lib/api/images";
   import { ApiError } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
+  import { createPoller } from "../lib/utils/poller";
   import type { Registry } from "../lib/api/types/registries";
   import type { TagGroup, DiscoveryResult } from "../lib/api/types/images";
 
@@ -39,8 +40,8 @@
   let discovering = $state(false);
   let inspectError = $state<string | null>(null);
 
-  let pollToken = 0;
-  let pollTimer: ReturnType<typeof setTimeout> | null = null;
+  let discoveryId: number | null = null;
+  let consecutivePollErrors = 0;
 
   let elapsedSeconds = $state(0);
   let elapsedTimer: ReturnType<typeof setInterval> | null = null;
@@ -107,15 +108,6 @@
     }
   }
 
-  function stopPolling() {
-    pollToken++;
-
-    if (pollTimer) {
-      clearTimeout(pollTimer);
-      pollTimer = null;
-    }
-  }
-
   function applyDiscovery(result: DiscoveryResult) {
     discovering = false;
     stopElapsedTimer();
@@ -132,51 +124,38 @@
     step = 2;
   }
 
-  function pollDiscovery(id: number) {
-    const token = ++pollToken;
-    let consecutiveErrors = 0;
+  const discoveryPoll = createPoller(async () => {
+    if (discoveryId === null) return false;
 
-    const tick = async () => {
-      if (token !== pollToken) return;
+    try {
+      const result = await getDiscovery(discoveryId);
+      consecutivePollErrors = 0;
 
-      try {
-        const result = await getDiscovery(id);
-        if (token !== pollToken) return;
-
-        if (result.status === "running") {
-          consecutiveErrors = 0;
-          tagsSeenSoFar = result.tagsSeen ?? tagsSeenSoFar;
-          pollTimer = setTimeout(tick, DISCOVERY_POLL_INTERVAL_MS);
-          return;
-        }
-
-        applyDiscovery(result);
-      } catch (err) {
-        if (token !== pollToken) return;
-
-        consecutiveErrors++;
-
-        if (consecutiveErrors < MAX_CONSECUTIVE_POLL_ERRORS) {
-          pollTimer = setTimeout(tick, DISCOVERY_POLL_INTERVAL_MS);
-          return;
-        }
-
-        discovering = false;
-        stopElapsedTimer();
-        inspectError =
-          err instanceof ApiError ? err.message : "Failed to check discovery status";
+      if (result.status === "running") {
+        tagsSeenSoFar = result.tagsSeen ?? tagsSeenSoFar;
+        return true;
       }
-    };
 
-    pollTimer = setTimeout(tick, DISCOVERY_POLL_INTERVAL_MS);
-  }
+      applyDiscovery(result);
+      return false;
+    } catch (err) {
+      consecutivePollErrors += 1;
+      if (consecutivePollErrors < MAX_CONSECUTIVE_POLL_ERRORS) return true;
+
+      discovering = false;
+      stopElapsedTimer();
+      inspectError =
+        err instanceof ApiError ? err.message : "Failed to check discovery status";
+      return false;
+    }
+  }, DISCOVERY_POLL_INTERVAL_MS);
 
   async function handleInspect(event: SubmitEvent) {
     event.preventDefault();
 
     if (!selectedRegistry) return;
 
-    stopPolling();
+    discoveryPoll.stop();
     inspectError = null;
     inspecting = true;
     discovering = false;
@@ -191,7 +170,9 @@
         discovering = true;
         startElapsedTimer();
         tagsSeenSoFar = result.tagsSeen ?? 0;
-        pollDiscovery(result.id);
+        discoveryId = result.id;
+        consecutivePollErrors = 0;
+        discoveryPoll.start();
       } else {
         applyDiscovery(result);
       }
@@ -204,18 +185,18 @@
   }
 
   function cancelDiscovery() {
-    stopPolling();
+    discoveryPoll.stop();
     stopElapsedTimer();
     discovering = false;
   }
 
   onDestroy(() => {
-    stopPolling();
+    discoveryPoll.stop();
     stopElapsedTimer();
   });
 
   function backToSource() {
-    stopPolling();
+    discoveryPoll.stop();
     stopElapsedTimer();
     discovering = false;
     step = 1;
@@ -548,12 +529,6 @@
   .discovery-cancel {
     flex-shrink: 0;
     align-self: center;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 
   .recap {

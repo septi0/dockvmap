@@ -15,12 +15,20 @@
   import { ApiError } from "../lib/api/client";
   import type { Image } from "../lib/api/types/images";
   import { formatDate } from "../lib/utils/format";
+  import {
+    readListQuery,
+    writeListQuery,
+    pushListQuery,
+    watchListQuery,
+  } from "../lib/utils/listQuery";
+
+  const FILTER_DEFAULTS = { search: "", updateAvailable: false, offset: 0 };
 
   let images = $state<Image[]>([]);
   let total = $state(0);
   let offset = $state(0);
   let search = $state("");
-  let updateAvailableOnly = $state(false);
+  let updateAvailable = $state(false);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let loadToken = 0;
@@ -35,7 +43,7 @@
         offset,
         limit: IMAGES_PAGE_SIZE,
         search: search || undefined,
-        updateAvailable: updateAvailableOnly ? true : undefined,
+        updateAvailable: updateAvailable ? true : undefined,
       });
       if (requestId !== loadToken) return;
       images = result.images;
@@ -48,39 +56,48 @@
     }
   }
 
-  function applyFilterFromQuery() {
-    const query = window.location.hash.split("?")[1];
-    updateAvailableOnly = new URLSearchParams(query).get("updateAvailable") === "true";
-    offset = 0;
+  function syncFromUrl() {
+    const filters = readListQuery(FILTER_DEFAULTS);
+    search = filters.search;
+    updateAvailable = filters.updateAvailable;
+    offset = filters.offset;
     load();
   }
 
-  onMount(() => {
-    applyFilterFromQuery();
-    window.addEventListener("hashchange", applyFilterFromQuery);
-    return () => window.removeEventListener("hashchange", applyFilterFromQuery);
-  });
+  function syncToUrl() {
+    pushListQuery("/images", { search, updateAvailable, offset });
+  }
+
+  onMount(() => watchListQuery(syncFromUrl));
+
+  function openImage(id: number) {
+    push(`/images/${id}${writeListQuery({ search, updateAvailable, offset })}`);
+  }
 
   function handleOffsetChange(newOffset: number) {
     offset = newOffset;
+    syncToUrl();
     load();
   }
 
   function handleSearch(value: string) {
     search = value;
     offset = 0;
+    syncToUrl();
     load();
   }
 
   function handleUpdateAvailableToggle() {
     offset = 0;
+    syncToUrl();
     load();
   }
 
   function clearFilters() {
     search = "";
-    updateAvailableOnly = false;
+    updateAvailable = false;
     offset = 0;
+    syncToUrl();
     load();
   }
 </script>
@@ -98,7 +115,7 @@
   </div>
 
   <FilterBar
-    active={search !== "" || updateAvailableOnly}
+    active={search !== "" || updateAvailable}
     onClear={clearFilters}
   >
     <SearchInput
@@ -109,7 +126,7 @@
     <label class="checkbox">
       <input
         type="checkbox"
-        bind:checked={updateAvailableOnly}
+        bind:checked={updateAvailable}
         onchange={handleUpdateAvailableToggle}
       />
       <span>Updates available only</span>
@@ -140,9 +157,9 @@
             <tr
               class="clickable"
               tabindex="0"
-              onclick={() => push(`/images/${image.id}`)}
+              onclick={() => openImage(image.id)}
               onkeydown={(event) =>
-                event.key === "Enter" && push(`/images/${image.id}`)}
+                event.key === "Enter" && openImage(image.id)}
             >
               <td>{image.name}</td>
               <td>{image.registry}</td>
