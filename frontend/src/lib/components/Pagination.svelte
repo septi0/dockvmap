@@ -18,27 +18,34 @@
   let hasPrev = $derived(currentPage > 1);
   let hasNext = $derived(currentPage < totalPages);
 
+  function change(newOffset: number) {
+    onOffsetChange(newOffset);
+    window.scrollTo({ top: 0 });
+  }
+
   function goPrev() {
-    onOffsetChange(Math.max(0, offset - limit));
+    change(Math.max(0, offset - limit));
   }
 
   function goNext() {
-    onOffsetChange(offset + limit);
+    change(offset + limit);
   }
 </script>
 
-<div class="pagination">
-  <span class="muted">Page {currentPage} of {totalPages}</span>
+{#if totalPages > 1}
+  <div class="pagination">
+    <span class="muted">Page {currentPage} of {totalPages}</span>
 
-  <div class="buttons">
-    <Button variant="secondary" disabled={!hasPrev} onclick={goPrev}
-      >Previous</Button
-    >
-    <Button variant="secondary" disabled={!hasNext} onclick={goNext}
-      >Next</Button
-    >
+    <div class="buttons">
+      <Button variant="secondary" disabled={!hasPrev} onclick={goPrev}
+        >Previous</Button
+      >
+      <Button variant="secondary" disabled={!hasNext} onclick={goNext}
+        >Next</Button
+      >
+    </div>
   </div>
-</div>
+{/if}
 
 <style>
   .pagination {

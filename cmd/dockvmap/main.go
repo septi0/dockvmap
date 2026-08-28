@@ -18,7 +18,7 @@ import (
 	"github.com/septi0/dockvmap/internal/web"
 )
 
-var version = "dev"
+var version = "0.0.0-dev"
 var defaultDataPath = "./data" // overridden via -ldflags at Docker build time to match the image's data dir
 
 func main() {
@@ -168,6 +168,7 @@ func run() error {
 		ProxyTokens:          proxyTokens,
 		ProxyMetrics:         metrics,
 		Failures:             failureLog,
+		WorkerSchedule:       workerSchedule,
 		LoginRateLimitWindow: loginRateLimitWindow,
 		Version:              version,
 	}, tlsConfig)

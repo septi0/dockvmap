@@ -5,6 +5,7 @@
   import { ApiError } from "../lib/api/client";
   import { takeIntendedLocation } from "../routes";
   import AuthCard from "../lib/components/AuthCard.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
   import Field from "../lib/components/Field.svelte";
   import Button from "../lib/components/Button.svelte";
 
@@ -28,6 +29,8 @@
     }
   }
 </script>
+
+<PageTitle title="Sign In" />
 
 <AuthCard title="Sign in">
   <form onsubmit={handleSubmit}>

@@ -10,6 +10,7 @@
   import Copy from "@lucide/svelte/icons/copy";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import AppShell from "../lib/components/AppShell.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import DetailRow from "../lib/components/DetailRow.svelte";
   import Button from "../lib/components/Button.svelte";
@@ -176,6 +177,8 @@
     }
   }
 </script>
+
+<PageTitle title={image ? image.name : "Virtual Image"} />
 
 <AppShell>
   <a class="back-link" href={backHref} use:link>

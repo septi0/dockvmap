@@ -88,6 +88,10 @@ type failureLister interface {
 	Recent() []service.Failure
 }
 
+type workerScheduleReader interface {
+	LastRun(ctx context.Context, job string) (time.Time, bool, error)
+}
+
 type Web struct {
 	images               imageService
 	discoveries          discoveryService
@@ -100,6 +104,7 @@ type Web struct {
 	proxyTokens          proxyTokenService
 	proxyMetrics         proxyMetricsProvider
 	failures             failureLister
+	workerSchedule       workerScheduleReader
 	cfg                  *config.Config
 	trustedProxies       ipmatch.Set
 	loginRateLimitWindow time.Duration
@@ -119,6 +124,7 @@ type Dependencies struct {
 	ProxyTokens          proxyTokenService
 	ProxyMetrics         proxyMetricsProvider
 	Failures             failureLister
+	WorkerSchedule       workerScheduleReader
 	LoginRateLimitWindow time.Duration
 	Version              string
 }
@@ -142,6 +148,7 @@ func New(deps Dependencies) (http.Handler, error) {
 		proxyTokens:          deps.ProxyTokens,
 		proxyMetrics:         deps.ProxyMetrics,
 		failures:             deps.Failures,
+		workerSchedule:       deps.WorkerSchedule,
 		cfg:                  deps.Config,
 		trustedProxies:       trustedProxies,
 		version:              deps.Version,

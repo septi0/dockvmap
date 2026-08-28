@@ -4,6 +4,7 @@
   import { auth } from "../lib/services/auth";
   import { ApiError } from "../lib/api/client";
   import AuthCard from "../lib/components/AuthCard.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
   import Field from "../lib/components/Field.svelte";
   import Button from "../lib/components/Button.svelte";
 
@@ -36,6 +37,8 @@
     }
   }
 </script>
+
+<PageTitle title="Setup" />
 
 <AuthCard title="Create your account">
   <p class="hint">

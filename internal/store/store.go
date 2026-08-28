@@ -67,7 +67,13 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) Ping(ctx context.Context) error {
-	return s.db.PingContext(ctx)
+	var one int
+
+	if err := s.db.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
+		return fmt.Errorf("database health check: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Store) executor(tx DBTX) DBTX {

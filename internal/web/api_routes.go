@@ -18,6 +18,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/recent-failures", apiMethod(http.MethodGet, w.apiRecentFailures))
 
+	mux.HandleFunc("/tag-refresh-status", apiMethod(http.MethodGet, w.apiTagRefreshStatus))
+
 	mux.HandleFunc("/events", apiMethod(http.MethodGet, w.apiListEvents))
 
 	mux.HandleFunc("/audit-logs", apiMethod(http.MethodGet, w.apiListAuditLogs))

@@ -42,7 +42,7 @@ func startWorker(ctx context.Context, cfg *config.Config, schedule *service.Work
 
 	if interval, err := time.ParseDuration(cfg.TagsCheckInterval); err == nil && interval > 0 {
 		jobs = append(jobs, scheduledJob{
-			name:     "image-tag-refresh",
+			name:     service.WorkerJobTagRefresh,
 			interval: interval,
 			run:      func(ctx context.Context) error { return runImageTagRefresh(ctx, images) },
 		})

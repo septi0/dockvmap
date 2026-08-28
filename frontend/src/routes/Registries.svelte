@@ -5,6 +5,7 @@
   import Pencil from "@lucide/svelte/icons/pencil";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import AppShell from "../lib/components/AppShell.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
   import CreateRegistryModal from "../lib/components/CreateRegistryModal.svelte";
@@ -17,6 +18,7 @@
 
   let registries = $state<Registry[]>([]);
   let loading = $state(true);
+  let loaded = $state(false);
   let error = $state<string | null>(null);
   let showCreateModal = $state(false);
   let editingRegistry = $state<Registry | null>(null);
@@ -35,6 +37,7 @@
         err instanceof ApiError ? err.message : "Failed to load registries";
     } finally {
       loading = false;
+      loaded = true;
     }
   }
 
@@ -76,6 +79,8 @@
   }
 </script>
 
+<PageTitle title="Registries" />
+
 <AppShell>
   <div class="header">
     <div class="title-row">
@@ -89,12 +94,20 @@
   </div>
 
   <AsyncState
-    {loading}
+    loading={loading && !loaded}
+    busy={loading && loaded}
     {error}
     empty={registries.length === 0}
     emptyMessage="No registries yet. Add one to start tracking virtual images."
     columns={5}
   >
+    {#snippet emptyAction()}
+      <Button onclick={() => (showCreateModal = true)}>
+        <Plus size={16} strokeWidth={2} />
+        Add registry
+      </Button>
+    {/snippet}
+
     <div class="card">
       <table class="table">
         <thead>

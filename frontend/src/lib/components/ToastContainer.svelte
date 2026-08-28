@@ -1,12 +1,27 @@
 <script lang="ts">
+  import { fly } from "svelte/transition";
+  import { flip } from "svelte/animate";
   import Check from "@lucide/svelte/icons/check";
   import X from "@lucide/svelte/icons/x";
   import { toast } from "../services/toast";
+
+  const reduceMotion =
+    typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const enterDuration = reduceMotion ? 0 : 150;
+  const flipDuration = reduceMotion ? 0 : 150;
 </script>
 
 <div class="toasts">
   {#each $toast as item (item.id)}
-    <div class="toast" role="status">
+    <div
+      class="toast"
+      role="status"
+      in:fly={{ y: 8, duration: enterDuration }}
+      out:fly={{ y: 8, duration: enterDuration }}
+      animate:flip={{ duration: flipDuration }}
+    >
       <span class="icon"><Check size={16} strokeWidth={2} /></span>
       <span class="message">{item.message}</span>
       <button
@@ -45,7 +60,6 @@
     border: 1px solid var(--color-border);
     box-shadow: var(--shadow-md);
     pointer-events: auto;
-    animation: toast-in 0.15s ease-out;
   }
 
   .icon {
@@ -76,16 +90,5 @@
   .dismiss:hover {
     background: var(--color-surface-hover);
     color: var(--color-text);
-  }
-
-  @keyframes toast-in {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
   }
 </style>

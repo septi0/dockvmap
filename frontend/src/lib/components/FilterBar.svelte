@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import FilterX from "@lucide/svelte/icons/filter-x";
 
   let {
     active = false,
@@ -16,7 +17,10 @@
   {@render children()}
 
   {#if active && onClear}
-    <button type="button" class="clear" onclick={onClear}>Clear filters</button>
+    <button type="button" class="clear" onclick={onClear}>
+      <FilterX size={14} strokeWidth={1.75} />
+      Clear filters
+    </button>
   {/if}
 </div>
 
@@ -30,13 +34,31 @@
   }
 
   .clear {
-    background: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-2);
     border: none;
-    padding: 0;
+    border-radius: var(--radius-sm);
+    background: none;
     font: inherit;
     font-size: 0.8125rem;
-    color: var(--color-accent);
+    font-weight: 500;
+    line-height: 1;
+    color: var(--color-text-muted);
     cursor: pointer;
-    text-decoration: underline;
+    transition:
+      color var(--transition-fast),
+      background-color var(--transition-fast);
+  }
+
+  .clear:hover {
+    color: var(--color-text);
+    background: var(--color-surface-hover);
+  }
+
+  .clear:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
   }
 </style>

@@ -21,11 +21,11 @@
   });
 
   const navItems = [
-    { label: "Dashboard", href: "/", enabled: true },
-    { label: "Registries", href: "/registries", enabled: true },
-    { label: "Virtual Images", href: "/images", enabled: true },
-    { label: "Proxy Tokens", href: "/proxy-tokens", enabled: true },
-    { label: "Audit Log", href: "/audit-log", enabled: true },
+    { label: "Dashboard", href: "/" },
+    { label: "Registries", href: "/registries" },
+    { label: "Virtual Images", href: "/images" },
+    { label: "Proxy Tokens", href: "/proxy-tokens" },
+    { label: "Audit Log", href: "/audit-log" },
   ];
 </script>
 
@@ -37,14 +37,7 @@
       <ul>
         {#each navItems as item}
           <li>
-            {#if item.enabled}
-              <a href={item.href} use:link use:active>{item.label}</a>
-            {:else}
-              <span class="disabled">
-                {item.label}
-                <span class="badge">Soon</span>
-              </span>
-            {/if}
+            <a href={item.href} use:link use:active>{item.label}</a>
           </li>
         {/each}
       </ul>
@@ -115,12 +108,9 @@
     gap: var(--space-1);
   }
 
-  nav a,
-  nav .disabled {
+  nav a {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-md);
     font-size: 0.875rem;
@@ -140,11 +130,6 @@
   nav a:global(.active) {
     background: var(--color-accent-muted-bg);
     color: var(--color-accent);
-  }
-
-  nav .disabled {
-    cursor: default;
-    color: var(--color-text-faint);
   }
 
   .main {

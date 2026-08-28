@@ -1,7 +1,10 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
   import Logo from "../lib/components/Logo.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
 </script>
+
+<PageTitle title="Not Found" />
 
 <div class="not-found">
   <Logo size="lg" />
