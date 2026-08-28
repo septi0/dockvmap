@@ -17,6 +17,8 @@ const tagNotificationInterval = 5 * time.Minute
 const blobOrphanScanInterval = 24 * time.Hour
 const tagDiscoveryCleanupInterval = 24 * time.Hour
 const tagDiscoveryRetention = 7 * 24 * time.Hour
+const backgroundFailureCleanupInterval = 24 * time.Hour
+const backgroundFailureRetention = 30 * 24 * time.Hour
 
 const workerStartStagger = 10 * time.Second
 
@@ -26,7 +28,7 @@ type scheduledJob struct {
 	run      func(context.Context) error
 }
 
-func startWorker(ctx context.Context, cfg *config.Config, schedule *service.WorkerSchedule, images *service.Images, discoveries *service.Discoveries, cache *blobcache.Cache, notifications *service.Notifications, sessions *service.Sessions) {
+func startWorker(ctx context.Context, cfg *config.Config, schedule *service.WorkerSchedule, failures *service.FailureLog, images *service.Images, discoveries *service.Discoveries, cache *blobcache.Cache, notifications *service.Notifications, sessions *service.Sessions) {
 	jobs := []scheduledJob{
 		{
 			name:     "session-cleanup",
@@ -37,6 +39,11 @@ func startWorker(ctx context.Context, cfg *config.Config, schedule *service.Work
 			name:     "tag-discovery-cleanup",
 			interval: tagDiscoveryCleanupInterval,
 			run:      func(ctx context.Context) error { return runTagDiscoveryCleanup(ctx, discoveries) },
+		},
+		{
+			name:     "background-failure-cleanup",
+			interval: backgroundFailureCleanupInterval,
+			run:      func(ctx context.Context) error { return runBackgroundFailureCleanup(ctx, failures) },
 		},
 	}
 
@@ -199,6 +206,20 @@ func runTagDiscoveryCleanup(ctx context.Context, discoveries *service.Discoverie
 
 	if deleted > 0 {
 		slog.Info("removed old tag discoveries", "count", deleted)
+	}
+
+	return nil
+}
+
+func runBackgroundFailureCleanup(ctx context.Context, failures *service.FailureLog) error {
+	deleted, err := failures.CleanupOld(ctx, backgroundFailureRetention)
+
+	if err != nil {
+		return err
+	}
+
+	if deleted > 0 {
+		slog.Info("removed old background failures", "count", deleted)
 	}
 
 	return nil

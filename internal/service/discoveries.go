@@ -283,7 +283,7 @@ func (d *Discoveries) spawnScan(discoveryID int64, registryHost, repository stri
 			slog.Error("recording tag discovery failure failed", "registry", registryHost, "repository", repository, "error", failErr)
 		}
 
-		d.failures.Record(FailureSourceDiscovery, repository, err)
+		d.failures.Record(context.Background(), FailureSourceDiscovery, repository, err)
 
 		slog.Error("tag discovery failed", "registry", registryHost, "repository", repository, "error", err)
 	})

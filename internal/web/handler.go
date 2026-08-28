@@ -85,7 +85,7 @@ type proxyMetricsProvider interface {
 }
 
 type failureLister interface {
-	Recent() []service.Failure
+	Recent(ctx context.Context) ([]service.Failure, error)
 }
 
 type workerScheduleReader interface {

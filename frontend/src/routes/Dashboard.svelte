@@ -183,7 +183,7 @@
         loading={failuresLoading}
         error={failuresError}
         empty={failures.length === 0}
-        emptyMessage="No issues since last restart."
+        emptyMessage="No recent issues."
       >
         <div class="table-scroll">
           <table class="table">
