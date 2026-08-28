@@ -65,12 +65,14 @@
   $effect(() => {
     if (!open) return;
 
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     const original = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     modalRef?.focus();
 
     return () => {
       document.body.style.overflow = original;
+      previouslyFocused?.focus?.();
     };
   });
 </script>

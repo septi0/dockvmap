@@ -6,6 +6,7 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Check from "@lucide/svelte/icons/check";
   import AppShell from "../lib/components/AppShell.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Pagination from "../lib/components/Pagination.svelte";
   import FilterBar from "../lib/components/FilterBar.svelte";
@@ -30,6 +31,7 @@
   let search = $state("");
   let updateAvailable = $state(false);
   let loading = $state(true);
+  let loaded = $state(false);
   let error = $state<string | null>(null);
   let loadToken = 0;
 
@@ -52,7 +54,10 @@
       if (requestId !== loadToken) return;
       error = err instanceof ApiError ? err.message : "Failed to load images";
     } finally {
-      if (requestId === loadToken) loading = false;
+      if (requestId === loadToken) {
+        loading = false;
+        loaded = true;
+      }
     }
   }
 
@@ -70,7 +75,12 @@
 
   onMount(() => watchListQuery(syncFromUrl));
 
-  function openImage(id: number) {
+  function imageHref(id: number) {
+    return `#/images/${id}${writeListQuery({ search, updateAvailable, offset })}`;
+  }
+
+  function openImage(event: MouseEvent, id: number) {
+    if ((event.target as HTMLElement).closest("a")) return;
     push(`/images/${id}${writeListQuery({ search, updateAvailable, offset })}`);
   }
 
@@ -101,6 +111,8 @@
     load();
   }
 </script>
+
+<PageTitle title="Virtual Images" />
 
 <AppShell>
   <div class="header">
@@ -134,12 +146,20 @@
   </FilterBar>
 
   <AsyncState
-    {loading}
+    loading={loading && !loaded}
+    busy={loading && loaded}
     {error}
     empty={images.length === 0}
     emptyMessage="No virtual images yet. Add one to start tracking tags."
     columns={6}
   >
+    {#snippet emptyAction()}
+      <Button onclick={() => push("/images/new")}>
+        <Plus size={16} strokeWidth={2} />
+        Add virtual image
+      </Button>
+    {/snippet}
+
     <div class="card">
       <table class="table">
         <thead>
@@ -154,14 +174,10 @@
         </thead>
         <tbody>
           {#each images as image (image.id)}
-            <tr
-              class="clickable"
-              tabindex="0"
-              onclick={() => openImage(image.id)}
-              onkeydown={(event) =>
-                event.key === "Enter" && openImage(image.id)}
-            >
-              <td>{image.name}</td>
+            <tr class="clickable" onclick={(event) => openImage(event, image.id)}>
+              <td>
+                <a class="row-link" href={imageHref(image.id)}>{image.name}</a>
+              </td>
               <td>{image.registry}</td>
               <td>{image.repository}</td>
               <td>{image.tag}</td>
@@ -215,5 +231,21 @@
 
   .clickable {
     cursor: pointer;
+  }
+
+  .row-link {
+    color: inherit;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .row-link:hover {
+    text-decoration: underline;
+  }
+
+  .row-link:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 </style>

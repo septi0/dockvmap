@@ -9,19 +9,23 @@
     loading,
     error,
     empty = false,
+    busy = false,
     loadingMessage = "Loading…",
     emptyMessage = "Nothing here yet.",
     columns,
     rows,
+    emptyAction,
     children,
   }: {
     loading: boolean;
     error: string | null;
     empty?: boolean;
+    busy?: boolean;
     loadingMessage?: string;
     emptyMessage?: string;
     columns?: number;
     rows?: number;
+    emptyAction?: Snippet;
     children: Snippet;
   } = $props();
 </script>
@@ -44,9 +48,21 @@
   <div class="empty card">
     <span class="empty-icon"><Inbox size={28} strokeWidth={1.5} /></span>
     <p>{emptyMessage}</p>
+    {#if emptyAction}
+      <div class="empty-action">{@render emptyAction()}</div>
+    {/if}
   </div>
 {:else}
-  {@render children()}
+  <div class="result-wrap">
+    {#if busy}
+      <span class="result-spinner" aria-hidden="true">
+        <LoaderCircle size={18} strokeWidth={3} />
+      </span>
+    {/if}
+    <div class="result" class:result-busy={busy}>
+      {@render children()}
+    </div>
+  </div>
 {/if}
 
 <style>
@@ -92,5 +108,32 @@
   .empty p {
     margin: 0;
     color: var(--color-text-muted);
+  }
+
+  .empty-action {
+    margin-top: var(--space-2);
+  }
+
+  .result-wrap {
+    position: relative;
+  }
+
+  .result {
+    transition: opacity var(--transition-fast);
+  }
+
+  .result-busy {
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  .result-spinner {
+    position: absolute;
+    top: var(--space-3);
+    right: var(--space-3);
+    z-index: 2;
+    display: inline-flex;
+    color: var(--color-accent);
+    animation: spin 0.8s linear infinite;
   }
 </style>

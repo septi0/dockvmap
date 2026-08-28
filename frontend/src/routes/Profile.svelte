@@ -5,6 +5,7 @@
   import KeyRound from "@lucide/svelte/icons/key-round";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import AppShell from "../lib/components/AppShell.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import DetailRow from "../lib/components/DetailRow.svelte";
@@ -150,6 +151,8 @@
     }
   }
 </script>
+
+<PageTitle title="Profile" />
 
 <AppShell>
   <div class="page-header">

@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +24,8 @@ import (
 const registryDataCacheTTL = 30 * time.Second
 const tokenCacheMaxEntries = 512
 const tagsListPageSize = 1000
+const maxRetryAttempts = 3
+const maxRetryAfterDelay = 30 * time.Second
 
 var paramRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
 
@@ -473,7 +477,64 @@ func (c *Client) do(req *http.Request, registry string, options *RegistryOptions
 		client = c.insecureClientFor(registry)
 	}
 
-	return client.Do(req)
+	for attempt := 0; ; attempt++ {
+		response, err := client.Do(req)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if attempt >= maxRetryAttempts || !isRetryableStatus(response.StatusCode) {
+			return response, nil
+		}
+
+		delay := retryDelay(attempt, response)
+		drainAndClose(response)
+
+		select {
+		case <-time.After(delay):
+		case <-req.Context().Done():
+			return nil, req.Context().Err()
+		}
+	}
+}
+
+func isRetryableStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status == http.StatusServiceUnavailable
+}
+
+func retryDelay(attempt int, response *http.Response) time.Duration {
+	base := time.Duration(1<<attempt) * time.Second
+
+	if wait, ok := parseRetryAfter(response.Header.Get("Retry-After")); ok {
+		base = min(wait, maxRetryAfterDelay)
+	}
+
+	return base + rand.N(base/4+1)
+}
+
+func parseRetryAfter(value string) (time.Duration, bool) {
+	value = strings.TrimSpace(value)
+
+	if value == "" {
+		return 0, false
+	}
+
+	if seconds, err := strconv.Atoi(value); err == nil {
+		if seconds <= 0 {
+			return 0, false
+		}
+
+		return time.Duration(seconds) * time.Second, true
+	}
+
+	if when, err := http.ParseTime(value); err == nil {
+		if wait := time.Until(when); wait > 0 {
+			return wait, true
+		}
+	}
+
+	return 0, false
 }
 
 func (c *Client) insecureClientFor(registry string) *http.Client {

@@ -3,18 +3,30 @@
   import { push, link } from "svelte-spa-router";
   import LayoutDashboard from "@lucide/svelte/icons/layout-dashboard";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+  import CircleArrowUp from "@lucide/svelte/icons/circle-arrow-up";
+  import Activity from "@lucide/svelte/icons/activity";
+  import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
+  import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import AppShell from "../lib/components/AppShell.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import { listImages } from "../lib/api/images";
   import { listEvents } from "../lib/api/events";
   import { getProxyMetrics } from "../lib/api/metrics";
   import { listRecentFailures } from "../lib/api/failures";
+  import { getTagRefreshStatus } from "../lib/api/worker";
   import { ApiError } from "../lib/api/client";
   import type { Image } from "../lib/api/types/images";
   import type { ImageEvent } from "../lib/api/types/events";
   import type { ProxyMetrics } from "../lib/api/types/metrics";
   import type { RecentFailure } from "../lib/api/types/failures";
-  import { formatDate, formatAuditType } from "../lib/utils/format";
+  import type { TagRefreshStatus } from "../lib/api/types/worker";
+  import {
+    formatDate,
+    formatRelativeTime,
+    formatAuditType,
+  } from "../lib/utils/format";
 
   const RECENT_LIMIT = 6;
 
@@ -34,6 +46,22 @@
   let failures = $state<RecentFailure[]>([]);
   let failuresLoading = $state(true);
   let failuresError = $state<string | null>(null);
+
+  let tagRefresh = $state<TagRefreshStatus | null>(null);
+  let tagRefreshLoading = $state(true);
+  let tagRefreshError = $state<string | null>(null);
+
+  let tagCheckOverdue = $derived(
+    !!tagRefresh?.nextDue &&
+      new Date(tagRefresh.nextDue).getTime() <= Date.now(),
+  );
+
+  let nextCheckLabel = $derived.by(() => {
+    if (!tagRefresh?.enabled) return "-";
+    if (!tagRefresh.nextDue) return "Pending";
+    if (tagCheckOverdue) return "Due now";
+    return formatRelativeTime(tagRefresh.nextDue);
+  });
 
   let cacheHitRate = $derived.by(() => {
     if (!metrics || !metrics.cacheEnabled) return null;
@@ -107,13 +135,32 @@
     }
   }
 
+  async function loadTagRefreshStatus() {
+    tagRefreshLoading = true;
+    tagRefreshError = null;
+
+    try {
+      tagRefresh = await getTagRefreshStatus();
+    } catch (err) {
+      tagRefreshError =
+        err instanceof ApiError
+          ? err.message
+          : "Failed to load tag check status";
+    } finally {
+      tagRefreshLoading = false;
+    }
+  }
+
   onMount(() => {
     loadUpdatesAvailable();
     loadRecentActivity();
     loadMetrics();
     loadRecentFailures();
+    loadTagRefreshStatus();
   });
 </script>
+
+<PageTitle title="Dashboard" />
 
 <AppShell>
   <div class="page-header">
@@ -125,7 +172,12 @@
 
   <div class="dashboard-grid">
     <div class="card section-card issues-card">
-      <h2>Recent issues</h2>
+      <div class="card-head">
+        <div class="card-head-title">
+          <TriangleAlert size={16} strokeWidth={1.75} />
+          <h2>Recent issues</h2>
+        </div>
+      </div>
 
       <AsyncState
         loading={failuresLoading}
@@ -144,7 +196,9 @@
             <tbody>
               {#each failures as failure (failure.occurredAt + failure.message)}
                 <tr>
-                  <td class="muted failure-date">{formatDate(failure.occurredAt)}</td>
+                  <td class="muted failure-date"
+                    >{formatDate(failure.occurredAt)}</td
+                  >
                   <td>{failure.message}</td>
                 </tr>
               {/each}
@@ -155,7 +209,12 @@
     </div>
 
     <div class="card section-card">
-      <h2>Updates available</h2>
+      <div class="card-head">
+        <div class="card-head-title">
+          <CircleArrowUp size={16} strokeWidth={1.75} />
+          <h2>Updates available</h2>
+        </div>
+      </div>
 
       <AsyncState
         loading={updatesLoading}
@@ -200,7 +259,12 @@
     </div>
 
     <div class="card section-card">
-      <h2>Recent activity</h2>
+      <div class="card-head">
+        <div class="card-head-title">
+          <Activity size={16} strokeWidth={1.75} />
+          <h2>Recent activity</h2>
+        </div>
+      </div>
 
       <AsyncState
         loading={eventsLoading}
@@ -227,8 +291,7 @@
                     {formatAuditType(event.type)}: {event.data.tags.join(", ")}
                   </span>
                 </span>
-                <span class="item-time muted"
-                  >{formatDate(event.createdAt)}</span
+                <span class="item-time muted">{formatDate(event.createdAt)}</span
                 >
               </button>
             </li>
@@ -238,7 +301,12 @@
     </div>
 
     <div class="card section-card">
-      <h2>Proxy activity</h2>
+      <div class="card-head">
+        <div class="card-head-title">
+          <ArrowLeftRight size={16} strokeWidth={1.75} />
+          <h2>Proxy activity</h2>
+        </div>
+      </div>
 
       <AsyncState loading={metricsLoading} error={metricsError}>
         {#if metrics}
@@ -272,6 +340,64 @@
         {/if}
       </AsyncState>
     </div>
+
+    <div class="card section-card">
+      <div class="card-head">
+        <div class="card-head-title">
+          <RefreshCw size={16} strokeWidth={1.75} />
+          <h2>Tag checks</h2>
+        </div>
+
+        {#if tagRefresh}
+          {#if !tagRefresh.enabled}
+            <span class="badge">Disabled</span>
+          {:else if tagCheckOverdue}
+            <span class="badge badge-warning">Overdue</span>
+          {:else}
+            <span class="badge badge-accent">Active</span>
+          {/if}
+        {/if}
+      </div>
+
+      <AsyncState loading={tagRefreshLoading} error={tagRefreshError}>
+        {#if tagRefresh?.enabled}
+          <div class="stat-grid">
+            <div class="stat-tile">
+              <span
+                class="stat-value"
+                title={tagRefresh.lastRun
+                  ? formatDate(tagRefresh.lastRun)
+                  : undefined}
+              >
+                {tagRefresh.lastRun
+                  ? formatRelativeTime(tagRefresh.lastRun)
+                  : "Never"}
+              </span>
+              <span class="stat-label muted">Last check</span>
+            </div>
+
+            <div class="stat-tile">
+              <span
+                class="stat-value"
+                class:danger={tagCheckOverdue}
+                title={tagRefresh.nextDue
+                  ? formatDate(tagRefresh.nextDue)
+                  : undefined}
+              >
+                {nextCheckLabel}
+              </span>
+              <span class="stat-label muted">Next check</span>
+            </div>
+          </div>
+        {:else if tagRefresh}
+          <p class="disabled-note muted">
+            Automatic upstream tag checks are off. Set <code
+              >tags_check_interval</code
+            > to enable them.
+          </p>
+        {/if}
+      </AsyncState>
+    </div>
   </div>
 </AppShell>
 
@@ -281,6 +407,28 @@
     grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
     gap: var(--space-4);
     align-items: start;
+  }
+
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .card-head-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .card-head-title h2 {
+    margin: 0;
+  }
+
+  .card-head-title :global(svg) {
+    color: var(--color-text-muted);
   }
 
   .item-row {
@@ -316,19 +464,20 @@
   .stat-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: var(--space-4);
+    gap: var(--space-5) var(--space-6);
   }
 
   .stat-tile {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: var(--space-2);
   }
 
   .stat-value {
     font-size: 1.75rem;
     font-weight: 600;
-    line-height: 1.2;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
   }
 
   .stat-value.danger {
@@ -336,12 +485,19 @@
   }
 
   .stat-label {
-    font-size: 0.8125rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
   }
 
   .stat-caption {
-    margin: var(--space-4) 0 0;
+    margin: var(--space-5) 0 0;
     font-size: 0.8125rem;
+  }
+
+  .disabled-note {
+    margin: 0;
+    font-size: 0.875rem;
   }
 
   .issues-card {

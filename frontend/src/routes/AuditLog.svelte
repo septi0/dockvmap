@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import ScrollText from "@lucide/svelte/icons/scroll-text";
   import AppShell from "../lib/components/AppShell.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Pagination from "../lib/components/Pagination.svelte";
   import FilterBar from "../lib/components/FilterBar.svelte";
@@ -33,6 +34,7 @@
   let sinceDate = $state("");
   let untilDate = $state("");
   let loading = $state(true);
+  let loaded = $state(false);
   let error = $state<string | null>(null);
   let selectedEntry = $state<AuditLog | null>(null);
   let loadToken = 0;
@@ -70,7 +72,10 @@
       error =
         err instanceof ApiError ? err.message : "Failed to load audit log";
     } finally {
-      if (requestId === loadToken) loading = false;
+      if (requestId === loadToken) {
+        loading = false;
+        loaded = true;
+      }
     }
   }
 
@@ -106,6 +111,11 @@
     load();
   }
 
+  function selectRow(event: MouseEvent, entry: AuditLog) {
+    if ((event.target as HTMLElement).closest("button")) return;
+    selectedEntry = entry;
+  }
+
   function clearFilters() {
     selectedType = "";
     sinceDate = "";
@@ -115,6 +125,8 @@
     load();
   }
 </script>
+
+<PageTitle title="Audit Log" />
 
 <AppShell>
   <div class="title-row">
@@ -142,7 +154,8 @@
   </FilterBar>
 
   <AsyncState
-    {loading}
+    loading={loading && !loaded}
+    busy={loading && loaded}
     {error}
     empty={auditLogs.length === 0}
     emptyMessage="No audit events yet."
@@ -160,14 +173,16 @@
         </thead>
         <tbody>
           {#each auditLogs as entry (entry.id)}
-            <tr
-              class="clickable"
-              tabindex="0"
-              onclick={() => (selectedEntry = entry)}
-              onkeydown={(event) =>
-                event.key === "Enter" && (selectedEntry = entry)}
-            >
-              <td>{formatDate(entry.createdAt)}</td>
+            <tr class="clickable" onclick={(event) => selectRow(event, entry)}>
+              <td>
+                <button
+                  type="button"
+                  class="row-trigger"
+                  onclick={() => (selectedEntry = entry)}
+                >
+                  {formatDate(entry.createdAt)}
+                </button>
+              </td>
               <td>{formatAuditType(entry.type)}</td>
               <td>{entry.username ?? "-"}</td>
               <td>{entry.ip ?? "-"}</td>
@@ -217,6 +232,22 @@
 
   .clickable {
     cursor: pointer;
+  }
+
+  .row-trigger {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .row-trigger:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 
   .data {

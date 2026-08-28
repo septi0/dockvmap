@@ -6,6 +6,7 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import LoaderCircle from "@lucide/svelte/icons/loader-circle";
   import AppShell from "../lib/components/AppShell.svelte";
+  import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Field from "../lib/components/Field.svelte";
   import Select from "../lib/components/Select.svelte";
@@ -228,6 +229,8 @@
     }
   }
 </script>
+
+<PageTitle title="Add Virtual Image" />
 
 <AppShell>
   <div class="page">

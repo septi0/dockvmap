@@ -1,5 +1,5 @@
 BINARY := bin/dockvmap
-VERSION := $(shell git describe --tags --always 2>/dev/null || echo dev)
+VERSION := $(shell git describe --tags --always 2>/dev/null || echo 0.0.0-dev)
 DEFAULT_DATA_PATH := ./data
 
 .DEFAULT_GOAL := help

@@ -5,6 +5,7 @@
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import AppShell from '../lib/components/AppShell.svelte'
+  import PageTitle from '../lib/components/PageTitle.svelte'
   import AsyncState from '../lib/components/AsyncState.svelte'
   import Button from '../lib/components/Button.svelte'
   import CreateProxyTokenModal from '../lib/components/CreateProxyTokenModal.svelte'
@@ -19,6 +20,7 @@
 
   let tokens = $state<ProxyToken[]>([])
   let loading = $state(true)
+  let loaded = $state(false)
   let error = $state<string | null>(null)
   let showCreateModal = $state(false)
   let revealedToken = $state<CreateProxyTokenResult | null>(null)
@@ -37,6 +39,7 @@
       error = err instanceof ApiError ? err.message : 'Failed to load proxy tokens'
     } finally {
       loading = false
+      loaded = true
     }
   }
 
@@ -79,6 +82,8 @@
   }
 </script>
 
+<PageTitle title='Proxy Tokens' />
+
 <AppShell>
   <div class="header">
     <div class="title-row">
@@ -103,12 +108,20 @@
   {/if}
 
   <AsyncState
-    {loading}
+    loading={loading && !loaded}
+    busy={loading && loaded}
     {error}
     empty={tokens.length === 0}
     emptyMessage="No proxy tokens yet. Create one to authenticate a client against the proxy."
     columns={3}
   >
+    {#snippet emptyAction()}
+      <Button onclick={() => (showCreateModal = true)}>
+        <Plus size={16} strokeWidth={2} />
+        Create token
+      </Button>
+    {/snippet}
+
     <div class="card">
       <table class="table">
         <thead>

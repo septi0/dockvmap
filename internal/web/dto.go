@@ -377,6 +377,22 @@ func newProxyMetricsResponse(snapshot proxy.MetricsSnapshot, cacheEnabled bool) 
 	}
 }
 
+type tagRefreshStatusResponse struct {
+	Enabled  bool       `json:"enabled"`
+	Interval string     `json:"interval"`
+	LastRun  *time.Time `json:"lastRun"`
+	NextDue  *time.Time `json:"nextDue"`
+}
+
+func newTagRefreshStatusResponse(enabled bool, interval string, lastRun, nextDue *time.Time) tagRefreshStatusResponse {
+	return tagRefreshStatusResponse{
+		Enabled:  enabled,
+		Interval: interval,
+		LastRun:  lastRun,
+		NextDue:  nextDue,
+	}
+}
+
 type recentFailureResponse struct {
 	OccurredAt time.Time `json:"occurredAt"`
 	Message    string    `json:"message"`
