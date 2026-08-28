@@ -107,16 +107,16 @@ func run() error {
 
 	failureLog := service.NewFailureLog()
 
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+
+	defer workerCancel()
+
 	events := service.NewEvents(db)
-	images := service.NewImages(db, ociClient, events, audit, failureLog, tagFilter)
+	images := service.NewImages(db, ociClient, events, audit, failureLog, tagFilter, workerCtx)
 
 	if *refreshTags {
 		return runRefreshTags(context.Background(), images)
 	}
-
-	workerCtx, workerCancel := context.WithCancel(context.Background())
-
-	defer workerCancel()
 
 	discoveries := service.NewDiscoveries(db, db, ociClient, ociClient, tagFilter, failureLog, workerCtx, cfg.TagDiscoveryTTLDuration())
 
@@ -124,8 +124,13 @@ func run() error {
 		return fmt.Errorf("failed to recover tag discoveries: %w", err)
 	}
 
+	if err := images.RecoverFromRestart(context.Background()); err != nil {
+		return fmt.Errorf("failed to recover image refresh state: %w", err)
+	}
+
 	health := service.NewHealth(db)
 	proxyTokens := service.NewProxyTokens(db, audit)
+	workerSchedule := service.NewWorkerSchedule(db)
 	metrics := proxy.NewMetrics()
 
 	cache, err := initBlobCache(cfg, *dataPath, db)
@@ -180,7 +185,7 @@ func run() error {
 
 	go func() {
 		defer close(workerDone)
-		startWorker(workerCtx, cfg, images, discoveries, cache, notifications, sessions)
+		startWorker(workerCtx, cfg, workerSchedule, images, discoveries, cache, notifications, sessions)
 	}()
 
 	awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)

@@ -104,7 +104,7 @@ Key options:
 | `tag_filters_path` | Path to a `filters.yaml` policy file (see Tag filtering below). If set, the file must exist — an invalid path is a startup error, not a silent fallback. Unset uses the built-in default filters |
 | `credential_encryption_key` | Base64, 32-byte AES-GCM key encrypting stored registry credentials. If left unset, DockVMap generates one and persists it at `<data_path>/credential_encryption.key` on first run |
 | `virtual_tag` | The tag name clients pull (`current` by default) |
-| `tags_check_interval` | How often DockVMap polls upstream registries for tag changes |
+| `tags_check_interval` | Minimum time between upstream tag-change polls. The last poll time is persisted, so restarts don't reset the interval |
 | `tag_discovery_ttl` | How long a repository's discovered tag list (shown when adding a virtual image) is cached before a "Check repository" click refreshes it in the background |
 | `session_lifetime` | Web UI session duration |
 | `secure_cookies` | Set `true` once served over HTTPS; otherwise the session cookie is sent unencrypted. Defaults to `true` when `tls.enabled` is true, `false` otherwise |

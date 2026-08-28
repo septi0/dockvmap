@@ -34,7 +34,7 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 	where, args := imageListWhere(filters)
 
 	query := fmt.Sprintf(`
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.created_at, i.updated_at
+		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.refresh_status, i.created_at, i.updated_at
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
 		%s
@@ -58,7 +58,7 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 		if err := rows.Scan(
 			&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
 			&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
-			&img.CreatedAt, &img.UpdatedAt,
+			&img.RefreshStatus, &img.CreatedAt, &img.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image row: %w", err)
 		}
@@ -96,14 +96,14 @@ func (s *Store) GetImage(ctx context.Context, name string) (*model.Image, error)
 	var img model.Image
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.created_at, i.updated_at
+		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.refresh_status, i.created_at, i.updated_at
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
 		WHERE i.name = ?
 	`, name).Scan(
 		&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
 		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
-		&img.CreatedAt, &img.UpdatedAt,
+		&img.RefreshStatus, &img.CreatedAt, &img.UpdatedAt,
 	)
 
 	if err != nil {
@@ -121,14 +121,14 @@ func (s *Store) GetImageByID(ctx context.Context, imageId int64) (*model.Image, 
 	var img model.Image
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.created_at, i.updated_at
+		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.refresh_status, i.created_at, i.updated_at
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
 		WHERE i.id = ?
 	`, imageId).Scan(
 		&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
 		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
-		&img.CreatedAt, &img.UpdatedAt,
+		&img.RefreshStatus, &img.CreatedAt, &img.UpdatedAt,
 	)
 
 	if err != nil {
@@ -225,6 +225,52 @@ func (s *Store) UpdateImageCheck(ctx context.Context, tx DBTX, imageId int64, ch
 	}
 
 	return updated != 0, nil
+}
+
+func (s *Store) TryStartImageRefresh(ctx context.Context, imageId int64) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE images
+		SET refresh_status = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND refresh_status = ?
+	`, model.RefreshStatusRunning, imageId, model.RefreshStatusIdle)
+
+	if err != nil {
+		return false, fmt.Errorf("starting image refresh %d: %w", imageId, err)
+	}
+
+	affected, err := result.RowsAffected()
+
+	if err != nil {
+		return false, fmt.Errorf("checking started image refresh %d: %w", imageId, err)
+	}
+
+	return affected != 0, nil
+}
+
+func (s *Store) SetImageRefreshStatus(ctx context.Context, imageId int64, status string) error {
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE images
+		SET refresh_status = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, status, imageId); err != nil {
+		return fmt.Errorf("setting image refresh status %d: %w", imageId, err)
+	}
+
+	return nil
+}
+
+func (s *Store) ResetRunningImageRefreshes(ctx context.Context) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE images
+		SET refresh_status = ?
+		WHERE refresh_status = ?
+	`, model.RefreshStatusIdle, model.RefreshStatusRunning)
+
+	if err != nil {
+		return 0, fmt.Errorf("resetting running image refreshes: %w", err)
+	}
+
+	return result.RowsAffected()
 }
 
 func (s *Store) UpdateImageTag(ctx context.Context, tx DBTX, imageId int64, tag string) (bool, error) {

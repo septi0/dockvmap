@@ -20,8 +20,9 @@ var ErrTagDiscoveryNotFound = errors.New("tag discovery not found")
 const (
 	discoveryInlineWaitBudget   = 2 * time.Second
 	discoveryInlineWaitInterval = 150 * time.Millisecond
-	discoveryScanTimeout        = 10 * time.Minute
 )
+
+const backgroundScanTimeout = 10 * time.Minute
 
 type discoveryRegistryLookup interface {
 	GetRegistryInfoByHost(ctx context.Context, registry string) (*model.RegistryInfo, error)
@@ -297,7 +298,7 @@ func (d *Discoveries) runScan(discoveryID int64, registryHost, repository string
 
 	defer d.progress.clear(discoveryID)
 
-	ctx, cancel := context.WithTimeout(d.bgCtx, discoveryScanTimeout)
+	ctx, cancel := context.WithTimeout(d.bgCtx, backgroundScanTimeout)
 	defer cancel()
 
 	tags, err := d.tagLister.ListTagsWithProgress(ctx, registryHost, repository, func(tagsSoFar int) {

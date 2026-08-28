@@ -13,6 +13,18 @@
   import { AUDIT_TYPES } from "../lib/api/types/audit";
   import type { AuditLog } from "../lib/api/types/audit";
   import { formatDate, formatAuditType } from "../lib/utils/format";
+  import {
+    readListQuery,
+    pushListQuery,
+    watchListQuery,
+  } from "../lib/utils/listQuery";
+
+  const FILTER_DEFAULTS = {
+    type: "",
+    since: "",
+    until: "",
+    offset: 0,
+  };
 
   let auditLogs = $state<AuditLog[]>([]);
   let total = $state(0);
@@ -62,15 +74,35 @@
     }
   }
 
-  onMount(load);
+  function syncFromUrl() {
+    const filters = readListQuery(FILTER_DEFAULTS);
+    selectedType = filters.type;
+    sinceDate = filters.since;
+    untilDate = filters.until;
+    offset = filters.offset;
+    load();
+  }
+
+  function syncToUrl() {
+    pushListQuery("/audit-log", {
+      type: selectedType,
+      since: sinceDate,
+      until: untilDate,
+      offset,
+    });
+  }
+
+  onMount(() => watchListQuery(syncFromUrl));
 
   function handleOffsetChange(newOffset: number) {
     offset = newOffset;
+    syncToUrl();
     load();
   }
 
   function handleFilterChange() {
     offset = 0;
+    syncToUrl();
     load();
   }
 
@@ -79,6 +111,7 @@
     sinceDate = "";
     untilDate = "";
     offset = 0;
+    syncToUrl();
     load();
   }
 </script>

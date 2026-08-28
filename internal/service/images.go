@@ -48,6 +48,9 @@ type imageStore interface {
 	ListImages(ctx context.Context, filters model.ImageListFilters) ([]model.Image, error)
 	CountImages(ctx context.Context, filters model.ImageListFilters) (int64, error)
 	UpdateImageCheck(ctx context.Context, tx store.DBTX, imageId int64, checkErr *string, checkedAt time.Time) (bool, error)
+	TryStartImageRefresh(ctx context.Context, imageId int64) (bool, error)
+	SetImageRefreshStatus(ctx context.Context, imageId int64, status string) error
+	ResetRunningImageRefreshes(ctx context.Context) (int64, error)
 	UpdateImageTag(ctx context.Context, tx store.DBTX, imageId int64, tag string) (bool, error)
 	UpdateImageName(ctx context.Context, imageId int64, name string) (bool, error)
 	UpdateImageUpdateAvailable(ctx context.Context, tx store.DBTX, imageId int64, available bool, targetTag *string) (bool, error)
@@ -127,6 +130,7 @@ type Images struct {
 	failures      failureRecorder
 	tagFilter     tagFilterer
 	refreshLocker *imageRefreshLocker
+	bgCtx         context.Context
 }
 
 type RefreshTagsOpts struct {
@@ -153,7 +157,7 @@ type auditImageRenamedData struct {
 	NewName string `json:"newName"`
 }
 
-func NewImages(store imageStore, tagLister tagLister, events eventHandler, audit auditRecorder, failures failureRecorder, tagFilter tagFilterer) *Images {
+func NewImages(store imageStore, tagLister tagLister, events eventHandler, audit auditRecorder, failures failureRecorder, tagFilter tagFilterer, bgCtx context.Context) *Images {
 	return &Images{
 		store:         store,
 		tagLister:     tagLister,
@@ -162,6 +166,7 @@ func NewImages(store imageStore, tagLister tagLister, events eventHandler, audit
 		failures:      failures,
 		tagFilter:     tagFilter,
 		refreshLocker: newImageRefreshLocker(),
+		bgCtx:         bgCtx,
 	}
 }
 
@@ -575,6 +580,22 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 	unlock := i.refreshLocker.lock(imageId)
 	defer unlock()
 
+	ctx, cancel := context.WithTimeout(ctx, backgroundScanTimeout)
+	defer cancel()
+
+	if err := i.store.SetImageRefreshStatus(ctx, imageId, model.RefreshStatusRunning); err != nil {
+		slog.Error("marking image refresh in progress failed", "imageId", imageId, "error", err)
+	}
+
+	defer func() {
+		resetCtx, resetCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer resetCancel()
+
+		if err := i.store.SetImageRefreshStatus(resetCtx, imageId, model.RefreshStatusIdle); err != nil {
+			slog.Error("clearing image refresh status failed", "imageId", imageId, "error", err)
+		}
+	}()
+
 	image, err := i.store.GetImageByID(ctx, imageId)
 
 	if err != nil {
@@ -645,6 +666,59 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 
 	if err := i.events.HandleEvent(ctx, options.RegisterEvent, image, oldTags, tags, updateAvailable, updateAvailableTag); err != nil {
 		return fmt.Errorf("%w: registering image event for %q: %w", ErrFailedToRegisterEvent, image.Name, err)
+	}
+
+	return nil
+}
+
+func (i *Images) StartBackgroundRefresh(imageId int64) (bool, error) {
+	if imageId < 1 {
+		return false, fmt.Errorf("%w: id must be positive", ErrInvalidImage)
+	}
+
+	image, err := i.store.GetImageByID(i.bgCtx, imageId)
+
+	if err != nil {
+		return false, err
+	}
+
+	if image == nil {
+		return false, fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
+	}
+
+	started, err := i.store.TryStartImageRefresh(i.bgCtx, imageId)
+
+	if err != nil {
+		return false, err
+	}
+
+	if !started {
+		return false, nil
+	}
+
+	go func() {
+		opts := RefreshTagsOpts{
+			FlagAsNew:     true,
+			RegisterEvent: EventSilent,
+		}
+
+		if err := i.RefreshAvailableTags(i.bgCtx, imageId, opts); err != nil {
+			slog.Error("background tag refresh failed", "imageId", imageId, "error", err)
+		}
+	}()
+
+	return true, nil
+}
+
+func (i *Images) RecoverFromRestart(ctx context.Context) error {
+	count, err := i.store.ResetRunningImageRefreshes(ctx)
+
+	if err != nil {
+		return fmt.Errorf("recovering image refresh state: %w", err)
+	}
+
+	if count > 0 {
+		slog.Warn("reset interrupted image refreshes", "count", count)
 	}
 
 	return nil

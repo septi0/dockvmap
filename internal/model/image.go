@@ -2,6 +2,11 @@ package model
 
 import "time"
 
+const (
+	RefreshStatusIdle    = "idle"
+	RefreshStatusRunning = "running"
+)
+
 type Image struct {
 	ID                 int64      `json:"id"`
 	Name               string     `json:"name"`
@@ -13,6 +18,7 @@ type Image struct {
 	LastCheckError     *string    `json:"lastCheckError,omitempty"`
 	UpdateAvailable    bool       `json:"updateAvailable"`
 	UpdateAvailableTag *string    `json:"updateAvailableTag,omitempty"`
+	RefreshStatus      string     `json:"refreshStatus"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }

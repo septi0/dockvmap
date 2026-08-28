@@ -51,7 +51,9 @@ export function renameImage(id: number, name: string) {
 }
 
 export function refreshImageTags(id: number) {
-  return api.post<{ status: string; eventRegistered: boolean }>(`/images/${id}/refresh-tags`)
+  return api.post<{ status: 'refreshed' | 'running' | 'error'; error?: string }>(
+    `/images/${id}/refresh-tags`,
+  )
 }
 
 export function markImageTagsAsSeen(id: number) {

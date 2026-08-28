@@ -515,3 +515,13 @@ form {
   flex-shrink: 0;
   margin-top: 1px;
 }
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
