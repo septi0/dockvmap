@@ -534,11 +534,11 @@ func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string)
 }
 
 func versionContains(outer, inner [][]int64) bool {
-	if len(outer) == 0 || len(outer) != len(inner) {
+	if len(outer) == 0 || len(outer) > len(inner) {
 		return false
 	}
 
-	strictlyShorter := false
+	moreSpecific := len(inner) > len(outer)
 
 	for i := range outer {
 		if !numberPrefix(outer[i], inner[i]) {
@@ -546,11 +546,11 @@ func versionContains(outer, inner [][]int64) bool {
 		}
 
 		if len(outer[i]) < len(inner[i]) {
-			strictlyShorter = true
+			moreSpecific = true
 		}
 	}
 
-	return strictlyShorter
+	return moreSpecific
 }
 
 func numberPrefix(prefix, full []int64) bool {
