@@ -3,13 +3,19 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import Check from '@lucide/svelte/icons/check'
   import { updatesCount } from '../services/updatesCount'
+  import { createPoller } from '../utils/poller'
 
   const POLL_INTERVAL_MS = 60000
 
+  const poller = createPoller(async () => {
+    await updatesCount.refresh()
+    return true
+  }, POLL_INTERVAL_MS)
+
   $effect(() => {
     updatesCount.refresh()
-    const interval = setInterval(updatesCount.refresh, POLL_INTERVAL_MS)
-    return () => clearInterval(interval)
+    poller.start()
+    return () => poller.stop()
   })
 </script>
 

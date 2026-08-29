@@ -51,7 +51,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each failures as failure (failure.occurredAt + failure.message)}
+          {#each failures as failure, i (i)}
             <tr>
               <td class="muted failure-date">{formatDate(failure.occurredAt)}</td>
               <td>{failure.message}</td>

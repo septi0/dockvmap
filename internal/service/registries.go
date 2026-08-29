@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/septi0/dockvmap/internal/model"
@@ -212,30 +210,4 @@ func (r *Registries) Update(ctx context.Context, registry model.RegistryUpdate) 
 
 func (r *Registries) Delete(ctx context.Context, registryID int64) (bool, error) {
 	return r.DeleteByID(ctx, registryID)
-}
-
-func validRegistryAddress(value string) bool {
-	parsed, err := url.Parse("https://" + value)
-
-	if err != nil || parsed.Host != value || parsed.User != nil || parsed.Path != "" {
-		return false
-	}
-
-	host := parsed.Hostname()
-
-	if host == "" {
-		return false
-	}
-
-	port := parsed.Port()
-
-	if port != "" {
-		portNumber, err := strconv.Atoi(port)
-
-		if err != nil || portNumber < 1 || portNumber > 65535 {
-			return false
-		}
-	}
-
-	return true
 }

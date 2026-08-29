@@ -28,18 +28,25 @@
   let deleteError = $state<string | null>(null)
   let deleting = $state(false)
   let proxyAuthEnabled = $state(true)
+  let loadToken = 0
 
   async function load() {
+    const requestId = ++loadToken
     loading = true
     error = null
 
     try {
-      tokens = await listProxyTokens()
+      const result = await listProxyTokens()
+      if (requestId !== loadToken) return
+      tokens = result
     } catch (err) {
+      if (requestId !== loadToken) return
       error = err instanceof ApiError ? err.message : 'Failed to load proxy tokens'
     } finally {
-      loading = false
-      loaded = true
+      if (requestId === loadToken) {
+        loading = false
+        loaded = true
+      }
     }
   }
 

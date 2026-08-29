@@ -25,19 +25,26 @@
   let deletingRegistry = $state<Registry | null>(null);
   let deleteError = $state<string | null>(null);
   let deleting = $state(false);
+  let loadToken = 0;
 
   async function load() {
+    const requestId = ++loadToken;
     loading = true;
     error = null;
 
     try {
-      registries = await listRegistries();
+      const result = await listRegistries();
+      if (requestId !== loadToken) return;
+      registries = result;
     } catch (err) {
+      if (requestId !== loadToken) return;
       error =
         err instanceof ApiError ? err.message : "Failed to load registries";
     } finally {
-      loading = false;
-      loaded = true;
+      if (requestId === loadToken) {
+        loading = false;
+        loaded = true;
+      }
     }
   }
 

@@ -32,14 +32,26 @@ async function request<T>(
   })
 
   const contentType = res.headers.get('content-type') ?? ''
-  const data = contentType.includes('application/json') ? await res.json() : undefined
+  let data: any
+
+  if (contentType.includes('application/json')) {
+    try {
+      data = await res.json()
+    } catch {
+      data = undefined
+    }
+  }
 
   if (!res.ok) {
     if (res.status === 401 && !options?.expectUnauthorized) {
       onUnauthorized?.()
     }
 
-    const message = data && typeof data.error === 'string' ? data.error : res.statusText
+    // res.statusText is empty over HTTP/2, so keep a status-code fallback
+    const message =
+      (data && typeof data.error === 'string' && data.error) ||
+      res.statusText ||
+      `Request failed (${res.status})`
     throw new ApiError(res.status, message)
   }
 

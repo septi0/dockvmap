@@ -78,7 +78,7 @@ func (c *Config) applyDerivedDefaults() {
 	}
 
 	if c.SecureCookies == nil {
-		secure := c.TLS.Enabled
+		secure := c.TLS.Enabled || len(c.TrustedProxies) > 0
 		c.SecureCookies = &secure
 	}
 }
