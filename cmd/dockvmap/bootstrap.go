@@ -60,7 +60,7 @@ func initBlobCache(cfg *config.Config, dataPath string, db *store.Store) (*blobc
 
 	cachePath := filepath.Join(dataPath, "cache")
 
-	cache, err := blobcache.New(cachePath, cfg.BlobCache.Lifetime, db)
+	cache, err := blobcache.New(cachePath, cfg.BlobCache.Lifetime, cfg.BlobCacheMaxSizeBytes(), db)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize blob cache: %w", err)

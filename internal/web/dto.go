@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
-	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
 )
 
@@ -349,32 +348,15 @@ type createProxyTokenResponse struct {
 	Token string `json:"token"`
 }
 
-type proxyMetricsResponse struct {
-	StartedAt          time.Time `json:"startedAt"`
-	CacheEnabled       bool      `json:"cacheEnabled"`
-	TotalRequests      uint64    `json:"totalRequests"`
-	ManifestRequests   uint64    `json:"manifestRequests"`
-	BlobRequests       uint64    `json:"blobRequests"`
-	CacheHits          uint64    `json:"cacheHits"`
-	CacheMisses        uint64    `json:"cacheMisses"`
-	UpstreamRequests   uint64    `json:"upstreamRequests"`
-	UpstreamFailures   uint64    `json:"upstreamFailures"`
-	CacheWriteFailures uint64    `json:"cacheWriteFailures"`
+type proxyCacheUsageResponse struct {
+	UsedBytes int64 `json:"usedBytes"`
+	MaxBytes  int64 `json:"maxBytes"`
 }
 
-func newProxyMetricsResponse(snapshot proxy.MetricsSnapshot, cacheEnabled bool) proxyMetricsResponse {
-	return proxyMetricsResponse{
-		StartedAt:          snapshot.StartedAt,
-		CacheEnabled:       cacheEnabled,
-		TotalRequests:      snapshot.TotalRequests,
-		ManifestRequests:   snapshot.ManifestRequests,
-		BlobRequests:       snapshot.BlobRequests,
-		CacheHits:          snapshot.CacheHits,
-		CacheMisses:        snapshot.CacheMisses,
-		UpstreamRequests:   snapshot.UpstreamRequests,
-		UpstreamFailures:   snapshot.UpstreamFailures,
-		CacheWriteFailures: snapshot.CacheWriteFailures,
-	}
+type proxyMetricsResponse struct {
+	GeneratedAt time.Time                 `json:"generatedAt"`
+	Windows     model.ProxyMetricsSummary `json:"windows"`
+	Cache       *proxyCacheUsageResponse  `json:"cache"`
 }
 
 type tagRefreshStatusResponse struct {

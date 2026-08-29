@@ -1,12 +1,8 @@
 package proxy
 
-import (
-	"sync/atomic"
-	"time"
-)
+import "sync/atomic"
 
 type Metrics struct {
-	startedAt          time.Time
 	totalRequests      atomic.Uint64
 	manifestRequests   atomic.Uint64
 	blobRequests       atomic.Uint64
@@ -18,24 +14,22 @@ type Metrics struct {
 }
 
 type MetricsSnapshot struct {
-	StartedAt          time.Time `json:"startedAt"`
-	TotalRequests      uint64    `json:"totalRequests"`
-	ManifestRequests   uint64    `json:"manifestRequests"`
-	BlobRequests       uint64    `json:"blobRequests"`
-	CacheHits          uint64    `json:"cacheHits"`
-	CacheMisses        uint64    `json:"cacheMisses"`
-	UpstreamRequests   uint64    `json:"upstreamRequests"`
-	UpstreamFailures   uint64    `json:"upstreamFailures"`
-	CacheWriteFailures uint64    `json:"cacheWriteFailures"`
+	TotalRequests      uint64
+	ManifestRequests   uint64
+	BlobRequests       uint64
+	CacheHits          uint64
+	CacheMisses        uint64
+	UpstreamRequests   uint64
+	UpstreamFailures   uint64
+	CacheWriteFailures uint64
 }
 
 func NewMetrics() *Metrics {
-	return &Metrics{startedAt: time.Now().UTC()}
+	return &Metrics{}
 }
 
 func (m *Metrics) Snapshot() MetricsSnapshot {
 	return MetricsSnapshot{
-		StartedAt:          m.startedAt,
 		TotalRequests:      m.totalRequests.Load(),
 		ManifestRequests:   m.manifestRequests.Load(),
 		BlobRequests:       m.blobRequests.Load(),

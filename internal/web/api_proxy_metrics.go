@@ -1,9 +1,35 @@
 package web
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
 
 func (w *Web) apiProxyMetrics(rw http.ResponseWriter, r *http.Request) {
-	snapshot := w.proxyMetrics.Snapshot()
+	summary, err := w.proxyMetricsHistory.Summary(r.Context())
 
-	apiJSON(rw, http.StatusOK, newProxyMetricsResponse(snapshot, *w.cfg.BlobCache.Enabled))
+	if err != nil {
+		apiError(rw, http.StatusInternalServerError, "failed to load proxy metrics")
+
+		return
+	}
+
+	response := proxyMetricsResponse{
+		GeneratedAt: time.Now().UTC(),
+		Windows:     summary,
+	}
+
+	if w.cacheUsage != nil {
+		used, max, err := w.cacheUsage.Usage(r.Context())
+
+		if err != nil {
+			apiError(rw, http.StatusInternalServerError, "failed to load cache usage")
+
+			return
+		}
+
+		response.Cache = &proxyCacheUsageResponse{UsedBytes: used, MaxBytes: max}
+	}
+
+	apiJSON(rw, http.StatusOK, response)
 }
