@@ -36,8 +36,27 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 	defer workerCancel()
 
 	events := service.NewEvents(db)
-	images := service.NewImages(db, ociClient, events, audit, failureLog, tagFilter, workerCtx)
-	discoveries := service.NewDiscoveries(db, db, ociClient, ociClient, tagFilter, failureLog, workerCtx, cfg.TagDiscoveryTTLDuration())
+
+	images := service.NewImages(service.ImagesDeps{
+		Store:     db,
+		TagLister: ociClient,
+		Events:    events,
+		Audit:     audit,
+		Failures:  failureLog,
+		TagFilter: tagFilter,
+		BgCtx:     workerCtx,
+	})
+
+	discoveries := service.NewDiscoveries(service.DiscoveriesDeps{
+		Store:      db,
+		Registries: db,
+		Checker:    ociClient,
+		TagLister:  ociClient,
+		TagFilter:  tagFilter,
+		Failures:   failureLog,
+		BgCtx:      workerCtx,
+		TTL:        cfg.TagDiscoveryTTLDuration(),
+	})
 
 	if err := discoveries.RecoverFromRestart(ctx); err != nil {
 		return fmt.Errorf("failed to recover tag discoveries: %w", err)

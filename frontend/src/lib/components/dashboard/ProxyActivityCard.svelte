@@ -38,6 +38,13 @@
       : formatBytes(usedBytes);
   });
 
+  let cacheCaption = $derived.by(() => {
+    const parts: string[] = [];
+    if (cacheUsageLabel) parts.push(`Cache ${cacheUsageLabel}`);
+    if (cacheHitRate) parts.push(`${cacheHitRate} hit rate`);
+    return parts.length ? parts.join(" · ") : null;
+  });
+
   async function load() {
     loading = true;
     error = null;
@@ -83,13 +90,6 @@
           <span class="stat-label muted">Total requests</span>
         </div>
 
-        {#if cacheHitRate}
-          <div class="stat-tile">
-            <span class="stat-value">{cacheHitRate}</span>
-            <span class="stat-label muted">Cache hit rate</span>
-          </div>
-        {/if}
-
         <div class="stat-tile">
           <span class="stat-value" class:danger={view.upstreamFailures > 0}>
             {view.upstreamFailures}
@@ -98,8 +98,8 @@
         </div>
       </div>
 
-      {#if cacheUsageLabel}
-        <p class="stat-caption muted">Cache {cacheUsageLabel}</p>
+      {#if cacheCaption}
+        <p class="stat-caption muted">{cacheCaption}</p>
       {/if}
     {/if}
   </AsyncState>
