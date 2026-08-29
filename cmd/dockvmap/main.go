@@ -66,7 +66,7 @@ func run() error {
 		slog.Warn(warning)
 	}
 
-	if err := os.MkdirAll(*dataPath, 0o755); err != nil {
+	if err := os.MkdirAll(*dataPath, 0o700); err != nil {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 

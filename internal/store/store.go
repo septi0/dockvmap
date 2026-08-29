@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"strings"
 
 	"modernc.org/sqlite"
@@ -85,6 +87,11 @@ func open(path, credentialEncryptionKey string) (*Store, error) {
 		return nil, fmt.Errorf("connecting db: %w", err)
 	}
 
+	// the DB holds password hashes, session tokens and encrypted credentials
+	if err := os.Chmod(path, 0o600); err != nil {
+		slog.Warn("could not restrict database file permissions", "path", path, "error", err)
+	}
+
 	return &Store{db: db, credentialCipher: credentialCipher}, nil
 }
 
@@ -93,6 +100,7 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) Backup(ctx context.Context, destPath string) error {
+	// VACUUM INTO takes no bind parameter; destPath is a trusted CLI arg, quote-escaped
 	escaped := strings.ReplaceAll(destPath, "'", "''")
 
 	if _, err := s.db.ExecContext(ctx, "VACUUM INTO '"+escaped+"'"); err != nil {

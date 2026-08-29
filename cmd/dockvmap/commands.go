@@ -42,7 +42,16 @@ func cmdRefreshTags(ctx context.Context, db *store.Store, tagFilter *tagfilter.F
 	ociClient := oci.NewClient(nil, registryCredentialsAdapter{registries: registries}, registryOptionsAdapter{registries: registries})
 	failureLog := service.NewFailureLog(db)
 	events := service.NewEvents(db)
-	images := service.NewImages(db, ociClient, events, audit, failureLog, tagFilter, ctx)
+
+	images := service.NewImages(service.ImagesDeps{
+		Store:     db,
+		TagLister: ociClient,
+		Events:    events,
+		Audit:     audit,
+		Failures:  failureLog,
+		TagFilter: tagFilter,
+		BgCtx:     ctx,
+	})
 
 	refreshed, err := images.RefreshAll(ctx)
 

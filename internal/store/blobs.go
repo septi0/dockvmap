@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
@@ -27,7 +26,7 @@ func (s *Store) GetCachedBlob(ctx context.Context, digest string) (*model.Cached
 		return &blob, nil
 	}
 
-	if err == sql.ErrNoRows {
+	if isNoRows(err) {
 		return nil, nil
 	}
 

@@ -48,21 +48,127 @@ type registryOptionsProvider interface {
 }
 
 type Client struct {
-	httpClient       *http.Client
-	credentials      credentialProvider
-	options          registryOptionsProvider
-	tokens           *expirable.LRU[string, cachedToken]
-	tokenFetch       singleflight.Group
-	insecureClients  *expirable.LRU[string, *http.Client]
-	credentialsCache *expirable.LRU[string, *Credentials]
-	credentialsFetch singleflight.Group
-	optionsCache     *expirable.LRU[string, *RegistryOptions]
-	optionsFetch     singleflight.Group
+	httpClient  *http.Client
+	credentials credentialProvider
+	options     registryOptionsProvider
+	cache       *registryCache
 }
 
 type cachedToken struct {
 	value     string
 	expiresAt time.Time
+}
+
+// per-registry-host caches; each read is singleflight-guarded so a burst of misses triggers one fetch
+type registryCache struct {
+	tokens           *expirable.LRU[string, cachedToken]
+	tokenFetch       singleflight.Group
+	credentials      *expirable.LRU[string, *Credentials]
+	credentialsFetch singleflight.Group
+	options          *expirable.LRU[string, *RegistryOptions]
+	optionsFetch     singleflight.Group
+	insecureClients  *expirable.LRU[string, *http.Client]
+}
+
+func newRegistryCache() *registryCache {
+	return &registryCache{
+		tokens:          expirable.NewLRU[string, cachedToken](tokenCacheMaxEntries, nil, 0),
+		credentials:     expirable.NewLRU[string, *Credentials](0, nil, registryDataCacheTTL),
+		options:         expirable.NewLRU[string, *RegistryOptions](0, nil, registryDataCacheTTL),
+		insecureClients: expirable.NewLRU[string, *http.Client](0, nil, registryDataCacheTTL),
+	}
+}
+
+func cachedFetch[V any](lru *expirable.LRU[string, V], sf *singleflight.Group, key string, fetch func() (V, error)) (V, error) {
+	if v, ok := lru.Get(key); ok {
+		return v, nil
+	}
+
+	v, err, _ := sf.Do(key, func() (any, error) {
+		if v, ok := lru.Get(key); ok {
+			return v, nil
+		}
+
+		v, err := fetch()
+
+		if err != nil {
+			return v, err
+		}
+
+		lru.Add(key, v)
+
+		return v, nil
+	})
+
+	if err != nil {
+		var zero V
+		return zero, err
+	}
+
+	return v.(V), nil
+}
+
+func (rc *registryCache) credentialsFor(registry string, fetch func() (*Credentials, error)) (*Credentials, error) {
+	return cachedFetch(rc.credentials, &rc.credentialsFetch, registry, fetch)
+}
+
+func (rc *registryCache) optionsFor(registry string, fetch func() (*RegistryOptions, error)) (*RegistryOptions, error) {
+	return cachedFetch(rc.options, &rc.optionsFetch, registry, fetch)
+}
+
+func (rc *registryCache) token(key string) (string, bool) {
+	token, ok := rc.tokens.Get(key)
+
+	if !ok || !token.expiresAt.After(time.Now().Add(5*time.Second)) {
+		rc.tokens.Remove(key)
+
+		return "", false
+	}
+
+	return token.value, true
+}
+
+func (rc *registryCache) removeToken(key string) {
+	rc.tokens.Remove(key)
+}
+
+func (rc *registryCache) fetchToken(key string, fetch func() (string, time.Time, error)) (string, error) {
+	if v, ok := rc.token(key); ok {
+		return v, nil
+	}
+
+	v, err, _ := rc.tokenFetch.Do(key, func() (any, error) {
+		if v, ok := rc.token(key); ok {
+			return v, nil
+		}
+
+		value, expiresAt, err := fetch()
+
+		if err != nil {
+			return "", err
+		}
+
+		rc.tokens.Add(key, cachedToken{value: value, expiresAt: expiresAt})
+
+		return value, nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	return v.(string), nil
+}
+
+func (rc *registryCache) insecureClient(registry string, build func() *http.Client) *http.Client {
+	if client, ok := rc.insecureClients.Get(registry); ok {
+		return client
+	}
+
+	client := build()
+	rc.insecureClients.Add(registry, client)
+
+	return client
 }
 
 type Error struct {
@@ -91,13 +197,10 @@ func NewClient(httpClient *http.Client, credentials credentialProvider, options 
 	}
 
 	return &Client{
-		httpClient:       httpClient,
-		credentials:      credentials,
-		options:          options,
-		tokens:           expirable.NewLRU[string, cachedToken](tokenCacheMaxEntries, nil, 0),
-		insecureClients:  expirable.NewLRU[string, *http.Client](0, nil, registryDataCacheTTL),
-		credentialsCache: expirable.NewLRU[string, *Credentials](0, nil, registryDataCacheTTL),
-		optionsCache:     expirable.NewLRU[string, *RegistryOptions](0, nil, registryDataCacheTTL),
+		httpClient:  httpClient,
+		credentials: credentials,
+		options:     options,
+		cache:       newRegistryCache(),
 	}
 }
 
@@ -219,7 +322,7 @@ func (c *Client) Do(req *http.Request, registry, repository string) (*http.Respo
 	if credentials, credErr := c.registryCredentials(req.Context(), registry); credErr == nil {
 		key := c.tokenCacheKey(registry, repository, credentials)
 
-		if token, ok := c.cachedToken(key); ok {
+		if token, ok := c.cache.token(key); ok {
 			preemptiveKey = key
 			attempt = req.Clone(req.Context())
 			attempt.Header.Set("Authorization", "Bearer "+token)
@@ -237,7 +340,7 @@ func (c *Client) Do(req *http.Request, registry, repository string) (*http.Respo
 	}
 
 	if preemptiveKey != "" {
-		c.tokens.Remove(preemptiveKey)
+		c.cache.removeToken(preemptiveKey)
 	}
 
 	challenge := response.Header.Get("Www-Authenticate")
@@ -312,30 +415,16 @@ func (c *Client) fetchBearerToken(ctx context.Context, challenge string, registr
 
 	cacheKey := c.tokenCacheKey(registry, repository, credentials)
 
-	if token, ok := c.cachedToken(cacheKey); ok {
-		return token, nil
-	}
-
-	tokenValue, err, _ := c.tokenFetch.Do(cacheKey, func() (any, error) {
-		if token, ok := c.cachedToken(cacheKey); ok {
-			return token, nil
-		}
-
-		return c.requestBearerToken(ctx, cacheKey, realm, registry, params, credentials, options)
+	return c.cache.fetchToken(cacheKey, func() (string, time.Time, error) {
+		return c.requestBearerToken(ctx, realm, registry, params, credentials, options)
 	})
-
-	if err != nil {
-		return "", err
-	}
-
-	return tokenValue.(string), nil
 }
 
-func (c *Client) requestBearerToken(ctx context.Context, cacheKey, realm, registry string, params map[string]string, credentials *Credentials, options *RegistryOptions) (string, error) {
+func (c *Client) requestBearerToken(ctx context.Context, realm, registry string, params map[string]string, credentials *Credentials, options *RegistryOptions) (string, time.Time, error) {
 	tokenURL, err := url.Parse(realm)
 
 	if err != nil {
-		return "", fmt.Errorf("parsing token realm: %w", err)
+		return "", time.Time{}, fmt.Errorf("parsing token realm: %w", err)
 	}
 
 	query := tokenURL.Query()
@@ -353,7 +442,7 @@ func (c *Client) requestBearerToken(ctx context.Context, cacheKey, realm, regist
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL.String(), nil)
 
 	if err != nil {
-		return "", fmt.Errorf("creating token request: %w", err)
+		return "", time.Time{}, fmt.Errorf("creating token request: %w", err)
 	}
 
 	if credentials != nil {
@@ -363,13 +452,13 @@ func (c *Client) requestBearerToken(ctx context.Context, cacheKey, realm, regist
 	response, err := c.do(requestForRegistry(req, options), registry, options)
 
 	if err != nil {
-		return "", fmt.Errorf("requesting registry token: %w", err)
+		return "", time.Time{}, fmt.Errorf("requesting registry token: %w", err)
 	}
 
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("token endpoint returned %s", response.Status)
+		return "", time.Time{}, fmt.Errorf("token endpoint returned %s", response.Status)
 	}
 
 	var tokenResponse struct {
@@ -379,7 +468,7 @@ func (c *Client) requestBearerToken(ctx context.Context, cacheKey, realm, regist
 	}
 
 	if err := json.NewDecoder(response.Body).Decode(&tokenResponse); err != nil {
-		return "", fmt.Errorf("decoding token response: %w", err)
+		return "", time.Time{}, fmt.Errorf("decoding token response: %w", err)
 	}
 
 	token := tokenResponse.Token
@@ -389,7 +478,7 @@ func (c *Client) requestBearerToken(ctx context.Context, cacheKey, realm, regist
 	}
 
 	if token == "" {
-		return "", fmt.Errorf("token response did not contain a token")
+		return "", time.Time{}, fmt.Errorf("token response did not contain a token")
 	}
 
 	expiresIn := time.Duration(tokenResponse.ExpiresIn) * time.Second
@@ -398,9 +487,7 @@ func (c *Client) requestBearerToken(ctx context.Context, cacheKey, realm, regist
 		expiresIn = time.Minute
 	}
 
-	c.cacheToken(cacheKey, token, time.Now().Add(expiresIn))
-
-	return token, nil
+	return token, time.Now().Add(expiresIn), nil
 }
 
 func (c *Client) registryCredentials(ctx context.Context, registry string) (*Credentials, error) {
@@ -408,31 +495,15 @@ func (c *Client) registryCredentials(ctx context.Context, registry string) (*Cre
 		return nil, nil
 	}
 
-	if credentials, ok := c.credentialsCache.Get(registry); ok {
-		return credentials, nil
-	}
-
-	result, err, _ := c.credentialsFetch.Do(registry, func() (any, error) {
-		if credentials, ok := c.credentialsCache.Get(registry); ok {
-			return credentials, nil
-		}
-
+	return c.cache.credentialsFor(registry, func() (*Credentials, error) {
 		credentials, err := c.credentials.GetRegistryCredentials(ctx, registry)
 
 		if err != nil {
 			return nil, fmt.Errorf("loading registry credentials: %w", err)
 		}
 
-		c.credentialsCache.Add(registry, credentials)
-
 		return credentials, nil
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return result.(*Credentials), nil
 }
 
 func (c *Client) registryOptions(ctx context.Context, registry string) (*RegistryOptions, error) {
@@ -440,16 +511,9 @@ func (c *Client) registryOptions(ctx context.Context, registry string) (*Registr
 		return &RegistryOptions{}, nil
 	}
 
-	if options, ok := c.optionsCache.Get(registry); ok {
-		return options, nil
-	}
-
-	result, err, _ := c.optionsFetch.Do(registry, func() (any, error) {
-		if options, ok := c.optionsCache.Get(registry); ok {
-			return options, nil
-		}
-
+	return c.cache.optionsFor(registry, func() (*RegistryOptions, error) {
 		options, err := c.options.GetRegistryOptions(ctx, registry)
+
 		if err != nil {
 			return nil, fmt.Errorf("loading registry options: %w", err)
 		}
@@ -458,16 +522,8 @@ func (c *Client) registryOptions(ctx context.Context, registry string) (*Registr
 			options = &RegistryOptions{}
 		}
 
-		c.optionsCache.Add(registry, options)
-
 		return options, nil
 	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return result.(*RegistryOptions), nil
 }
 
 func (c *Client) do(req *http.Request, registry string, options *RegistryOptions) (*http.Response, error) {
@@ -538,42 +594,35 @@ func parseRetryAfter(value string) (time.Duration, bool) {
 }
 
 func (c *Client) insecureClientFor(registry string) *http.Client {
-	if client, ok := c.insecureClients.Get(registry); ok {
-		return client
-	}
+	return c.cache.insecureClient(registry, func() *http.Client {
+		baseTransport := c.httpClient.Transport
+		if baseTransport == nil {
+			baseTransport = http.DefaultTransport
+		}
 
-	baseTransport := c.httpClient.Transport
-	if baseTransport == nil {
-		baseTransport = http.DefaultTransport
-	}
+		transport, ok := baseTransport.(*http.Transport)
 
-	transport, ok := baseTransport.(*http.Transport)
+		if !ok {
+			return c.httpClient
+		}
 
-	if !ok {
-		c.insecureClients.Add(registry, c.httpClient)
-		return c.httpClient
-	}
+		transport = transport.Clone()
 
-	transport = transport.Clone()
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		} else {
+			transport.TLSClientConfig = transport.TLSClientConfig.Clone()
+		}
 
-	if transport.TLSClientConfig == nil {
-		transport.TLSClientConfig = &tls.Config{}
-	} else {
-		transport.TLSClientConfig = transport.TLSClientConfig.Clone()
-	}
+		transport.TLSClientConfig.InsecureSkipVerify = true
 
-	transport.TLSClientConfig.InsecureSkipVerify = true
-
-	client := &http.Client{
-		Transport:     transport,
-		CheckRedirect: c.httpClient.CheckRedirect,
-		Jar:           c.httpClient.Jar,
-		Timeout:       c.httpClient.Timeout,
-	}
-
-	c.insecureClients.Add(registry, client)
-
-	return client
+		return &http.Client{
+			Transport:     transport,
+			CheckRedirect: c.httpClient.CheckRedirect,
+			Jar:           c.httpClient.Jar,
+			Timeout:       c.httpClient.Timeout,
+		}
+	})
 }
 
 func credentialIdentity(credentials *Credentials) string {
@@ -610,25 +659,6 @@ func bearerParams(value string) map[string]string {
 
 func (c *Client) tokenCacheKey(registry, repository string, credentials *Credentials) string {
 	return registry + "\x00" + repository + "\x00" + credentialIdentity(credentials)
-}
-
-func (c *Client) cachedToken(key string) (string, bool) {
-	token, ok := c.tokens.Get(key)
-
-	if !ok || !token.expiresAt.After(time.Now().Add(5*time.Second)) {
-		c.tokens.Remove(key)
-
-		return "", false
-	}
-
-	return token.value, true
-}
-
-func (c *Client) cacheToken(key, value string, expiresAt time.Time) {
-	c.tokens.Add(key, cachedToken{
-		value:     value,
-		expiresAt: expiresAt,
-	})
 }
 
 func RegistryAPIHost(registry string) string {

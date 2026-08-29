@@ -157,16 +157,26 @@ type auditImageRenamedData struct {
 	NewName string `json:"newName"`
 }
 
-func NewImages(store imageStore, tagLister tagLister, events eventHandler, audit auditRecorder, failures failureRecorder, tagFilter tagFilterer, bgCtx context.Context) *Images {
+type ImagesDeps struct {
+	Store     imageStore
+	TagLister tagLister
+	Events    eventHandler
+	Audit     auditRecorder
+	Failures  failureRecorder
+	TagFilter tagFilterer
+	BgCtx     context.Context
+}
+
+func NewImages(deps ImagesDeps) *Images {
 	return &Images{
-		store:         store,
-		tagLister:     tagLister,
-		events:        events,
-		audit:         audit,
-		failures:      failures,
-		tagFilter:     tagFilter,
+		store:         deps.Store,
+		tagLister:     deps.TagLister,
+		events:        deps.Events,
+		audit:         deps.Audit,
+		failures:      deps.Failures,
+		tagFilter:     deps.TagFilter,
 		refreshLocker: newImageRefreshLocker(),
-		bgCtx:         bgCtx,
+		bgCtx:         deps.BgCtx,
 	}
 }
 

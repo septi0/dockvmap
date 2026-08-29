@@ -91,16 +91,27 @@ type Discoveries struct {
 	progress   *discoveryProgress
 }
 
-func NewDiscoveries(store discoveryStore, registries discoveryRegistryLookup, checker repositoryChecker, tagLister progressiveTagLister, tagFilter tagFilterer, failures failureRecorder, bgCtx context.Context, ttl time.Duration) *Discoveries {
+type DiscoveriesDeps struct {
+	Store      discoveryStore
+	Registries discoveryRegistryLookup
+	Checker    repositoryChecker
+	TagLister  progressiveTagLister
+	TagFilter  tagFilterer
+	Failures   failureRecorder
+	BgCtx      context.Context
+	TTL        time.Duration
+}
+
+func NewDiscoveries(deps DiscoveriesDeps) *Discoveries {
 	return &Discoveries{
-		store:      store,
-		registries: registries,
-		checker:    checker,
-		tagLister:  tagLister,
-		tagFilter:  tagFilter,
-		failures:   failures,
-		bgCtx:      bgCtx,
-		ttl:        ttl,
+		store:      deps.Store,
+		registries: deps.Registries,
+		checker:    deps.Checker,
+		tagLister:  deps.TagLister,
+		tagFilter:  deps.TagFilter,
+		failures:   deps.Failures,
+		bgCtx:      deps.BgCtx,
+		ttl:        deps.TTL,
 		progress:   newDiscoveryProgress(),
 	}
 }
