@@ -13,37 +13,35 @@ import (
 	"strings"
 	"sync"
 	"time"
-)
 
-type Blob struct {
-	Digest      string
-	Size        int64
-	ContentType string
-	CreatedAt   time.Time
-	AccessedAt  time.Time
-}
+	"github.com/septi0/dockvmap/internal/model"
+)
 
 type Store interface {
 	DeleteCachedBlob(ctx context.Context, digest string) error
 	DeleteCachedBlobIfExpired(ctx context.Context, digest string, before time.Time) (bool, error)
-	GetCachedBlob(ctx context.Context, digest string) (*Blob, error)
+	GetCachedBlob(ctx context.Context, digest string) (*model.CachedBlob, error)
 	ListExpiredCachedBlobs(ctx context.Context, before time.Time) ([]string, error)
 	ListCachedBlobDigestsWithPrefix(ctx context.Context, prefix string) ([]string, error)
-	SaveCachedBlob(ctx context.Context, blob Blob) error
+	ListCachedBlobsByAccessAsc(ctx context.Context, limit int) ([]model.CachedBlob, error)
+	SumCachedBlobSize(ctx context.Context) (int64, error)
+	SaveCachedBlob(ctx context.Context, blob model.CachedBlob) error
 	TouchCachedBlob(ctx context.Context, digest string, accessedAt time.Time) error
 }
 
 type Cache struct {
 	dir      string
 	lifetime time.Duration
+	maxSize  int64
 	store    Store
 	mu       sync.Mutex
 }
 
 const metadataWriteTimeout = 5 * time.Second
 const orphanGracePeriod = 15 * time.Minute
+const maxSizeEvictionBatch = 1000
 
-func New(dir string, lifetime string, store Store) (*Cache, error) {
+func New(dir string, lifetime string, maxSize int64, store Store) (*Cache, error) {
 	lifetimeDuration, err := time.ParseDuration(lifetime)
 
 	if err != nil {
@@ -54,11 +52,15 @@ func New(dir string, lifetime string, store Store) (*Cache, error) {
 		return nil, fmt.Errorf("cache lifetime must be positive")
 	}
 
+	if maxSize < 0 {
+		return nil, fmt.Errorf("cache max size must not be negative")
+	}
+
 	if err := os.MkdirAll(filepath.Join(dir, "blobs", "sha256"), 0o755); err != nil {
 		return nil, fmt.Errorf("creating cache directory: %w", err)
 	}
 
-	return &Cache{dir: dir, lifetime: lifetimeDuration, store: store}, nil
+	return &Cache{dir: dir, lifetime: lifetimeDuration, maxSize: maxSize, store: store}, nil
 }
 
 func (c *Cache) Serve(ctx context.Context, rw http.ResponseWriter, r *http.Request, digest string) (bool, error) {
@@ -193,7 +195,74 @@ func (c *Cache) Cleanup(ctx context.Context) (int, error) {
 		deleted++
 	}
 
+	if c.maxSize > 0 {
+		evicted, err := c.evictToMaxSize(ctx)
+
+		deleted += evicted
+
+		if err != nil {
+			return deleted, err
+		}
+	}
+
 	return deleted, nil
+}
+
+// decrementing total locally is safe here: Cleanup holds c.mu, so no concurrent commit changes sizes
+func (c *Cache) evictToMaxSize(ctx context.Context) (int, error) {
+	total, err := c.store.SumCachedBlobSize(ctx)
+
+	if err != nil {
+		return 0, err
+	}
+
+	target := c.maxSize - c.maxSize/10
+	evicted := 0
+
+	for total > target {
+		if err := ctx.Err(); err != nil {
+			return evicted, err
+		}
+
+		blobs, err := c.store.ListCachedBlobsByAccessAsc(ctx, maxSizeEvictionBatch)
+
+		if err != nil {
+			return evicted, err
+		}
+
+		if len(blobs) == 0 {
+			break
+		}
+
+		for _, blob := range blobs {
+			if err := c.store.DeleteCachedBlob(ctx, blob.Digest); err != nil {
+				return evicted, err
+			}
+
+			if err := os.Remove(c.path(blob.Digest)); err != nil && !os.IsNotExist(err) {
+				return evicted, fmt.Errorf("removing cached blob %q: %w", blob.Digest, err)
+			}
+
+			total -= blob.Size
+			evicted++
+
+			if total <= target {
+				break
+			}
+		}
+	}
+
+	return evicted, nil
+}
+
+func (c *Cache) Usage(ctx context.Context) (used int64, max int64, err error) {
+	used, err = c.store.SumCachedBlobSize(ctx)
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return used, c.maxSize, nil
 }
 
 func (c *Cache) ScanOrphans(ctx context.Context) (int, error) {
@@ -355,7 +424,7 @@ func (w *writer) commit(ctx context.Context, contentType string) error {
 
 	defer cancel()
 
-	if err := w.cache.store.SaveCachedBlob(metadataCtx, Blob{
+	if err := w.cache.store.SaveCachedBlob(metadataCtx, model.CachedBlob{
 		Digest:      w.digest,
 		Size:        w.size,
 		ContentType: contentType,

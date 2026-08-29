@@ -23,6 +23,7 @@ blob_cache:
   enabled: true
   lifetime: 24h
   cleanup_interval: 1h
+  max_size: 10GB
 smtp:
   enabled: false
   host: ""

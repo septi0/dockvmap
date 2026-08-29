@@ -15,6 +15,7 @@ import (
 
 	"github.com/septi0/dockvmap/internal/blobcache"
 	"github.com/septi0/dockvmap/internal/config"
+	"github.com/septi0/dockvmap/internal/httpmw"
 	"github.com/septi0/dockvmap/internal/oci"
 	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
@@ -22,6 +23,7 @@ import (
 )
 
 const shutdownTimeout = 10 * time.Second
+const workerShutdownTimeout = 10 * time.Second
 
 func listenAndServe(srv *http.Server, name string, errs chan<- error) {
 	slog.Info("starting server", "name", name, "address", srv.Addr)
@@ -69,7 +71,12 @@ func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFun
 	}
 
 	workerCancel()
-	<-workerDone
+
+	select {
+	case <-workerDone:
+	case <-time.After(workerShutdownTimeout):
+		slog.Warn("background workers did not stop in time, continuing shutdown")
+	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 
@@ -102,7 +109,7 @@ func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFun
 func newProxyServer(cfg *config.Config, images *service.Images, ociClient *oci.Client, cache *blobcache.Cache, metrics *proxy.Metrics, proxyTokens *service.ProxyTokens, tlsConfig *tls.Config) *http.Server {
 	return &http.Server{
 		Addr:              cfg.ProxyServerListen,
-		Handler:           proxy.New(cfg, images, ociClient, cache, metrics, proxyTokens),
+		Handler:           httpmw.Recover(proxy.New(cfg, images, ociClient, cache, metrics, proxyTokens)),
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -120,7 +127,7 @@ func newWebServer(deps web.Dependencies, tlsConfig *tls.Config) (*http.Server, e
 
 	return &http.Server{
 		Addr:              deps.Config.WebServerListen,
-		Handler:           handler,
+		Handler:           httpmw.Recover(handler),
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      45 * time.Second,

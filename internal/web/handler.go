@@ -12,7 +12,6 @@ import (
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/ipmatch"
 	"github.com/septi0/dockvmap/internal/model"
-	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
 )
 
@@ -80,8 +79,12 @@ type proxyTokenService interface {
 	Delete(ctx context.Context, id int64) (bool, error)
 }
 
-type proxyMetricsProvider interface {
-	Snapshot() proxy.MetricsSnapshot
+type proxyMetricsHistoryReader interface {
+	Summary(ctx context.Context) (model.ProxyMetricsSummary, error)
+}
+
+type cacheUsageReader interface {
+	Usage(ctx context.Context) (used int64, max int64, err error)
 }
 
 type failureLister interface {
@@ -102,7 +105,8 @@ type Web struct {
 	sessions             sessionService
 	health               healthChecker
 	proxyTokens          proxyTokenService
-	proxyMetrics         proxyMetricsProvider
+	proxyMetricsHistory  proxyMetricsHistoryReader
+	cacheUsage           cacheUsageReader
 	failures             failureLister
 	workerSchedule       workerScheduleReader
 	cfg                  *config.Config
@@ -122,7 +126,8 @@ type Dependencies struct {
 	Sessions             sessionService
 	Health               healthChecker
 	ProxyTokens          proxyTokenService
-	ProxyMetrics         proxyMetricsProvider
+	ProxyMetricsHistory  proxyMetricsHistoryReader
+	CacheUsage           cacheUsageReader
 	Failures             failureLister
 	WorkerSchedule       workerScheduleReader
 	LoginRateLimitWindow time.Duration
@@ -146,7 +151,8 @@ func New(deps Dependencies) (http.Handler, error) {
 		sessions:             deps.Sessions,
 		health:               deps.Health,
 		proxyTokens:          deps.ProxyTokens,
-		proxyMetrics:         deps.ProxyMetrics,
+		proxyMetricsHistory:  deps.ProxyMetricsHistory,
+		cacheUsage:           deps.CacheUsage,
 		failures:             deps.Failures,
 		workerSchedule:       deps.WorkerSchedule,
 		cfg:                  deps.Config,
@@ -186,6 +192,12 @@ func (w *Web) registerFrontendRoutes(mux *http.ServeMux) {
 			return
 		}
 
+		if strings.HasPrefix(path, "assets/") {
+			rw.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			rw.Header().Set("Cache-Control", "no-cache")
+		}
+
 		fileServer.ServeHTTP(rw, r)
 	})
 }
@@ -200,6 +212,7 @@ func serveSPA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
 
 	_, _ = w.Write(data)
 }

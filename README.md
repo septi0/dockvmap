@@ -136,8 +136,15 @@ dockvmap -config <path>              # path to config file (optional; falls back
 dockvmap -data-path <path>           # path to the data directory: SQLite database, blob cache, credential key (optional)
 dockvmap -reset-password <username>  # generate and print a new password, invalidate their sessions, exit
 dockvmap -refresh-tags               # refresh tags for all configured images from their upstream registries, exit
+dockvmap -backup <path>              # write a consistent copy of the database to <path>, exit
 dockvmap -version                    # print version and exit
 ```
+
+### Backup and restore
+
+`-backup` writes a consistent snapshot of the SQLite database (`VACUUM INTO`) and works while dockvmap is running; the target path must not already exist. It opens the database read-only and does not run migrations, so it snapshots the schema exactly as it stands — to capture the *pre-upgrade* state, run `-backup` with your **current** binary before deploying a new one. It backs up **the database only**. A full restore also needs the credential encryption key — the file at `<data-path>/credential_encryption.key` (or, if you set `credential_encryption_key` in config, that value) — without which stored registry credentials cannot be decrypted; `config.yaml` is likewise your own to keep. The blob cache is regenerable and is not backed up.
+
+To restore: stop dockvmap, put the backed-up file at `<data-path>/dockvmap.db`, restore the credential key, and start dockvmap with a binary of the same version or newer (an older binary refuses to run against a newer schema).
 
 ## Development
 

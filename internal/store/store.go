@@ -24,6 +24,39 @@ type credentialCipher struct {
 }
 
 func New(path, credentialEncryptionKey string) (*Store, error) {
+	s, err := open(path, credentialEncryptionKey)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.migrate(context.Background()); err != nil {
+		s.db.Close()
+
+		return nil, fmt.Errorf("migrating db: %w", err)
+	}
+
+	return s, nil
+}
+
+// OpenForBackup skips migrations so a backup snapshots the schema as found; a newer schema is still refused
+func OpenForBackup(path, credentialEncryptionKey string) (*Store, error) {
+	s, err := open(path, credentialEncryptionKey)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.verifySchemaVersion(context.Background()); err != nil {
+		s.db.Close()
+
+		return nil, err
+	}
+
+	return s, nil
+}
+
+func open(path, credentialEncryptionKey string) (*Store, error) {
 	credentialCipher, err := newCredentialCipher(credentialEncryptionKey)
 
 	if err != nil {
@@ -52,18 +85,21 @@ func New(path, credentialEncryptionKey string) (*Store, error) {
 		return nil, fmt.Errorf("connecting db: %w", err)
 	}
 
-	s := &Store{db: db, credentialCipher: credentialCipher}
-	if err := s.migrate(context.Background()); err != nil {
-		db.Close()
-
-		return nil, fmt.Errorf("migrating db: %w", err)
-	}
-
-	return s, nil
+	return &Store{db: db, credentialCipher: credentialCipher}, nil
 }
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+func (s *Store) Backup(ctx context.Context, destPath string) error {
+	escaped := strings.ReplaceAll(destPath, "'", "''")
+
+	if _, err := s.db.ExecContext(ctx, "VACUUM INTO '"+escaped+"'"); err != nil {
+		return fmt.Errorf("backing up database to %q: %w", destPath, err)
+	}
+
+	return nil
 }
 
 func (s *Store) Ping(ctx context.Context) error {

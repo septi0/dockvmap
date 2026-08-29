@@ -1,7 +1,10 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -27,12 +30,15 @@ type Config struct {
 	TLS                     TLSConfig            `yaml:"tls"`
 	ProxyAuth               ProxyAuthConfig      `yaml:"proxy_auth"`
 	LoginRateLimit          LoginRateLimitConfig `yaml:"login_rate_limit"`
+
+	DerivedWarnings []string `yaml:"-"`
 }
 
 type BlobCacheConfig struct {
 	Enabled         *bool  `yaml:"enabled" env:"DOCKVMAP_BLOB_CACHE_ENABLED" default:"true"`
 	Lifetime        string `yaml:"lifetime" env:"DOCKVMAP_BLOB_CACHE_LIFETIME" default:"24h"`
 	CleanupInterval string `yaml:"cleanup_interval" env:"DOCKVMAP_BLOB_CACHE_CLEANUP_INTERVAL" default:"1h"`
+	MaxSize         string `yaml:"max_size" env:"DOCKVMAP_BLOB_CACHE_MAX_SIZE" default:"10GB"`
 }
 
 type SMTPConfig struct {
@@ -65,16 +71,22 @@ type LoginRateLimitConfig struct {
 func (c *Config) applyDerivedDefaults() {
 	if c.TLS.Enabled && (c.TLS.CertFile == "" || c.TLS.KeyFile == "") {
 		c.TLS.Enabled = false
+		c.warn("tls.enabled is set but cert_file or key_file is blank; TLS has been disabled and traffic will be served over plain HTTP")
 	}
 
 	if c.SMTP.Enabled && c.SMTP.Host == "" {
 		c.SMTP.Enabled = false
+		c.warn("smtp.enabled is set but host is blank; SMTP notifications have been disabled")
 	}
 
 	if c.SecureCookies == nil {
 		secure := c.TLS.Enabled
 		c.SecureCookies = &secure
 	}
+}
+
+func (c *Config) warn(message string) {
+	c.DerivedWarnings = append(c.DerivedWarnings, message)
 }
 
 func (c *Config) validate() error {
@@ -92,6 +104,10 @@ func (c *Config) validate() error {
 
 	if c.LoginRateLimit.MaxAttempts <= 0 {
 		return fmt.Errorf("invalid login_rate_limit.max_attempts %d: must be positive", c.LoginRateLimit.MaxAttempts)
+	}
+
+	if _, err := parseBytes(c.BlobCache.MaxSize); err != nil {
+		return fmt.Errorf("blob_cache.max_size: %w", err)
 	}
 
 	return nil
@@ -112,6 +128,11 @@ func (c *Config) TagDiscoveryTTLDuration() time.Duration {
 	return d
 }
 
+func (c *Config) BlobCacheMaxSizeBytes() int64 {
+	n, _ := parseBytes(c.BlobCache.MaxSize)
+	return n
+}
+
 func Load(path string) (*Config, error) {
 	var cfg Config
 
@@ -122,7 +143,10 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("reading config: %w", err)
 		}
 
-		if err := yaml.Unmarshal(data, &cfg); err != nil {
+		decoder := yaml.NewDecoder(bytes.NewReader(data))
+		decoder.KnownFields(true)
+
+		if err := decoder.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("parsing config: %w", err)
 		}
 	}

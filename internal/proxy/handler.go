@@ -47,10 +47,6 @@ func New(cfg *config.Config, images imageResolver, client *oci.Client, cache *bl
 	}
 }
 
-func (p *Proxy) Metrics() MetricsSnapshot {
-	return p.metrics.Snapshot()
-}
-
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.metrics.totalRequests.Add(1)
 

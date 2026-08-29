@@ -26,13 +26,8 @@ type migration struct {
 	checksum string
 }
 
-func (s *Store) migrate(ctx context.Context) error {
-	migrations, err := loadMigrations()
-
-	if err != nil {
-		return err
-	}
-
+// refuses to proceed if the database was migrated by a binary newer than this one
+func (s *Store) verifySchemaVersion(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version INTEGER PRIMARY KEY,
@@ -40,6 +35,41 @@ func (s *Store) migrate(ctx context.Context) error {
 		)
 	`); err != nil {
 		return fmt.Errorf("creating migration table: %w", err)
+	}
+
+	migrations, err := loadMigrations()
+
+	if err != nil {
+		return err
+	}
+
+	if len(migrations) == 0 {
+		return nil
+	}
+
+	highestBundled := migrations[len(migrations)-1].version
+
+	var highestApplied int
+	if err := s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations").Scan(&highestApplied); err != nil {
+		return fmt.Errorf("checking applied schema version: %w", err)
+	}
+
+	if highestApplied > highestBundled {
+		return fmt.Errorf("database schema is at version %d but this binary only knows up to %d; run a build at or newer than the one that created this database", highestApplied, highestBundled)
+	}
+
+	return nil
+}
+
+func (s *Store) migrate(ctx context.Context) error {
+	if err := s.verifySchemaVersion(ctx); err != nil {
+		return err
+	}
+
+	migrations, err := loadMigrations()
+
+	if err != nil {
+		return err
 	}
 
 	for _, migration := range migrations {

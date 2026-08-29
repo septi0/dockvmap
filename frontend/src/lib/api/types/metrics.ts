@@ -5,9 +5,7 @@ export interface PullInfo {
   hostConfigured: boolean
 }
 
-export interface ProxyMetrics {
-  startedAt: string
-  cacheEnabled: boolean
+export interface ProxyMetricsCounters {
   totalRequests: number
   manifestRequests: number
   blobRequests: number
@@ -16,4 +14,12 @@ export interface ProxyMetrics {
   upstreamRequests: number
   upstreamFailures: number
   cacheWriteFailures: number
+}
+
+export type ProxyMetricsWindow = 'today' | 'last7d' | 'last30d'
+
+export interface ProxyMetrics {
+  generatedAt: string
+  windows: Record<ProxyMetricsWindow, ProxyMetricsCounters>
+  cache: { usedBytes: number; maxBytes: number } | null
 }

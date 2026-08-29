@@ -10,12 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/septi0/dockvmap/internal/config"
-	"github.com/septi0/dockvmap/internal/oci"
-	"github.com/septi0/dockvmap/internal/proxy"
-	"github.com/septi0/dockvmap/internal/service"
 	"github.com/septi0/dockvmap/internal/store"
 	"github.com/septi0/dockvmap/internal/tagfilter"
-	"github.com/septi0/dockvmap/internal/web"
 )
 
 var version = "0.0.0-dev"
@@ -33,6 +29,7 @@ func run() error {
 	dataPath := flag.String("data-path", defaultDataPath, "path to the data directory (SQLite database, blob cache, credential encryption key)")
 	resetPassword := flag.String("reset-password", "", "generate a new random password for the given username, print it, and exit")
 	refreshTags := flag.Bool("refresh-tags", false, "refresh tags for all configured images from their upstream registries, then exit")
+	backupPath := flag.String("backup", "", "write a consistent copy of the database to the given path, then exit")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
@@ -65,6 +62,10 @@ func run() error {
 
 	slog.Info("starting dockvmap", "version", version)
 
+	for _, warning := range cfg.DerivedWarnings {
+		slog.Warn(warning)
+	}
+
 	if err := os.MkdirAll(*dataPath, 0o755); err != nil {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
@@ -75,7 +76,15 @@ func run() error {
 		return fmt.Errorf("failed to resolve credential encryption key: %w", err)
 	}
 
-	db, err := store.New(filepath.Join(*dataPath, "dockvmap.db"), credentialEncryptionKey)
+	dbPath := filepath.Join(*dataPath, "dockvmap.db")
+	ctx := context.Background()
+
+	// -backup opens the database read-only, so it runs before store.New / migrations
+	if *backupPath != "" {
+		return cmdBackup(ctx, dbPath, credentialEncryptionKey, *backupPath, cfg, *dataPath)
+	}
+
+	db, err := store.New(dbPath, credentialEncryptionKey)
 
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
@@ -83,140 +92,14 @@ func run() error {
 
 	defer db.Close()
 
-	loginRateLimitWindow := cfg.LoginRateLimit.WindowDuration()
-
-	loginRateLimiter, err := service.NewLoginRateLimiter(*cfg.LoginRateLimit.Enabled, cfg.LoginRateLimit.MaxAttempts, loginRateLimitWindow, cfg.LoginRateLimit.BypassIPs)
-
-	if err != nil {
-		return fmt.Errorf("failed to configure login rate limiter: %w", err)
+	switch {
+	case *resetPassword != "":
+		return cmdResetPassword(ctx, db, cfg, *resetPassword)
+	case *refreshTags:
+		return cmdRefreshTags(ctx, db, tagFilter)
+	default:
+		return serve(ctx, cfg, db, *dataPath, tagFilter)
 	}
-
-	audit := service.NewAudit(db)
-	sessions := service.NewSessions(db, cfg.SessionLifetimeDuration(), audit, loginRateLimiter)
-	users := service.NewUsers(db, audit, sessions)
-
-	if *resetPassword != "" {
-		return runResetPassword(context.Background(), users, *resetPassword)
-	}
-
-	registries := service.NewRegistries(db, audit)
-
-	credentialsAdapter := registryCredentialsAdapter{registries: registries}
-	optionsAdapter := registryOptionsAdapter{registries: registries}
-	ociClient := oci.NewClient(nil, credentialsAdapter, optionsAdapter)
-
-	failureLog := service.NewFailureLog(db)
-
-	workerCtx, workerCancel := context.WithCancel(context.Background())
-
-	defer workerCancel()
-
-	events := service.NewEvents(db)
-	images := service.NewImages(db, ociClient, events, audit, failureLog, tagFilter, workerCtx)
-
-	if *refreshTags {
-		return runRefreshTags(context.Background(), images)
-	}
-
-	discoveries := service.NewDiscoveries(db, db, ociClient, ociClient, tagFilter, failureLog, workerCtx, cfg.TagDiscoveryTTLDuration())
-
-	if err := discoveries.RecoverFromRestart(context.Background()); err != nil {
-		return fmt.Errorf("failed to recover tag discoveries: %w", err)
-	}
-
-	if err := images.RecoverFromRestart(context.Background()); err != nil {
-		return fmt.Errorf("failed to recover image refresh state: %w", err)
-	}
-
-	health := service.NewHealth(db)
-	proxyTokens := service.NewProxyTokens(db, audit)
-	workerSchedule := service.NewWorkerSchedule(db)
-	metrics := proxy.NewMetrics()
-
-	cache, err := initBlobCache(cfg, *dataPath, db)
-
-	if err != nil {
-		return err
-	}
-
-	mailer := initMailer(cfg)
-
-	notifications, err := initNotifications(cfg, db, mailer, failureLog)
-
-	if err != nil {
-		return err
-	}
-
-	tlsConfig, err := loadTLSConfig(cfg)
-
-	if err != nil {
-		return err
-	}
-
-	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens, tlsConfig)
-
-	webSrv, err := newWebServer(web.Dependencies{
-		Config:               cfg,
-		Images:               images,
-		Discoveries:          discoveries,
-		Registries:           registries,
-		Events:               events,
-		Audit:                audit,
-		Users:                users,
-		Sessions:             sessions,
-		Health:               health,
-		ProxyTokens:          proxyTokens,
-		ProxyMetrics:         metrics,
-		Failures:             failureLog,
-		WorkerSchedule:       workerSchedule,
-		LoginRateLimitWindow: loginRateLimitWindow,
-		Version:              version,
-	}, tlsConfig)
-
-	if err != nil {
-		return fmt.Errorf("failed to initialize web server: %w", err)
-	}
-
-	serverErrs := make(chan error, 2)
-
-	go listenAndServe(proxySrv, "proxy", serverErrs)
-	go listenAndServe(webSrv, "web", serverErrs)
-
-	workerDone := make(chan struct{})
-
-	go func() {
-		defer close(workerDone)
-		startWorker(workerCtx, cfg, workerSchedule, failureLog, images, discoveries, cache, notifications, sessions)
-	}()
-
-	awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)
-
-	return nil
-}
-
-func runResetPassword(ctx context.Context, users *service.Users, username string) error {
-	password, err := users.ResetPassword(ctx, username)
-
-	if err != nil {
-		return fmt.Errorf("failed to reset password: %w", err)
-	}
-
-	fmt.Println("Password reset. New password:")
-	fmt.Println(password)
-
-	return nil
-}
-
-func runRefreshTags(ctx context.Context, images *service.Images) error {
-	refreshed, err := images.RefreshAll(ctx)
-
-	fmt.Printf("Refreshed tags for %d image(s).\n", refreshed)
-
-	if err != nil {
-		return fmt.Errorf("some images failed to refresh: %w", err)
-	}
-
-	return nil
 }
 
 func setupLogging(logsPath string) (*os.File, error) {
