@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
-	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -213,7 +211,7 @@ func (i *Images) Create(ctx context.Context, img model.Image, availableTags []st
 
 	img.Registry = registryInfo.Registry
 
-	if !validRegistry(img.Registry) {
+	if !validRegistryAddress(img.Registry) {
 		return fmt.Errorf("%w: registry must be a valid host", ErrInvalidImage)
 	}
 
@@ -825,22 +823,6 @@ func (i *Images) MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, erro
 
 func containsTag(tags []string, tag string) bool {
 	return slices.Contains(tags, tag)
-}
-
-func validRegistry(value string) bool {
-	parsed, err := url.Parse("https://" + value)
-
-	if err != nil || parsed.Host != value || parsed.User != nil || parsed.Path != "" {
-		return false
-	}
-
-	host, _, err := net.SplitHostPort(value)
-
-	if err == nil {
-		return host != ""
-	}
-
-	return !strings.Contains(value, ":")
 }
 
 func versionSegments(tag taganalyzer.TagAnalysis) [][]int64 {

@@ -24,6 +24,7 @@ import (
 const registryDataCacheTTL = 30 * time.Second
 const tokenCacheMaxEntries = 512
 const tagsListPageSize = 1000
+const maxTagListPages = 1000
 const maxRetryAttempts = 3
 const maxRetryAfterDelay = 30 * time.Second
 
@@ -221,7 +222,11 @@ func (c *Client) listTags(ctx context.Context, registry, repository string, onPa
 
 	tags := make([]string, 0)
 
-	for endpoint != "" {
+	for page := 0; endpoint != ""; page++ {
+		if page >= maxTagListPages {
+			return nil, fmt.Errorf("tag list for %s/%s exceeded %d pages; refusing to continue", host, path, maxTagListPages)
+		}
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 
 		if err != nil {
@@ -727,9 +732,16 @@ func nextPageURL(base *url.URL, link string) string {
 
 		next, err := base.Parse(target)
 
-		if err == nil {
-			return next.String()
+		if err != nil {
+			continue
 		}
+
+		// registry-controlled header: only follow it back to the same host, else it's an SSRF pivot
+		if next.Host != base.Host || (next.Scheme != "http" && next.Scheme != "https") {
+			return ""
+		}
+
+		return next.String()
 	}
 
 	return ""

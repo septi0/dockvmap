@@ -107,11 +107,11 @@ func setupLogging(logsPath string) (*os.File, error) {
 		return nil, nil
 	}
 
-	if err := os.MkdirAll(logsPath, 0o755); err != nil {
+	if err := os.MkdirAll(logsPath, 0o750); err != nil {
 		return nil, fmt.Errorf("creating logs directory: %w", err)
 	}
 
-	logFile, err := os.OpenFile(filepath.Join(logsPath, "dockvmap.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	logFile, err := os.OpenFile(filepath.Join(logsPath, "dockvmap.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("opening log file: %w", err)
 	}

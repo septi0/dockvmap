@@ -202,6 +202,14 @@ func runAndReschedule(ctx context.Context, job scheduledJob, schedule *service.W
 		next = 0
 	}
 
+	// via job.trigger the timer is still armed; stop and drain before Reset so a stale fire can't leak through
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+
 	timer.Reset(next)
 }
 

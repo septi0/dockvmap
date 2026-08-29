@@ -130,7 +130,7 @@ func (d *Discoveries) Check(ctx context.Context, registryHost, repository string
 	registryHost = strings.TrimSpace(registryHost)
 	repository = strings.TrimSpace(repository)
 
-	if !validRegistry(registryHost) {
+	if !validRegistryAddress(registryHost) {
 		return model.TagDiscovery{}, fmt.Errorf("%w: registry must be a valid host", ErrInvalidImage)
 	}
 
@@ -263,7 +263,7 @@ func (d *Discoveries) waitBriefly(ctx context.Context, discoveryID int64) model.
 	defer ticker.Stop()
 
 	for {
-		current, err := d.store.GetTagDiscoveryByID(context.Background(), discoveryID)
+		current, err := d.store.GetTagDiscoveryByID(ctx, discoveryID)
 
 		if err != nil {
 			slog.Error("checking tag discovery status failed", "id", discoveryID, "error", err)
@@ -290,11 +290,14 @@ func (d *Discoveries) isStale(discovery *model.TagDiscovery) bool {
 
 func (d *Discoveries) spawnScan(discoveryID int64, registryHost, repository string) {
 	go d.runScan(discoveryID, registryHost, repository, func(err error) {
-		if failErr := d.store.FailTagDiscovery(context.Background(), discoveryID, err.Error()); failErr != nil {
+		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(d.bgCtx), 5*time.Second)
+		defer cancel()
+
+		if failErr := d.store.FailTagDiscovery(writeCtx, discoveryID, err.Error()); failErr != nil {
 			slog.Error("recording tag discovery failure failed", "registry", registryHost, "repository", repository, "error", failErr)
 		}
 
-		d.failures.Record(context.Background(), FailureSourceDiscovery, repository, err)
+		d.failures.Record(writeCtx, FailureSourceDiscovery, repository, err)
 
 		slog.Error("tag discovery failed", "registry", registryHost, "repository", repository, "error", err)
 	})
@@ -326,7 +329,10 @@ func (d *Discoveries) runScan(discoveryID int64, registryHost, repository string
 	analysis := taganalyzer.Analyze(filtered)
 	groups := tagDiscoveryGroupsFromAnalysis(analysis)
 
-	if err := d.store.CompleteTagDiscovery(context.Background(), discoveryID, groups, len(filtered), len(tags)); err != nil {
+	writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(d.bgCtx), 5*time.Second)
+	defer writeCancel()
+
+	if err := d.store.CompleteTagDiscovery(writeCtx, discoveryID, groups, len(filtered), len(tags)); err != nil {
 		slog.Error("recording tag discovery result failed", "registry", registryHost, "repository", repository, "error", err)
 	}
 }

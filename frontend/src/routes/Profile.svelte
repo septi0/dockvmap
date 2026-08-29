@@ -45,7 +45,9 @@
 
   let sessions = $state<Session[]>([]);
   let sessionsLoading = $state(true);
+  let sessionsLoaded = $state(false);
   let sessionsError = $state<string | null>(null);
+  let sessionsLoadToken = 0;
 
   let revokingSession = $state<Session | null>(null);
   let revokeError = $state<string | null>(null);
@@ -61,17 +63,23 @@
   onMount(loadSessions);
 
   async function loadSessions() {
+    const requestId = ++sessionsLoadToken;
     sessionsLoading = true;
     sessionsError = null;
 
     try {
       const result = await listSessions();
+      if (requestId !== sessionsLoadToken) return;
       sessions = result.sessions;
     } catch (err) {
+      if (requestId !== sessionsLoadToken) return;
       sessionsError =
         err instanceof ApiError ? err.message : "Failed to load sessions";
     } finally {
-      sessionsLoading = false;
+      if (requestId === sessionsLoadToken) {
+        sessionsLoading = false;
+        sessionsLoaded = true;
+      }
     }
   }
 
@@ -273,7 +281,8 @@
     </p>
 
     <AsyncState
-      loading={sessionsLoading}
+      loading={sessionsLoading && !sessionsLoaded}
+      busy={sessionsLoading && sessionsLoaded}
       error={sessionsError}
       empty={sessions.length === 0}
       emptyMessage="No active sessions."

@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 
 	if *registry == "" || *repository == "" {
-		fmt.Fprintln(os.Stderr, "usage: tagdebug -registry <host> -repository <path>")
+		fmt.Fprintln(os.Stderr, "usage: taglist -registry <host> -repository <path>")
 		os.Exit(2)
 	}
 

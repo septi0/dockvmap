@@ -45,6 +45,8 @@ async function refresh() {
 async function logout() {
   try {
     await authApi.logout()
+  } catch {
+    // best-effort server call; the client is signed out regardless
   } finally {
     authStore.set({ status: 'unauthenticated', user: null })
   }
