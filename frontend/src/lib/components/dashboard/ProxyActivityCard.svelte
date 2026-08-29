@@ -8,7 +8,7 @@
     ProxyMetrics,
     ProxyMetricsWindow,
   } from "../../api/types/metrics";
-  import { formatBytes } from "../../utils/format";
+  import { formatBytes, formatNumber } from "../../utils/format";
 
   const WINDOWS: { value: ProxyMetricsWindow; label: string }[] = [
     { value: "today", label: "Today" },
@@ -86,13 +86,13 @@
     {#if view}
       <div class="stat-grid">
         <div class="stat-tile">
-          <span class="stat-value">{view.totalRequests}</span>
+          <span class="stat-value">{formatNumber(view.totalRequests)}</span>
           <span class="stat-label muted">Total requests</span>
         </div>
 
         <div class="stat-tile">
           <span class="stat-value" class:danger={view.upstreamFailures > 0}>
-            {view.upstreamFailures}
+            {formatNumber(view.upstreamFailures)}
           </span>
           <span class="stat-label muted">Upstream failures</span>
         </div>

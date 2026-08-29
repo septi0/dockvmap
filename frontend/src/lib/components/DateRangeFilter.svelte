@@ -13,7 +13,8 @@
 <div class="date-range">
   <input
     type="date"
-    class="input"
+    class="input filter-control"
+    class:is-active={since !== ""}
     aria-label="From date"
     bind:value={since}
     onchange={onChange}
@@ -21,7 +22,8 @@
   <span class="sep">–</span>
   <input
     type="date"
-    class="input"
+    class="input filter-control"
+    class:is-active={until !== ""}
     aria-label="To date"
     bind:value={until}
     onchange={onChange}

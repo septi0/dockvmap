@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 const (
 	RefreshStatusIdle    = "idle"
@@ -23,8 +26,24 @@ type Image struct {
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
+type ImageStatusFilter string
+
+const (
+	ImageStatusUpdateAvailable ImageStatusFilter = "updateAvailable"
+	ImageStatusFailedCheck     ImageStatusFilter = "failedCheck"
+)
+
+var ImageStatusFilters = []ImageStatusFilter{
+	ImageStatusUpdateAvailable,
+	ImageStatusFailedCheck,
+}
+
+func (f ImageStatusFilter) Valid() bool {
+	return slices.Contains(ImageStatusFilters, f)
+}
+
 type ImageListFilters struct {
 	Pagination
-	Search          string
-	UpdateAvailable *bool
+	Search string
+	Status ImageStatusFilter
 }

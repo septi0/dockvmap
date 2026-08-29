@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,16 +32,16 @@ func parseImageListFilters(r *http.Request) (model.ImageListFilters, error) {
 		return model.ImageListFilters{}, err
 	}
 
-	updateAvailable, err := parseBoolParam(r, "updateAvailable")
+	status := model.ImageStatusFilter(r.URL.Query().Get("status"))
 
-	if err != nil {
-		return model.ImageListFilters{}, err
+	if status != "" && !status.Valid() {
+		return model.ImageListFilters{}, fmt.Errorf("status must be one of: updateAvailable, failedCheck")
 	}
 
 	return model.ImageListFilters{
-		Pagination:      pagination,
-		Search:          strings.TrimSpace(r.URL.Query().Get("search")),
-		UpdateAvailable: updateAvailable,
+		Pagination: pagination,
+		Search:     strings.TrimSpace(r.URL.Query().Get("search")),
+		Status:     status,
 	}, nil
 }
 

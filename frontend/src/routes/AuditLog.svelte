@@ -135,22 +135,29 @@
   </div>
 
   <FilterBar active={hasActiveFilters} onClear={clearFilters}>
-    <select
-      class="input"
-      bind:value={selectedType}
-      onchange={handleFilterChange}
-    >
-      <option value="">All events</option>
-      {#each AUDIT_TYPES as type (type)}
-        <option value={type}>{formatAuditType(type)}</option>
-      {/each}
-    </select>
+    <div class="filter-field">
+      <span class="filter-label">Event</span>
+      <select
+        class="input filter-control"
+        class:is-active={selectedType !== ""}
+        bind:value={selectedType}
+        onchange={handleFilterChange}
+      >
+        <option value="">All events</option>
+        {#each AUDIT_TYPES as type (type)}
+          <option value={type}>{formatAuditType(type)}</option>
+        {/each}
+      </select>
+    </div>
 
-    <DateRangeFilter
-      bind:since={sinceDate}
-      bind:until={untilDate}
-      onChange={handleFilterChange}
-    />
+    <div class="filter-field">
+      <span class="filter-label">Date</span>
+      <DateRangeFilter
+        bind:since={sinceDate}
+        bind:until={untilDate}
+        onChange={handleFilterChange}
+      />
+    </div>
   </FilterBar>
 
   <AsyncState
@@ -161,7 +168,7 @@
     emptyMessage="No audit events yet."
     columns={4}
   >
-    <div class="card">
+    <div class="card table-wrap">
       <table class="table">
         <thead>
           <tr>
@@ -222,10 +229,6 @@
 </Modal>
 
 <style>
-  td {
-    vertical-align: middle;
-  }
-
   .title-row {
     margin-bottom: var(--space-4);
   }

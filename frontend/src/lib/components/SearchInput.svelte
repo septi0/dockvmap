@@ -22,10 +22,11 @@
 </script>
 
 <div class="search-input">
-  <span class="icon"><Search size={16} strokeWidth={1.75} /></span>
+  <span class="icon"><Search size={15} strokeWidth={1.75} /></span>
   <input
     type="search"
-    class="input"
+    class="input filter-control"
+    class:is-active={value !== ""}
     {placeholder}
     bind:value
     oninput={handleInput}
@@ -38,18 +39,22 @@
     display: flex;
     align-items: center;
     width: 100%;
-    max-width: 280px;
+    max-width: 260px;
   }
 
   .icon {
     position: absolute;
-    left: var(--space-3);
+    left: var(--space-2);
     display: inline-flex;
     color: var(--color-text-faint);
     pointer-events: none;
   }
 
   .search-input .input {
-    padding-left: calc(var(--space-3) * 2 + 16px);
+    padding-left: calc(var(--space-2) * 2 + 15px);
+  }
+
+  .search-input .input::-webkit-search-cancel-button {
+    cursor: pointer;
   }
 </style>

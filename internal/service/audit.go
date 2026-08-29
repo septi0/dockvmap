@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
 )
@@ -124,7 +125,10 @@ func (a *Audit) Record(ctx context.Context, auditType string, data any) error {
 	info := requestInfoFromContext(ctx)
 	user, _ := CurrentUserFromContext(ctx)
 
-	return a.store.AddAuditLog(ctx, auditType, info.IP, info.UserAgent, user.ID, user.Username, data)
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
+	return a.store.AddAuditLog(writeCtx, auditType, info.IP, info.UserAgent, user.ID, user.Username, data)
 }
 
 func (a *Audit) List(ctx context.Context, filters model.AuditLogListFilters) ([]model.AuditLog, error) {

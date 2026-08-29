@@ -1,6 +1,13 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { fade, scale } from "svelte/transition";
   import X from "@lucide/svelte/icons/x";
+
+  const reduceMotion =
+    typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const overlayDuration = reduceMotion ? 0 : 120;
+  const panelDuration = reduceMotion ? 0 : 150;
 
   let {
     open,
@@ -80,7 +87,12 @@
 <svelte:window onkeydown={open ? handleKeydown : undefined} />
 
 {#if open}
-  <div class="overlay" onclick={handleOverlayClick} role="presentation">
+  <div
+    class="overlay"
+    onclick={handleOverlayClick}
+    role="presentation"
+    transition:fade={{ duration: overlayDuration }}
+  >
     <div
       class="modal"
       class:lg={size === "lg"}
@@ -89,6 +101,7 @@
       aria-label={title}
       tabindex="-1"
       bind:this={modalRef}
+      transition:scale={{ duration: panelDuration, start: 0.97, opacity: 0 }}
     >
       <header class="modal-header">
         {#if title}<h2>{title}</h2>{/if}

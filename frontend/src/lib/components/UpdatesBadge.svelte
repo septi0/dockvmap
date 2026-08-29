@@ -13,7 +13,7 @@
   })
 </script>
 
-<a href="/images?updateAvailable=true" use:link class="updates" class:updates-warning={$updatesCount > 0}>
+<a href="/images?status=updateAvailable" use:link class="updates" class:updates-warning={$updatesCount > 0}>
   {#if $updatesCount > 0}
     <span class="icon"><TriangleAlert size={14} strokeWidth={1.75} /></span>
     <span class="value">{$updatesCount}</span>

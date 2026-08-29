@@ -82,7 +82,7 @@
 <PageTitle title="Registries" />
 
 <AppShell>
-  <div class="header">
+  <div class="list-header">
     <div class="title-row">
       <Server size={20} strokeWidth={1.75} />
       <h1>Registries</h1>
@@ -108,7 +108,7 @@
       </Button>
     {/snippet}
 
-    <div class="card">
+    <div class="card table-wrap">
       <table class="table">
         <thead>
           <tr>
@@ -194,41 +194,9 @@
 />
 
 <style>
-  td {
-    vertical-align: middle;
-  }
-
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-4);
-  }
-
   .actions {
     display: flex;
     justify-content: flex-end;
     gap: var(--space-1);
-  }
-
-  .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-1);
-    border: none;
-    background: transparent;
-    border-radius: var(--radius-sm);
-    color: var(--color-text-muted);
-    cursor: pointer;
-  }
-
-  .icon-button:hover {
-    background: var(--color-surface-hover);
-    color: var(--color-text);
-  }
-
-  .icon-button.danger:hover {
-    color: var(--color-danger);
   }
 </style>
