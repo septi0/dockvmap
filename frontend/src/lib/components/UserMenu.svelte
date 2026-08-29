@@ -1,8 +1,14 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
+  import { fly } from "svelte/transition";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import { auth } from "../services/auth";
   import ThemeSwitcher from "./ThemeSwitcher.svelte";
+
+  const reduceMotion =
+    typeof matchMedia === "function" &&
+    matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const menuDuration = reduceMotion ? 0 : 120;
 
   let open = $state(false);
   let menuRef: HTMLDivElement | undefined = $state();
@@ -63,7 +69,11 @@
   </button>
 
   {#if open}
-    <div class="menu" role="menu">
+    <div
+      class="menu"
+      role="menu"
+      transition:fly={{ y: -6, duration: menuDuration }}
+    >
       <div class="menu-row">
         <span class="menu-label">Theme</span>
         <ThemeSwitcher />

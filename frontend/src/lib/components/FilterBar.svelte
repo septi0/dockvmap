@@ -29,11 +29,31 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--space-3);
+    gap: var(--space-2) var(--space-3);
+    min-height: 32px;
     margin-bottom: var(--space-4);
   }
 
+  .filter-bar :global(.filter-field) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .filter-bar :global(.filter-label) {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+    transition: color var(--transition-fast);
+  }
+
+  .filter-bar :global(.filter-field:has(.is-active) .filter-label) {
+    color: var(--color-text);
+  }
+
   .clear {
+    margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: var(--space-1);

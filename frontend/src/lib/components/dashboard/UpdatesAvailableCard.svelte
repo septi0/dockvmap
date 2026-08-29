@@ -6,6 +6,7 @@
   import AsyncState from "../AsyncState.svelte";
   import { listImages } from "../../api/images";
   import { ApiError } from "../../api/client";
+  import { formatNumber } from "../../utils/format";
   import type { Image } from "../../api/types/images";
 
   const LIMIT = 6;
@@ -23,7 +24,7 @@
       const result = await listImages({
         offset: 0,
         limit: LIMIT,
-        updateAvailable: true,
+        status: "updateAvailable",
       });
       images = result.images;
       total = result.total;
@@ -80,8 +81,8 @@
     </ul>
 
     {#if total > images.length}
-      <a class="view-all link" href="/images?updateAvailable=true" use:link>
-        View all {total} images with updates available
+      <a class="view-all link" href="/images?status=updateAvailable" use:link>
+        View all {formatNumber(total)} images with updates available
       </a>
     {/if}
   </AsyncState>

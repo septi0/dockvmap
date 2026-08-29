@@ -4,6 +4,7 @@
   import Plus from "@lucide/svelte/icons/plus";
   import Package from "@lucide/svelte/icons/package";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+  import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Check from "@lucide/svelte/icons/check";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
@@ -14,7 +15,11 @@
   import Button from "../lib/components/Button.svelte";
   import { listImages, IMAGES_PAGE_SIZE } from "../lib/api/images";
   import { ApiError } from "../lib/api/client";
-  import type { Image } from "../lib/api/types/images";
+  import {
+    IMAGE_STATUS_FILTERS,
+    type Image,
+    type ImageStatusFilter,
+  } from "../lib/api/types/images";
   import { formatDate } from "../lib/utils/format";
   import {
     readListQuery,
@@ -23,17 +28,29 @@
     watchListQuery,
   } from "../lib/utils/listQuery";
 
-  const FILTER_DEFAULTS = { search: "", updateAvailable: false, offset: 0 };
+  const FILTER_DEFAULTS = { search: "", status: "", offset: 0 };
+
+  const STATUS_OPTIONS: { value: ImageStatusFilter | ""; label: string }[] = [
+    { value: "", label: "All images" },
+    { value: "updateAvailable", label: "Updates available" },
+    { value: "failedCheck", label: "Failed checks" },
+  ];
 
   let images = $state<Image[]>([]);
   let total = $state(0);
   let offset = $state(0);
   let search = $state("");
-  let updateAvailable = $state(false);
+  let status = $state<ImageStatusFilter | "">("");
   let loading = $state(true);
   let loaded = $state(false);
   let error = $state<string | null>(null);
   let loadToken = 0;
+
+  function toStatusFilter(value: string): ImageStatusFilter | "" {
+    return (IMAGE_STATUS_FILTERS as readonly string[]).includes(value)
+      ? (value as ImageStatusFilter)
+      : "";
+  }
 
   async function load() {
     const requestId = ++loadToken;
@@ -45,7 +62,7 @@
         offset,
         limit: IMAGES_PAGE_SIZE,
         search: search || undefined,
-        updateAvailable: updateAvailable ? true : undefined,
+        status: status || undefined,
       });
       if (requestId !== loadToken) return;
       images = result.images;
@@ -64,24 +81,24 @@
   function syncFromUrl() {
     const filters = readListQuery(FILTER_DEFAULTS);
     search = filters.search;
-    updateAvailable = filters.updateAvailable;
+    status = toStatusFilter(filters.status);
     offset = filters.offset;
     load();
   }
 
   function syncToUrl() {
-    pushListQuery("/images", { search, updateAvailable, offset });
+    pushListQuery("/images", { search, status, offset });
   }
 
   onMount(() => watchListQuery(syncFromUrl));
 
   function imageHref(id: number) {
-    return `#/images/${id}${writeListQuery({ search, updateAvailable, offset })}`;
+    return `#/images/${id}${writeListQuery({ search, status, offset })}`;
   }
 
   function openImage(event: MouseEvent, id: number) {
     if ((event.target as HTMLElement).closest("a")) return;
-    push(`/images/${id}${writeListQuery({ search, updateAvailable, offset })}`);
+    push(`/images/${id}${writeListQuery({ search, status, offset })}`);
   }
 
   function handleOffsetChange(newOffset: number) {
@@ -97,7 +114,7 @@
     load();
   }
 
-  function handleUpdateAvailableToggle() {
+  function handleStatusChange() {
     offset = 0;
     syncToUrl();
     load();
@@ -105,7 +122,7 @@
 
   function clearFilters() {
     search = "";
-    updateAvailable = false;
+    status = "";
     offset = 0;
     syncToUrl();
     load();
@@ -115,7 +132,7 @@
 <PageTitle title="Virtual Images" />
 
 <AppShell>
-  <div class="header">
+  <div class="list-header">
     <div class="title-row">
       <Package size={20} strokeWidth={1.75} />
       <h1>Virtual Images</h1>
@@ -126,23 +143,25 @@
     </Button>
   </div>
 
-  <FilterBar
-    active={search !== "" || updateAvailable}
-    onClear={clearFilters}
-  >
+  <FilterBar active={search !== "" || status !== ""} onClear={clearFilters}>
     <SearchInput
       bind:value={search}
       placeholder="Search images…"
       onSearch={handleSearch}
     />
-    <label class="checkbox">
-      <input
-        type="checkbox"
-        bind:checked={updateAvailable}
-        onchange={handleUpdateAvailableToggle}
-      />
-      <span>Updates available only</span>
-    </label>
+    <div class="filter-field">
+      <span class="filter-label">Status</span>
+      <select
+        class="input filter-control"
+        class:is-active={status !== ""}
+        bind:value={status}
+        onchange={handleStatusChange}
+      >
+        {#each STATUS_OPTIONS as option (option.value)}
+          <option value={option.value}>{option.label}</option>
+        {/each}
+      </select>
+    </div>
   </FilterBar>
 
   <AsyncState
@@ -160,7 +179,7 @@
       </Button>
     {/snippet}
 
-    <div class="card">
+    <div class="card table-wrap">
       <table class="table">
         <thead>
           <tr>
@@ -176,7 +195,18 @@
           {#each images as image (image.id)}
             <tr class="clickable" onclick={(event) => openImage(event, image.id)}>
               <td>
-                <a class="row-link" href={imageHref(image.id)}>{image.name}</a>
+                <span class="name-cell">
+                  <a class="row-link" href={imageHref(image.id)}>{image.name}</a>
+                  {#if image.lastCheckError}
+                    <span
+                      class="check-error-icon"
+                      title={image.lastCheckError}
+                      aria-label="Last tag check failed: {image.lastCheckError}"
+                    >
+                      <CircleAlert size={14} strokeWidth={2} />
+                    </span>
+                  {/if}
+                </span>
               </td>
               <td>{image.registry}</td>
               <td>{image.repository}</td>
@@ -218,19 +248,19 @@
 </AppShell>
 
 <style>
-  td {
-    vertical-align: middle;
-  }
-
-  .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: var(--space-4);
-  }
-
   .clickable {
     cursor: pointer;
+  }
+
+  .name-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .check-error-icon {
+    display: inline-flex;
+    color: var(--color-danger);
   }
 
   .row-link {

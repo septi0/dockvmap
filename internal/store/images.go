@@ -23,8 +23,11 @@ func imageListWhere(filters model.ImageListFilters) (string, []any) {
 		)
 	}
 
-	if filters.UpdateAvailable != nil {
-		b.add(`i.update_available = ?`, *filters.UpdateAvailable)
+	switch filters.Status {
+	case model.ImageStatusUpdateAvailable:
+		b.add(`i.update_available = 1`)
+	case model.ImageStatusFailedCheck:
+		b.add(`i.last_check_error IS NOT NULL`)
 	}
 
 	return b.clause(), b.args

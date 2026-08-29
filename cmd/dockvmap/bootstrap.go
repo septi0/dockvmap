@@ -44,13 +44,46 @@ func resolveCredentialEncryptionKey(cfg *config.Config, dataPath string) (string
 
 	encoded := base64.StdEncoding.EncodeToString(key)
 
-	if err := os.WriteFile(keyPath, []byte(encoded), 0o600); err != nil {
+	if err := writeFileAtomic(keyPath, []byte(encoded), 0o600); err != nil {
 		return "", fmt.Errorf("writing credential encryption key: %w", err)
 	}
 
 	slog.Info("generated credential encryption key", "path", keyPath)
 
 	return encoded, nil
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+
+	if err != nil {
+		return err
+	}
+
+	tmpName := tmp.Name()
+
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
+
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	return os.Rename(tmpName, path)
 }
 
 func initBlobCache(cfg *config.Config, dataPath string, db *store.Store) (*blobcache.Cache, error) {

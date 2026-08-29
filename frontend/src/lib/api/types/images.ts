@@ -19,11 +19,15 @@ export interface ListImagesResponse {
   total: number
 }
 
+export const IMAGE_STATUS_FILTERS = ['updateAvailable', 'failedCheck'] as const
+
+export type ImageStatusFilter = (typeof IMAGE_STATUS_FILTERS)[number]
+
 export interface ImageListParams {
   offset: number
   limit?: number
   search?: string
-  updateAvailable?: boolean
+  status?: ImageStatusFilter
 }
 
 export interface Tag {

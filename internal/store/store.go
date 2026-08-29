@@ -38,6 +38,8 @@ func New(path, credentialEncryptionKey string) (*Store, error) {
 		return nil, fmt.Errorf("migrating db: %w", err)
 	}
 
+	restrictDBFilePermissions(path)
+
 	return s, nil
 }
 
@@ -55,6 +57,8 @@ func OpenForBackup(path, credentialEncryptionKey string) (*Store, error) {
 		return nil, err
 	}
 
+	restrictDBFilePermissions(path)
+
 	return s, nil
 }
 
@@ -71,7 +75,7 @@ func open(path, credentialEncryptionKey string) (*Store, error) {
 		separator = "&"
 	}
 
-	db, err := sql.Open("sqlite", path+separator+"_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
+	db, err := sql.Open("sqlite", path+separator+"_txlock=immediate&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
 
 	if err != nil {
 		return nil, fmt.Errorf("opening db: %w", err)
@@ -87,12 +91,18 @@ func open(path, credentialEncryptionKey string) (*Store, error) {
 		return nil, fmt.Errorf("connecting db: %w", err)
 	}
 
-	// the DB holds password hashes, session tokens and encrypted credentials
-	if err := os.Chmod(path, 0o600); err != nil {
-		slog.Warn("could not restrict database file permissions", "path", path, "error", err)
-	}
+	restrictDBFilePermissions(path)
 
 	return &Store{db: db, credentialCipher: credentialCipher}, nil
+}
+
+func restrictDBFilePermissions(path string) {
+	// the DB and its WAL sidecars hold password hashes, session tokens and encrypted credentials
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(p, 0o600); err != nil && !os.IsNotExist(err) {
+			slog.Warn("could not restrict database file permissions", "path", p, "error", err)
+		}
+	}
 }
 
 func (s *Store) Close() error {

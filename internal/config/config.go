@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+var virtualTagRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
 
 type Config struct {
 	VirtualTag              string               `yaml:"virtual_tag" env:"DOCKVMAP_VIRTUAL_TAG" default:"current"`
@@ -69,11 +72,6 @@ type LoginRateLimitConfig struct {
 }
 
 func (c *Config) applyDerivedDefaults() {
-	if c.TLS.Enabled && (c.TLS.CertFile == "" || c.TLS.KeyFile == "") {
-		c.TLS.Enabled = false
-		c.warn("tls.enabled is set but cert_file or key_file is blank; TLS has been disabled and traffic will be served over plain HTTP")
-	}
-
 	if c.SMTP.Enabled && c.SMTP.Host == "" {
 		c.SMTP.Enabled = false
 		c.warn("smtp.enabled is set but host is blank; SMTP notifications have been disabled")
@@ -89,17 +87,34 @@ func (c *Config) warn(message string) {
 	c.DerivedWarnings = append(c.DerivedWarnings, message)
 }
 
+func positiveDuration(name, value string) error {
+	d, err := time.ParseDuration(value)
+
+	if err != nil {
+		return fmt.Errorf("invalid %s %q: %w", name, value, err)
+	}
+
+	if d <= 0 {
+		return fmt.Errorf("invalid %s %q: must be a positive duration", name, value)
+	}
+
+	return nil
+}
+
 func (c *Config) validate() error {
-	if d, err := time.ParseDuration(c.SessionLifetime); err != nil || d <= 0 {
-		return fmt.Errorf("invalid session_lifetime %q: %w", c.SessionLifetime, err)
+	durations := []struct{ name, value string }{
+		{"session_lifetime", c.SessionLifetime},
+		{"login_rate_limit.window", c.LoginRateLimit.Window},
+		{"tag_discovery_ttl", c.TagDiscoveryTTL},
+		{"tags_check_interval", c.TagsCheckInterval},
+		{"blob_cache.lifetime", c.BlobCache.Lifetime},
+		{"blob_cache.cleanup_interval", c.BlobCache.CleanupInterval},
 	}
 
-	if d, err := time.ParseDuration(c.LoginRateLimit.Window); err != nil || d <= 0 {
-		return fmt.Errorf("invalid login_rate_limit.window %q: %w", c.LoginRateLimit.Window, err)
-	}
-
-	if d, err := time.ParseDuration(c.TagDiscoveryTTL); err != nil || d <= 0 {
-		return fmt.Errorf("invalid tag_discovery_ttl %q: %w", c.TagDiscoveryTTL, err)
+	for _, d := range durations {
+		if err := positiveDuration(d.name, d.value); err != nil {
+			return err
+		}
 	}
 
 	if c.LoginRateLimit.MaxAttempts <= 0 {
@@ -108,6 +123,24 @@ func (c *Config) validate() error {
 
 	if _, err := parseBytes(c.BlobCache.MaxSize); err != nil {
 		return fmt.Errorf("blob_cache.max_size: %w", err)
+	}
+
+	if !virtualTagRE.MatchString(c.VirtualTag) {
+		return fmt.Errorf("invalid virtual_tag %q: must be a valid image tag", c.VirtualTag)
+	}
+
+	if c.TLS.Enabled && (c.TLS.CertFile == "" || c.TLS.KeyFile == "") {
+		return fmt.Errorf("tls.enabled is set but cert_file or key_file is blank")
+	}
+
+	if c.SMTP.Enabled {
+		if c.SMTP.Port < 1 || c.SMTP.Port > 65535 {
+			return fmt.Errorf("invalid smtp.port %d: must be between 1 and 65535", c.SMTP.Port)
+		}
+
+		if c.SMTP.From == "" {
+			return fmt.Errorf("smtp.enabled is set but smtp.from is blank")
+		}
 	}
 
 	return nil

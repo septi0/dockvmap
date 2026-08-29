@@ -2,6 +2,10 @@ export function formatDate(value: string | undefined, fallback = '-'): string {
   return value ? new Date(value).toLocaleString() : fallback
 }
 
+export function formatNumber(value: number): string {
+  return value.toLocaleString()
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
 

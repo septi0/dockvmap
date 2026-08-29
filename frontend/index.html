@@ -15,9 +15,55 @@
     <link rel="icon" type="image/png" href="/images/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DockVMap</title>
+    <style>
+      /* pre-bundle boot screen; colors mirror the app.css theme tokens */
+      #app-boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f7f8fa;
+      }
+      #app-boot::after {
+        content: '';
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: 3px solid #d1d5db;
+        border-top-color: #2563eb;
+        animation: app-boot-spin 0.7s linear infinite;
+      }
+      @keyframes app-boot-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #app-boot::after {
+          animation-duration: 3s;
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        html:not([data-theme='light']) #app-boot {
+          background: #0b0d12;
+        }
+        html:not([data-theme='light']) #app-boot::after {
+          border-color: #333844;
+          border-top-color: #3b82f6;
+        }
+      }
+      html[data-theme='dark'] #app-boot {
+        background: #0b0d12;
+      }
+      html[data-theme='dark'] #app-boot::after {
+        border-color: #333844;
+        border-top-color: #3b82f6;
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app"><div id="app-boot"></div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

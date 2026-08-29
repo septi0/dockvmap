@@ -2,16 +2,24 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
 )
 
+func hashSessionToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+
+	return hex.EncodeToString(sum[:])
+}
+
 func (s *Store) CreateSession(ctx context.Context, token string, userID int64, ip, userAgent string, expiresAt time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO sessions (token, user_id, ip, user_agent, expires_at) VALUES (?, ?, ?, ?, ?)
-	`, token, userID, ip, userAgent, expiresAt)
+		INSERT INTO sessions (token_hash, user_id, ip, user_agent, expires_at) VALUES (?, ?, ?, ?, ?)
+	`, hashSessionToken(token), userID, ip, userAgent, expiresAt)
 
 	if err != nil {
 		return fmt.Errorf("creating session: %w", err)
@@ -27,8 +35,8 @@ func (s *Store) GetSessionUser(ctx context.Context, token string) (*model.Curren
 		SELECT u.id, u.username
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
-		WHERE s.token = ? AND s.expires_at > ?
-	`, token, time.Now().UTC()).Scan(&user.ID, &user.Username)
+		WHERE s.token_hash = ? AND s.expires_at > ?
+	`, hashSessionToken(token), time.Now().UTC()).Scan(&user.ID, &user.Username)
 
 	if isNoRows(err) {
 		return nil, nil
@@ -43,11 +51,11 @@ func (s *Store) GetSessionUser(ctx context.Context, token string) (*model.Curren
 
 func (s *Store) ListSessionsByUser(ctx context.Context, userID int64, currentToken string) ([]model.Session, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, ip, user_agent, created_at, expires_at, token = ?
+		SELECT id, ip, user_agent, created_at, expires_at, token_hash = ?
 		FROM sessions
 		WHERE user_id = ? AND expires_at > ?
 		ORDER BY created_at DESC
-	`, currentToken, userID, time.Now().UTC())
+	`, hashSessionToken(currentToken), userID, time.Now().UTC())
 
 	if err != nil {
 		return nil, fmt.Errorf("listing sessions for user %d: %w", userID, err)
@@ -75,7 +83,7 @@ func (s *Store) ListSessionsByUser(ctx context.Context, userID int64, currentTok
 }
 
 func (s *Store) DeleteSession(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE token = ?", token)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE token_hash = ?", hashSessionToken(token))
 
 	if err != nil {
 		return fmt.Errorf("deleting session: %w", err)
@@ -86,8 +94,8 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 
 func (s *Store) DeleteSessionByID(ctx context.Context, userID, sessionID int64, exceptToken string) (bool, error) {
 	result, err := s.db.ExecContext(ctx, `
-		DELETE FROM sessions WHERE id = ? AND user_id = ? AND token != ?
-	`, sessionID, userID, exceptToken)
+		DELETE FROM sessions WHERE id = ? AND user_id = ? AND token_hash != ?
+	`, sessionID, userID, hashSessionToken(exceptToken))
 
 	if err != nil {
 		return false, fmt.Errorf("deleting session %d: %w", sessionID, err)
@@ -119,7 +127,7 @@ func (s *Store) DeleteExpiredSessions(ctx context.Context) (int64, error) {
 }
 
 func (s *Store) DeleteOtherSessions(ctx context.Context, userID int64, exceptToken string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ? AND token != ?", userID, exceptToken)
+	_, err := s.db.ExecContext(ctx, "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?", userID, hashSessionToken(exceptToken))
 
 	if err != nil {
 		return fmt.Errorf("deleting other sessions for user %d: %w", userID, err)

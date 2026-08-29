@@ -41,7 +41,7 @@
       <code class="command">{result.token}</code>
       <button
         type="button"
-        class="icon-button"
+        class="icon-button bordered"
         onclick={copyToken}
         aria-label="Copy token"
       >
@@ -69,43 +69,6 @@
     gap: var(--space-2);
     margin: 0 0 var(--space-4);
     color: var(--color-warning);
-  }
-
-  .command-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .command {
-    flex: 1;
-    min-width: 0;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
-    overflow-x: auto;
-    white-space: pre;
-  }
-
-  .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-2);
-    border: none;
-    background: transparent;
-    border-radius: var(--radius-sm);
-    color: var(--color-text-muted);
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-
-  .icon-button:hover {
-    background: var(--color-surface-hover);
-    color: var(--color-text);
   }
 
   .actions {

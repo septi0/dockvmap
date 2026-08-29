@@ -294,7 +294,7 @@
           <code class="command">{pullCommand}</code>
           <button
             type="button"
-            class="icon-button"
+            class="icon-button bordered"
             onclick={copyPullCommand}
             aria-label="Copy pull command"
           >
@@ -401,43 +401,6 @@
   .field-hint {
     margin: var(--space-1) 0 var(--space-4);
     font-size: 0.8125rem;
-  }
-
-  .command-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .command {
-    flex: 1;
-    min-width: 0;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
-    overflow-x: auto;
-    white-space: pre;
-  }
-
-  .icon-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    padding: var(--space-2);
-    border: 1px solid var(--color-border-strong);
-    background: var(--color-surface);
-    border-radius: var(--radius-md);
-    color: var(--color-text-muted);
-    cursor: pointer;
-  }
-
-  .icon-button:hover {
-    background: var(--color-surface-hover);
-    color: var(--color-text);
   }
 
   .check-error-cell {
