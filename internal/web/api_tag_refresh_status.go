@@ -7,9 +7,25 @@ import (
 	"github.com/septi0/dockvmap/internal/service"
 )
 
+func (w *Web) apiTriggerTagRefresh(rw http.ResponseWriter, r *http.Request) {
+	if w.workerActivity.Running(service.WorkerJobTagRefresh) {
+		apiError(rw, http.StatusConflict, "a tag check is already running")
+
+		return
+	}
+
+	if !w.workerTrigger.Trigger(service.WorkerJobTagRefresh) {
+		apiError(rw, http.StatusConflict, "automatic tag checks are disabled")
+
+		return
+	}
+
+	apiJSON(rw, http.StatusAccepted, map[string]string{"status": "triggered"})
+}
+
 func (w *Web) apiTagRefreshStatus(rw http.ResponseWriter, r *http.Request) {
-	interval, err := time.ParseDuration(w.cfg.TagsCheckInterval)
-	enabled := err == nil && interval > 0
+	interval := w.cfg.TagsCheckIntervalDuration()
+	enabled := interval > 0
 
 	var lastRun, nextDue *time.Time
 
@@ -30,5 +46,7 @@ func (w *Web) apiTagRefreshStatus(rw http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	apiJSON(rw, http.StatusOK, newTagRefreshStatusResponse(enabled, w.cfg.TagsCheckInterval, lastRun, nextDue))
+	running := w.workerActivity.Running(service.WorkerJobTagRefresh)
+
+	apiJSON(rw, http.StatusOK, newTagRefreshStatusResponse(enabled, w.cfg.TagsCheckInterval, running, lastRun, nextDue))
 }

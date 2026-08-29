@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { push } from "svelte-spa-router";
   import Plus from "@lucide/svelte/icons/plus";
   import Package from "@lucide/svelte/icons/package";
+  import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Check from "@lucide/svelte/icons/check";
@@ -13,7 +14,11 @@
   import FilterBar from "../lib/components/FilterBar.svelte";
   import SearchInput from "../lib/components/SearchInput.svelte";
   import Button from "../lib/components/Button.svelte";
+  import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import { listImages, IMAGES_PAGE_SIZE } from "../lib/api/images";
+  import { triggerTagRefresh } from "../lib/api/worker";
+  import { toast } from "../lib/services/toast";
+  import { tagRefreshStatus } from "../lib/services/tagRefreshStatus";
   import { ApiError } from "../lib/api/client";
   import {
     IMAGE_STATUS_FILTERS,
@@ -45,6 +50,13 @@
   let loaded = $state(false);
   let error = $state<string | null>(null);
   let loadToken = 0;
+
+  let showRefreshAllConfirm = $state(false);
+  let refreshingAll = $state(false);
+  let refreshAllError = $state<string | null>(null);
+
+  let tagRefreshRunning = $derived($tagRefreshStatus.data?.running ?? false);
+  let wasTagRefreshRunning = false;
 
   function toStatusFilter(value: string): ImageStatusFilter | "" {
     return (IMAGE_STATUS_FILTERS as readonly string[]).includes(value)
@@ -91,6 +103,16 @@
   }
 
   onMount(() => watchListQuery(syncFromUrl));
+  onMount(() => tagRefreshStatus.watch());
+
+  // reload the table once a background sweep finishes so tags/badges aren't stale
+  $effect(() => {
+    const running = tagRefreshRunning;
+    untrack(() => {
+      if (wasTagRefreshRunning && !running && loaded) load();
+      wasTagRefreshRunning = running;
+    });
+  });
 
   function imageHref(id: number) {
     return `#/images/${id}${writeListQuery({ search, status, offset })}`;
@@ -127,6 +149,35 @@
     syncToUrl();
     load();
   }
+
+  function openRefreshAll() {
+    if (tagRefreshRunning) return;
+    refreshAllError = null;
+    showRefreshAllConfirm = true;
+  }
+
+  function cancelRefreshAll() {
+    showRefreshAllConfirm = false;
+    refreshAllError = null;
+  }
+
+  async function confirmRefreshAll() {
+    refreshAllError = null;
+    refreshingAll = true;
+
+    try {
+      await triggerTagRefresh();
+      showRefreshAllConfirm = false;
+      tagRefreshStatus.notifyTriggered();
+      toast.success("Tag check started - running in the background.");
+    } catch (err) {
+      refreshAllError =
+        err instanceof ApiError ? err.message : "Failed to start tag check";
+      tagRefreshStatus.refresh();
+    } finally {
+      refreshingAll = false;
+    }
+  }
 </script>
 
 <PageTitle title="Virtual Images" />
@@ -137,10 +188,20 @@
       <Package size={20} strokeWidth={1.75} />
       <h1>Virtual Images</h1>
     </div>
-    <Button onclick={() => push("/images/new")}>
-      <Plus size={16} strokeWidth={2} />
-      Add virtual image
-    </Button>
+    <div class="header-actions">
+      <Button
+        variant="secondary"
+        onclick={openRefreshAll}
+        disabled={tagRefreshRunning || refreshingAll}
+      >
+        <RefreshCw size={16} strokeWidth={2} />
+        {tagRefreshRunning ? "Checking tags…" : "Refresh all tags"}
+      </Button>
+      <Button onclick={() => push("/images/new")}>
+        <Plus size={16} strokeWidth={2} />
+        Add virtual image
+      </Button>
+    </div>
   </div>
 
   <FilterBar active={search !== "" || status !== ""} onClear={clearFilters}>
@@ -247,7 +308,23 @@
   </AsyncState>
 </AppShell>
 
+<ConfirmDialog
+  open={showRefreshAllConfirm}
+  title="Refresh all tags"
+  message="Check every virtual image's upstream registry for new or updated tags now? The check runs in the background and resets the interval until the next automatic check."
+  confirmLabel="Refresh all"
+  error={refreshAllError}
+  submitting={refreshingAll}
+  onConfirm={confirmRefreshAll}
+  onCancel={cancelRefreshAll}
+/>
+
 <style>
+  .header-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+
   .clickable {
     cursor: pointer;
   }

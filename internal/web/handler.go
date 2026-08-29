@@ -95,6 +95,14 @@ type workerScheduleReader interface {
 	LastRun(ctx context.Context, job string) (time.Time, bool, error)
 }
 
+type workerTriggerer interface {
+	Trigger(job string) bool
+}
+
+type workerActivityReader interface {
+	Running(job string) bool
+}
+
 type Web struct {
 	images               imageService
 	discoveries          discoveryService
@@ -109,6 +117,8 @@ type Web struct {
 	cacheUsage           cacheUsageReader
 	failures             failureLister
 	workerSchedule       workerScheduleReader
+	workerTrigger        workerTriggerer
+	workerActivity       workerActivityReader
 	cfg                  *config.Config
 	trustedProxies       ipmatch.Set
 	loginRateLimitWindow time.Duration
@@ -130,6 +140,8 @@ type Dependencies struct {
 	CacheUsage           cacheUsageReader
 	Failures             failureLister
 	WorkerSchedule       workerScheduleReader
+	WorkerTrigger        workerTriggerer
+	WorkerActivity       workerActivityReader
 	LoginRateLimitWindow time.Duration
 	Version              string
 }
@@ -155,6 +167,8 @@ func New(deps Dependencies) (http.Handler, error) {
 		cacheUsage:           deps.CacheUsage,
 		failures:             deps.Failures,
 		workerSchedule:       deps.WorkerSchedule,
+		workerTrigger:        deps.WorkerTrigger,
+		workerActivity:       deps.WorkerActivity,
 		cfg:                  deps.Config,
 		trustedProxies:       trustedProxies,
 		version:              deps.Version,

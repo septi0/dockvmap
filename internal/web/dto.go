@@ -362,14 +362,16 @@ type proxyMetricsResponse struct {
 type tagRefreshStatusResponse struct {
 	Enabled  bool       `json:"enabled"`
 	Interval string     `json:"interval"`
+	Running  bool       `json:"running"`
 	LastRun  *time.Time `json:"lastRun"`
 	NextDue  *time.Time `json:"nextDue"`
 }
 
-func newTagRefreshStatusResponse(enabled bool, interval string, lastRun, nextDue *time.Time) tagRefreshStatusResponse {
+func newTagRefreshStatusResponse(enabled bool, interval string, running bool, lastRun, nextDue *time.Time) tagRefreshStatusResponse {
 	return tagRefreshStatusResponse{
 		Enabled:  enabled,
 		Interval: interval,
+		Running:  running,
 		LastRun:  lastRun,
 		NextDue:  nextDue,
 	}

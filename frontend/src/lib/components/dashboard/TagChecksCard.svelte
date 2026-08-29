@@ -2,43 +2,30 @@
   import { onMount } from "svelte";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import AsyncState from "../AsyncState.svelte";
-  import { getTagRefreshStatus } from "../../api/worker";
-  import { ApiError } from "../../api/client";
-  import type { TagRefreshStatus } from "../../api/types/worker";
+  import RefreshingIndicator from "../RefreshingIndicator.svelte";
+  import { tagRefreshStatus } from "../../services/tagRefreshStatus";
   import { formatDate, formatRelativeTime } from "../../utils/format";
 
-  let status = $state<TagRefreshStatus | null>(null);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+  onMount(() => tagRefreshStatus.watch());
+
+  let status = $derived($tagRefreshStatus.data);
+  let loading = $derived($tagRefreshStatus.loading);
+  let error = $derived($tagRefreshStatus.data ? null : $tagRefreshStatus.error);
+  let running = $derived(status?.running ?? false);
 
   let overdue = $derived(
-    !!status?.nextDue && new Date(status.nextDue).getTime() <= Date.now(),
+    !running &&
+      !!status?.nextDue &&
+      new Date(status.nextDue).getTime() <= Date.now(),
   );
 
   let nextCheckLabel = $derived.by(() => {
     if (!status?.enabled) return "-";
+    if (running) return "Running now";
     if (!status.nextDue) return "Pending";
     if (overdue) return "Due now";
     return formatRelativeTime(status.nextDue);
   });
-
-  async function load() {
-    loading = true;
-    error = null;
-
-    try {
-      status = await getTagRefreshStatus();
-    } catch (err) {
-      error =
-        err instanceof ApiError
-          ? err.message
-          : "Failed to load tag check status";
-    } finally {
-      loading = false;
-    }
-  }
-
-  onMount(load);
 </script>
 
 <div class="card section-card">
@@ -49,7 +36,9 @@
     </div>
 
     {#if status}
-      {#if !status.enabled}
+      {#if running}
+        <span class="badge badge-accent">Running</span>
+      {:else if !status.enabled}
         <span class="badge">Disabled</span>
       {:else if overdue}
         <span class="badge badge-warning">Overdue</span>
@@ -60,7 +49,9 @@
   </div>
 
   <AsyncState {loading} {error}>
-    {#if status?.enabled}
+    {#if running}
+      <RefreshingIndicator text="Checking all images for tag changes…" />
+    {:else if status?.enabled}
       <div class="stat-grid">
         <div class="stat-tile">
           <span
