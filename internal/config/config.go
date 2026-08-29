@@ -161,6 +161,11 @@ func (c *Config) TagDiscoveryTTLDuration() time.Duration {
 	return d
 }
 
+func (c *Config) TagsCheckIntervalDuration() time.Duration {
+	d, _ := time.ParseDuration(c.TagsCheckInterval)
+	return d
+}
+
 func (c *Config) BlobCacheMaxSizeBytes() int64 {
 	n, _ := parseBytes(c.BlobCache.MaxSize)
 	return n

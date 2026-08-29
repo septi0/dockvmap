@@ -35,6 +35,7 @@ type scheduledJob struct {
 	run        func(context.Context) (int, error)
 	doneMsg    string // logged with "count" when run reports count > 0
 	onShutdown func(context.Context) error
+	trigger    <-chan struct{} // nil unless the job can be run early on demand
 }
 
 func counted(n int64, err error) (int, error) { return int(n), err }
@@ -42,6 +43,8 @@ func counted(n int64, err error) (int, error) { return int(n), err }
 type workerDeps struct {
 	cfg                 *config.Config
 	schedule            *service.WorkerSchedule
+	trigger             *service.WorkerTrigger
+	activity            *service.WorkerActivity
 	failures            *service.FailureLog
 	images              *service.Images
 	discoveries         *service.Discoveries
@@ -80,10 +83,11 @@ func startWorker(ctx context.Context, deps workerDeps) {
 		},
 	}
 
-	if interval, err := time.ParseDuration(cfg.TagsCheckInterval); err == nil && interval > 0 {
+	if interval := cfg.TagsCheckIntervalDuration(); interval > 0 {
 		jobs = append(jobs, scheduledJob{
 			name:     service.WorkerJobTagRefresh,
 			interval: interval,
+			trigger:  deps.trigger.Channel(service.WorkerJobTagRefresh),
 			run:      func(ctx context.Context) (int, error) { return runImageTagRefresh(ctx, deps.images) },
 		})
 	} else {
@@ -151,30 +155,24 @@ func startWorker(ctx context.Context, deps workerDeps) {
 
 		go func() {
 			defer wg.Done()
-			runScheduledJob(ctx, job, deps.schedule, offset)
+			runScheduledJob(ctx, job, deps.schedule, deps.activity, offset)
 		}()
 	}
 
 	wg.Wait()
 }
 
-func runScheduledJob(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, offset time.Duration) {
+func runScheduledJob(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, activity *service.WorkerActivity, offset time.Duration) {
 	timer := time.NewTimer(firstRunDelay(ctx, job, schedule, offset))
 	defer timer.Stop()
 
 	for {
 		select {
 		case <-timer.C:
-			start := time.Now()
+			runAndReschedule(ctx, job, schedule, activity, timer)
 
-			executeJob(ctx, job, schedule)
-
-			next := job.interval - time.Since(start)
-			if next < 0 {
-				next = 0
-			}
-
-			timer.Reset(next)
+		case <-job.trigger:
+			runAndReschedule(ctx, job, schedule, activity, timer)
 
 		case <-ctx.Done():
 			if job.onShutdown != nil {
@@ -191,6 +189,20 @@ func runScheduledJob(ctx context.Context, job scheduledJob, schedule *service.Wo
 			return
 		}
 	}
+}
+
+// a manual trigger reschedules a full interval from now, exactly like a natural tick
+func runAndReschedule(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, activity *service.WorkerActivity, timer *time.Timer) {
+	start := time.Now()
+
+	executeJob(ctx, job, schedule, activity)
+
+	next := job.interval - time.Since(start)
+	if next < 0 {
+		next = 0
+	}
+
+	timer.Reset(next)
 }
 
 func firstRunDelay(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, offset time.Duration) time.Duration {
@@ -213,12 +225,15 @@ func firstRunDelay(ctx context.Context, job scheduledJob, schedule *service.Work
 	return remaining + offset
 }
 
-func executeJob(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule) {
+func executeJob(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, activity *service.WorkerActivity) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error(job.name+" worker panicked", "panic", r, "stack", string(debug.Stack()))
 		}
 	}()
+
+	activity.Begin(job.name)
+	defer activity.End(job.name)
 
 	markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()

@@ -69,6 +69,15 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 	health := service.NewHealth(db)
 	proxyTokens := service.NewProxyTokens(db, audit)
 	workerSchedule := service.NewWorkerSchedule(db)
+
+	var triggerableJobs []string
+
+	if cfg.TagsCheckIntervalDuration() > 0 {
+		triggerableJobs = append(triggerableJobs, service.WorkerJobTagRefresh)
+	}
+
+	workerTrigger := service.NewWorkerTrigger(triggerableJobs...)
+	workerActivity := service.NewWorkerActivity()
 	proxyMetricsHistory := service.NewProxyMetricsHistory(db)
 	metrics := proxy.NewMetrics()
 
@@ -108,6 +117,8 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		ProxyMetricsHistory:  proxyMetricsHistory,
 		Failures:             failureLog,
 		WorkerSchedule:       workerSchedule,
+		WorkerTrigger:        workerTrigger,
+		WorkerActivity:       workerActivity,
 		LoginRateLimitWindow: loginRateLimitWindow,
 		Version:              version,
 	}
@@ -134,6 +145,8 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		startWorker(workerCtx, workerDeps{
 			cfg:                 cfg,
 			schedule:            workerSchedule,
+			trigger:             workerTrigger,
+			activity:            workerActivity,
 			failures:            failureLog,
 			images:              images,
 			discoveries:         discoveries,
