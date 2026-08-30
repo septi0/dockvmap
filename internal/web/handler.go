@@ -208,7 +208,11 @@ func (w *Web) registerFrontendRoutes(mux *http.ServeMux) {
 		path := strings.TrimPrefix(r.URL.Path, "/")
 
 		if _, err := fs.Stat(static, path); err != nil {
-			serveSPA(rw, r)
+			if r.URL.Path == "/" {
+				serveSPA(rw, r)
+			} else {
+				http.NotFound(rw, r)
+			}
 			return
 		}
 
