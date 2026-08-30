@@ -154,7 +154,7 @@ func releaseShapeRank(segment SegmentAnalysis) int {
 	return releaseShapeOther
 }
 
-// lower-is-better; order is load-bearing — re-run cmd/tagaudit over sampledata/ before changing it
+// lower-is-better; order is load-bearing, re-run cmd/tagaudit over sampledata/ before changing it
 var relevanceCriteria = []struct {
 	name  string
 	score func(familyRelevance) int

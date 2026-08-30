@@ -20,7 +20,7 @@ type repository struct {
 
 func (r repository) String() string { return r.Registry + "/" + r.Name }
 
-// deliberately broad and arbitrary — an unbiased sample, not a curated one
+// deliberately broad and arbitrary: an unbiased sample, not a curated one
 var searchTerms = []string{
 	"server", "api", "database", "proxy", "agent", "worker", "gateway", "monitor",
 	"cache", "queue", "search", "auth", "backup", "build", "cli", "dashboard",
