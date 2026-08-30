@@ -37,9 +37,9 @@ type discoveryService interface {
 
 type registryService interface {
 	Create(ctx context.Context, registry model.Registry) (int64, error)
-	Update(ctx context.Context, registry model.RegistryUpdate) (bool, error)
-	Delete(ctx context.Context, registryID int64) (bool, error)
-	Get(ctx context.Context, registryID int64) (*model.RegistryInfo, error)
+	UpdateByID(ctx context.Context, registry model.RegistryUpdate) (bool, error)
+	DeleteByID(ctx context.Context, registryID int64) (bool, error)
+	GetByID(ctx context.Context, registryID int64) (*model.RegistryInfo, error)
 	List(ctx context.Context) ([]model.RegistryInfo, error)
 }
 

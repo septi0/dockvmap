@@ -110,11 +110,16 @@ func (c *Cache) Serve(ctx context.Context, rw http.ResponseWriter, r *http.Reque
 	return true, nil
 }
 
-func (c *Cache) StreamAndStore(ctx context.Context, destination io.Writer, digest, contentType string, source io.Reader) (error, error) {
+type StreamOutcome struct {
+	CacheErr error
+	CopyErr  error
+}
+
+func (c *Cache) StreamAndStore(ctx context.Context, destination io.Writer, digest, contentType string, source io.Reader) StreamOutcome {
 	writer, err := c.newWriter(digest)
 
 	if err != nil {
-		return err, copyStream(destination, source)
+		return StreamOutcome{CacheErr: err, CopyErr: copyStream(destination, source)}
 	}
 
 	var cacheErr error
@@ -129,7 +134,7 @@ func (c *Cache) StreamAndStore(ctx context.Context, destination io.Writer, diges
 					writer.abort()
 				}
 
-				return cacheErr, err
+				return StreamOutcome{CacheErr: cacheErr, CopyErr: err}
 			}
 
 			if writer != nil {
@@ -150,7 +155,7 @@ func (c *Cache) StreamAndStore(ctx context.Context, destination io.Writer, diges
 				writer.abort()
 			}
 
-			return cacheErr, readErr
+			return StreamOutcome{CacheErr: cacheErr, CopyErr: readErr}
 		}
 	}
 
@@ -160,7 +165,7 @@ func (c *Cache) StreamAndStore(ctx context.Context, destination io.Writer, diges
 		}
 	}
 
-	return cacheErr, nil
+	return StreamOutcome{CacheErr: cacheErr}
 }
 
 func (c *Cache) Cleanup(ctx context.Context) (int, error) {

@@ -199,15 +199,3 @@ func (r *Registries) DeleteByID(ctx context.Context, registryID int64) (bool, er
 
 	return true, nil
 }
-
-func (r *Registries) Get(ctx context.Context, registryID int64) (*model.RegistryInfo, error) {
-	return r.GetByID(ctx, registryID)
-}
-
-func (r *Registries) Update(ctx context.Context, registry model.RegistryUpdate) (bool, error) {
-	return r.UpdateByID(ctx, registry)
-}
-
-func (r *Registries) Delete(ctx context.Context, registryID int64) (bool, error) {
-	return r.DeleteByID(ctx, registryID)
-}

@@ -101,7 +101,7 @@ func (s *Store) GetRegistryCredentials(ctx context.Context, registry string) (*m
 		&ciphertext,
 	)
 
-	if err == sql.ErrNoRows {
+	if isNoRows(err) {
 		return nil, nil
 	}
 

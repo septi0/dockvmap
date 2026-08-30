@@ -266,15 +266,15 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL
 			cacheDigest = digest
 		}
 
-		cacheErr, copyErr := p.cache.StreamAndStore(r.Context(), w, cacheDigest, resp.Header.Get("Content-Type"), resp.Body)
+		outcome := p.cache.StreamAndStore(r.Context(), w, cacheDigest, resp.Header.Get("Content-Type"), resp.Body)
 
-		if cacheErr != nil {
+		if outcome.CacheErr != nil {
 			p.metrics.cacheWriteFailures.Add(1)
-			slog.Warn("cache write failed", "resource", resource, "digest", cacheDigest, "error", cacheErr)
+			slog.Warn("cache write failed", "resource", resource, "digest", cacheDigest, "error", outcome.CacheErr)
 		}
 
-		if copyErr != nil {
-			slog.Warn("upstream response stream failed", "error", copyErr)
+		if outcome.CopyErr != nil {
+			slog.Warn("upstream response stream failed", "error", outcome.CopyErr)
 		}
 
 		return
