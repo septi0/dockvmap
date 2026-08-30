@@ -108,7 +108,7 @@ Key options:
 | `tag_discovery_ttl` | How long a repository's discovered tag list (shown when adding a virtual image) is cached before a "Check repository" click refreshes it in the background |
 | `session_lifetime` | Web UI session duration |
 | `secure_cookies` | Set `true` once served over HTTPS; otherwise the session cookie is sent unencrypted. Defaults to `true` when `tls.enabled` is true, `false` otherwise |
-| `trusted_proxies` | CIDRs/IPs of reverse proxies you trust to report the real client IP |
+| `trusted_proxies` | CIDRs/IPs of reverse proxies you trust to report the real client IP. Set to `["auto"]` (or `DOCKVMAP_TRUSTED_PROXIES=auto`) to resolve the container's IPv4 default gateway at startup — the address Docker SNATs a proxy's traffic to when reaching a published port |
 | `tls` | Serve both the proxy and web servers directly over HTTPS using `cert_file`/`key_file`. If enabled but either file path is blank, TLS is silently disabled at startup |
 | `login_rate_limit` | Failed-login lockout: attempts, window, IPs allowed to bypass it |
 | `blob_cache` | Optional on-disk cache for manifests/blobs, always stored at `<data_path>/cache` |
