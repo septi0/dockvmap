@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import Eye from "@lucide/svelte/icons/eye";
   import EyeOff from "@lucide/svelte/icons/eye-off";
 
@@ -10,6 +11,7 @@
     placeholder,
     required = false,
     disabled = false,
+    autofocus = false,
   }: {
     label: string;
     type?: string;
@@ -18,7 +20,14 @@
     placeholder?: string;
     required?: boolean;
     disabled?: boolean;
+    autofocus?: boolean;
   } = $props();
+
+  let inputEl: HTMLInputElement | undefined;
+
+  onMount(() => {
+    if (autofocus) inputEl?.focus();
+  });
 
   let revealed = $state(false);
   let isPassword = $derived(type === "password");
@@ -31,6 +40,7 @@
     <input
       class="input"
       type={inputType}
+      bind:this={inputEl}
       bind:value
       {autocomplete}
       {placeholder}
