@@ -9,7 +9,7 @@ session_lifetime: 168h
 web_server_listen: ":8080"
 proxy_server_listen: ":5000"
 # proxy_public_host: "" # hostname (optionally host:port) clients use to pull images; defaults to the web UI's address if unset
-trusted_proxies: [] # CIDRs/IPs of reverse proxies you trust for the real client IP (must append to X-Forwarded-For, not pass it through). Use ["auto"] to trust the container's default gateway (Docker bridge + published port)
+trusted_proxies: [] # CIDRs/IPs of reverse proxies you trust for the real client IP (must append to X-Forwarded-For, not pass it through). Use ["gateway"] to trust the container's default gateway (Docker bridge + published port)
 tls:
   enabled: false
   cert_file: ""

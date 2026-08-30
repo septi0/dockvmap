@@ -10,13 +10,13 @@ import (
 	"strings"
 )
 
-const autoProxySentinel = "auto"
+const gatewayProxySentinel = "gateway"
 
-func expandAutoProxies(values []string) ([]string, error) {
+func expandGatewayProxies(values []string) ([]string, error) {
 	out := make([]string, 0, len(values))
 
 	for _, raw := range values {
-		if !strings.EqualFold(strings.TrimSpace(raw), autoProxySentinel) {
+		if !strings.EqualFold(strings.TrimSpace(raw), gatewayProxySentinel) {
 			out = append(out, raw)
 			continue
 		}
@@ -24,10 +24,10 @@ func expandAutoProxies(values []string) ([]string, error) {
 		gw, err := defaultGateway()
 
 		if err != nil {
-			return nil, fmt.Errorf("%q: %w", autoProxySentinel, err)
+			return nil, fmt.Errorf("%q: %w", gatewayProxySentinel, err)
 		}
 
-		slog.Info("trusted_proxies: resolved \"auto\" to the default gateway", "gateway", gw)
+		slog.Info("trusted_proxies: resolved \"gateway\" to the default gateway", "gateway", gw)
 		out = append(out, gw.String())
 	}
 

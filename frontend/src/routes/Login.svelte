@@ -46,6 +46,7 @@
       bind:value={username}
       autocomplete="username"
       required
+      autofocus
     />
     <Field
       label="Password"

@@ -83,7 +83,7 @@ func (c *Config) applyDerivedDefaults() {
 	}
 
 	if len(c.TrustedProxies) == 0 {
-		c.warn("trusted_proxies is empty; the client IP will be the immediate TCP peer, which is wrong behind a reverse proxy — set trusted_proxies (or \"auto\" to trust the container's default gateway)")
+		c.warn("trusted_proxies is empty; the client IP will be the immediate TCP peer, which is wrong behind a reverse proxy — set trusted_proxies (or \"gateway\" to trust the container's default gateway)")
 	}
 }
 

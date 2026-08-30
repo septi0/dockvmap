@@ -147,7 +147,7 @@ type Dependencies struct {
 }
 
 func New(deps Dependencies) (http.Handler, error) {
-	proxies, err := expandAutoProxies(deps.Config.TrustedProxies)
+	proxies, err := expandGatewayProxies(deps.Config.TrustedProxies)
 
 	if err != nil {
 		return nil, fmt.Errorf("resolving trusted_proxies: %w", err)
