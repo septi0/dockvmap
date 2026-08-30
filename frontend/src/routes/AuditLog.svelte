@@ -9,11 +9,13 @@
   import DateRangeFilter from "../lib/components/DateRangeFilter.svelte";
   import Modal from "../lib/components/Modal.svelte";
   import DetailRow from "../lib/components/DetailRow.svelte";
+  import DeviceIcon from "../lib/components/DeviceIcon.svelte";
   import { listAuditLogs, AUDIT_LOG_PAGE_SIZE } from "../lib/api/audit";
   import { ApiError } from "../lib/api/client";
   import { AUDIT_TYPES } from "../lib/api/types/audit";
   import type { AuditLog } from "../lib/api/types/audit";
   import { formatDate, formatAuditType } from "../lib/utils/format";
+  import { parseUserAgent } from "../lib/utils/userAgent";
   import {
     readListQuery,
     pushListQuery,
@@ -218,7 +220,18 @@
     <DetailRow label="Event">{formatAuditType(selectedEntry.type)}</DetailRow>
     <DetailRow label="User">{selectedEntry.username ?? "System"}</DetailRow>
     <DetailRow label="IP">{selectedEntry.ip ?? "-"}</DetailRow>
-    <DetailRow label="User agent">{selectedEntry.userAgent ?? "-"}</DetailRow>
+    <DetailRow label="User agent">
+      {#if selectedEntry.userAgent}
+        {@const ua = parseUserAgent(selectedEntry.userAgent)}
+        <span class="ua-line">
+          <span class="icon"><DeviceIcon device={ua.device} /></span>
+          {ua.label}
+        </span>
+        <span class="ua-raw muted">{selectedEntry.userAgent}</span>
+      {:else}
+        -
+      {/if}
+    </DetailRow>
 
     {#if selectedEntry.data && Object.keys(selectedEntry.data).length > 0}
       <DetailRow label="Details">
@@ -264,5 +277,24 @@
     white-space: pre-wrap;
     word-break: break-word;
     overflow-x: auto;
+  }
+
+  .ua-line {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .ua-line .icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+  }
+
+  .ua-raw {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.8125rem;
+    word-break: break-word;
   }
 </style>
