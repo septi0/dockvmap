@@ -1,6 +1,7 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/septi0/dockvmap/internal/service"
@@ -18,6 +19,14 @@ func securityHeaders(next http.Handler) http.Handler {
 
 func (w *Web) withRequestInfo(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		slog.Info("clientip debug",
+			"path", r.URL.Path,
+			"remoteAddr", r.RemoteAddr,
+			"xff", r.Header.Get("X-Forwarded-For"),
+			"xRealIP", r.Header.Get("X-Real-IP"),
+			"forwarded", r.Header.Get("Forwarded"),
+			"resolved", resolveClientIP(r, w.trustedProxies))
+
 		ctx := service.WithRequestInfo(r.Context(), service.RequestInfo{
 			IP:        resolveClientIP(r, w.trustedProxies),
 			UserAgent: r.UserAgent(),
