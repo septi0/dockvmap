@@ -81,6 +81,10 @@ func (c *Config) applyDerivedDefaults() {
 		secure := c.TLS.Enabled || len(c.TrustedProxies) > 0
 		c.SecureCookies = &secure
 	}
+
+	if len(c.TrustedProxies) == 0 {
+		c.warn("trusted_proxies is empty; the client IP will be the immediate TCP peer, which is wrong behind a reverse proxy — set trusted_proxies (or \"auto\" to trust the container's default gateway)")
+	}
 }
 
 func (c *Config) warn(message string) {

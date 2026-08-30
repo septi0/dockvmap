@@ -147,7 +147,13 @@ type Dependencies struct {
 }
 
 func New(deps Dependencies) (http.Handler, error) {
-	trustedProxies, err := ipmatch.Parse(deps.Config.TrustedProxies)
+	proxies, err := expandAutoProxies(deps.Config.TrustedProxies)
+
+	if err != nil {
+		return nil, fmt.Errorf("resolving trusted_proxies: %w", err)
+	}
+
+	trustedProxies, err := ipmatch.Parse(proxies)
 
 	if err != nil {
 		return nil, fmt.Errorf("parsing trusted_proxies: %w", err)
