@@ -123,7 +123,7 @@ func (s *Store) GetImageTag(ctx context.Context, imageId int64, name string) (*m
 		return &imageTag, nil
 	}
 
-	if err == sql.ErrNoRows {
+	if isNoRows(err) {
 		return nil, nil
 	}
 

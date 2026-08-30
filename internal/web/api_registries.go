@@ -91,7 +91,7 @@ func (w *Web) apiUpdateRegistry(rw http.ResponseWriter, r *http.Request) {
 		Options:    request.Options,
 	}
 
-	updated, err := w.registries.Update(r.Context(), registryEntry)
+	updated, err := w.registries.UpdateByID(r.Context(), registryEntry)
 
 	if err != nil {
 		switch {
@@ -116,7 +116,7 @@ func (w *Web) apiUpdateRegistry(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	info, err := w.registries.Get(r.Context(), registryID)
+	info, err := w.registries.GetByID(r.Context(), registryID)
 
 	if err != nil {
 		apiError(rw, http.StatusInternalServerError, "internal server error")
@@ -138,7 +138,7 @@ func (w *Web) apiDeleteRegistry(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deleted, err := w.registries.Delete(r.Context(), registryID)
+	deleted, err := w.registries.DeleteByID(r.Context(), registryID)
 
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidRegistry) {
