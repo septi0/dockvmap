@@ -12,6 +12,7 @@
   import Field from "../lib/components/Field.svelte";
   import Button from "../lib/components/Button.svelte";
   import ChangePasswordModal from "../lib/components/ChangePasswordModal.svelte";
+  import DeviceIcon from "../lib/components/DeviceIcon.svelte";
   import { onMount } from "svelte";
   import { updateEmail, updatePreferences } from "../lib/api/users";
   import { getSMTPStatus } from "../lib/api/system";
@@ -19,6 +20,7 @@
   import { ApiError } from "../lib/api/client";
   import { auth } from "../lib/services/auth";
   import { formatDate } from "../lib/utils/format";
+  import { parseUserAgent } from "../lib/utils/userAgent";
   import type { Session } from "../lib/api/types/sessions";
   import type { NotifyLevel } from "../lib/api/types/auth";
 
@@ -289,13 +291,17 @@
     >
       <ul class="item-list">
         {#each sessions as session (session.id)}
+          {@const ua = parseUserAgent(session.userAgent)}
           <li>
             <div class="session-row">
               <div class="item-main">
-                <span class="item-title"
-                  >{session.ip || "Unknown IP"} · {session.userAgent ||
-                    "Unknown device"}</span
+                <span
+                  class="item-title session-ident"
+                  title={session.userAgent || undefined}
                 >
+                  <span class="icon"><DeviceIcon device={ua.device} /></span>
+                  {ua.label} · {session.ip || "Unknown IP"}
+                </span>
                 <span class="item-sub muted">
                   Signed in {formatDate(session.createdAt)} · expires {formatDate(
                     session.expiresAt,
@@ -402,6 +408,18 @@
     gap: var(--space-3);
     padding: var(--space-2) 0;
     border-bottom: 1px solid var(--color-border);
+  }
+
+  .session-ident {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .session-ident .icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--color-text-muted);
   }
 
   li:last-child .session-row {

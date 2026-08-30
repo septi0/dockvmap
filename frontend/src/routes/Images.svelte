@@ -15,6 +15,7 @@
   import SearchInput from "../lib/components/SearchInput.svelte";
   import Button from "../lib/components/Button.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
+  import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
   import { listImages, IMAGES_PAGE_SIZE } from "../lib/api/images";
   import { triggerTagRefresh } from "../lib/api/worker";
   import { toast } from "../lib/services/toast";
@@ -189,13 +190,16 @@
       <h1>Virtual Images</h1>
     </div>
     <div class="header-actions">
+      {#if tagRefreshRunning}
+        <RefreshingIndicator text="Checking all images for tag changes…" />
+      {/if}
       <Button
         variant="secondary"
         onclick={openRefreshAll}
         disabled={tagRefreshRunning || refreshingAll}
       >
         <RefreshCw size={16} strokeWidth={2} />
-        {tagRefreshRunning ? "Checking tags…" : "Refresh all tags"}
+        Refresh all tags
       </Button>
       <Button onclick={() => push("/images/new")}>
         <Plus size={16} strokeWidth={2} />
@@ -322,6 +326,7 @@
 <style>
   .header-actions {
     display: flex;
+    align-items: center;
     gap: var(--space-2);
   }
 
