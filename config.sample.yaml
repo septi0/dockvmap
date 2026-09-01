@@ -6,8 +6,9 @@ tags_check_interval: 24h
 tag_discovery_ttl: 1h # how long a repository's tag list is cached before it's refreshed
 session_lifetime: 168h
 # secure_cookies: true when tls.enabled is true, false otherwise
-web_server_listen: ":8080"
-proxy_server_listen: ":5000"
+web_server_http_listen: ":8080" # web UI/API bind when tls.enabled is false
+web_server_https_listen: ":8443" # web UI/API bind when tls.enabled is true
+proxy_server_listen: ":5000" # registry proxy bind; serves HTTPS in place when tls.enabled is true
 # proxy_public_host: "" # hostname (optionally host:port) clients use to pull images; defaults to the web UI's address if unset
 trusted_proxies: [] # CIDRs/IPs of reverse proxies you trust for the real client IP (must append to X-Forwarded-For, not pass it through). Use ["gateway"] to trust the container's default gateway (Docker bridge + published port)
 tls:

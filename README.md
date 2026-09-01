@@ -65,40 +65,46 @@ One binary, one SQLite database, three things running inside it:
 
 ## Quick start
 
-Requires Go 1.25+ and Node.js for the frontend build.
+The recommended way to run DockVMap is the published Docker image. It bundles the binary with the frontend embedded, and needs only a persistent `/data` volume (SQLite database, credential key, blob cache) and the two ports: `5000` for the registry proxy, `8080` for the web UI.
+
+```bash
+docker run -d --name dockvmap \
+  -v dockvmap-data:/data \
+  -p 5000:5000 -p 8080:8080 \
+  ghcr.io/septi0/dockvmap:latest
+```
+
+Open the web UI at `http://localhost:8080`. The first visit walks you through creating the initial admin account. Point Docker clients at the proxy on `:5000`.
+
+Pass any config as `DOCKVMAP_*` environment variables (`-e DOCKVMAP_TRUSTED_PROXIES=gateway`, etc.; see [Configuration](#configuration) for the keys). A credential encryption key is generated and persisted to the volume on first run, so registries that require auth work with no upfront setup.
+
+The multi-arch image is published to `ghcr.io/septi0/dockvmap` on every `v*.*.*` tag by `.github/workflows/docker-image.yml`.
+
+### Docker Compose
+
+`compose.sample.yaml` is a documented starting point; copy it to `compose.yaml`, adjust, and `docker compose up -d`. It runs the same published image, persists `/data` to a named volume, publishes both ports, and adds a healthcheck and `restart: unless-stopped`.
+
+When you put a reverse proxy in front (terminating TLS, forwarding to `:8080`), set `DOCKVMAP_TRUSTED_PROXIES` for your topology (`gateway` if the proxy reaches dockvmap through the published port, or the proxy's address if it shares a Docker network), and stop publishing `:8080` to the host, or an attacker can bypass the proxy and forge `X-Forwarded-For` (see the `trusted_proxies` notes below).
+
+### Build from source
+
+A fully supported way to run DockVMap without Docker. Requires Go 1.25+ and Node.js for the frontend build.
 
 ```bash
 git clone <this-repo>
 cd dockvmap
 make build          # builds the frontend, embeds it, builds bin/dockvmap
 cp config.sample.yaml data/config.yaml
-```
-
-Generate a credential encryption key (needed before you can add any registry that requires auth):
-
-```bash
-openssl rand -base64 32
-```
-
-Put the result in `credential_encryption_key` in your config, then run:
-
-```bash
 ./bin/dockvmap -config data/config.yaml
 ```
 
-Open the web UI (`web_server_listen`, `:8080` by default). The first visit walks you through creating the initial admin account. Point Docker clients at the proxy port (`proxy_server_listen`, `:5000` by default).
+Running with no config file at all is fine too — it falls back to `DOCKVMAP_*` env vars and defaults. Either way, a credential encryption key is generated and persisted at `<data-path>/credential_encryption.key` on first run; set `credential_encryption_key` yourself only if you want to manage it out of band.
 
 > A plain `go build ./...` will fail on a fresh checkout: the web server embeds `frontend/dist` at compile time, and that directory isn't committed. `make build` (or `make build-frontend` once) handles it.
 
-### Docker Compose
-
-`compose.sample.yaml` is a documented starting point; copy it to `compose.yaml`, adjust, and `docker compose up -d`. It pulls the published multi-arch image from `ghcr.io/septi0/dockvmap` (built and pushed on every `v*.*.*` tag by `.github/workflows/docker-image.yml`), persists `/data` to a named volume, and publishes both ports (`:5000` proxy, `:8080` web UI) so it works standalone; the first visit to the web UI creates the admin account.
-
-When you put a reverse proxy in front (terminating TLS, forwarding to `:8080`), set `DOCKVMAP_TRUSTED_PROXIES` for your topology (`gateway` if the proxy reaches dockvmap through the published port, or the proxy's address if it shares a Docker network), and stop publishing `:8080` to the host, or an attacker can bypass the proxy and forge `X-Forwarded-For` (see the `trusted_proxies` notes below).
-
 ## Configuration
 
-Settings can come from a YAML file (`config.sample.yaml` is a documented starting point), from `DOCKVMAP_*` environment variables, or both (the config file is entirely optional). Precedence per setting is **env var > config file > built-in default**. Env var names mirror the YAML keys, uppercased with underscores, prefixed `DOCKVMAP_` (e.g. `web_server_listen` → `DOCKVMAP_WEB_SERVER_LISTEN`, `smtp.host` → `DOCKVMAP_SMTP_HOST`); comma-separate list values (`DOCKVMAP_TRUSTED_PROXIES=10.0.0.0/8,192.168.1.1`). Omitting `-config` entirely is fine (runs on env vars/defaults); pointing it at a path that doesn't exist is a startup error, not a silent fallback.
+Settings can come from a YAML file (`config.sample.yaml` is a documented starting point), from `DOCKVMAP_*` environment variables, or both (the config file is entirely optional). Precedence per setting is **env var > config file > built-in default**. Env var names mirror the YAML keys, uppercased with underscores, prefixed `DOCKVMAP_` (e.g. `proxy_server_listen` → `DOCKVMAP_PROXY_SERVER_LISTEN`, `smtp.host` → `DOCKVMAP_SMTP_HOST`); comma-separate list values (`DOCKVMAP_TRUSTED_PROXIES=10.0.0.0/8,192.168.1.1`). Omitting `-config` entirely is fine (runs on env vars/defaults); pointing it at a path that doesn't exist is a startup error, not a silent fallback.
 
 One setting sits outside this system, as a CLI flag instead of a config key: `-data-path` (see CLI below). Where the database and credential key live is a deployment decision fixed at startup, not something meant to be layered through env/file/default like a behavioral setting.
 
@@ -115,7 +121,7 @@ Key options:
 | `session_lifetime` | Web UI session duration |
 | `secure_cookies` | Set `true` once served over HTTPS; otherwise the session cookie is sent unencrypted. Defaults to `true` when `tls.enabled` is true, `false` otherwise |
 | `trusted_proxies` | CIDRs/IPs of reverse proxies you trust to report the real client IP. Include `gateway` (e.g. `DOCKVMAP_TRUSTED_PROXIES=gateway` or `trusted_proxies: ["gateway", "10.20.45.23"]`) to resolve the container's IPv4 default gateway at startup: the address Docker SNATs a proxy's traffic to when reaching a published port |
-| `tls` | Serve both the proxy and web servers directly over HTTPS using `cert_file`/`key_file`. If enabled but either file path is blank, TLS is silently disabled at startup |
+| `tls` | Serve both the proxy and web servers directly over HTTPS using `cert_file`/`key_file`. If enabled but either file path is blank, TLS is silently disabled at startup. The web server binds `web_server_https_listen` (`:8443`) when on and `web_server_http_listen` (`:8080`) when off; the proxy uses `proxy_server_listen` either way |
 | `login_rate_limit` | Failed-login lockout: attempts, window, IPs allowed to bypass it |
 | `blob_cache` | Optional on-disk cache for manifests/blobs, always stored at `<data_path>/cache` |
 | `smtp` / `webhooks` | Notification channels for tag changes |
