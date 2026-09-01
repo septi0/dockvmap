@@ -126,7 +126,7 @@ func newWebServer(deps web.Dependencies, tlsConfig *tls.Config) (*http.Server, e
 	}
 
 	return &http.Server{
-		Addr:              deps.Config.WebServerListen,
+		Addr:              deps.Config.WebServerListenAddr(),
 		Handler:           httpmw.Recover(handler),
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,

@@ -49,7 +49,7 @@ WORKDIR ${DATA_DIR}
 
 VOLUME ["${DATA_DIR}"]
 
-EXPOSE 8080 5000
+EXPOSE 8080 8443 5000
 
 ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
 

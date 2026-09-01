@@ -12,6 +12,9 @@ services:
     volumes:
       - dockvmap-data:/data
 
+    # with built-in TLS (DOCKVMAP_TLS_ENABLED: "true") the web UI moves to :8443;
+    # publish "8443:8443" instead of "8080:8080" and point the healthcheck at
+    # https://localhost:8443/health (wget --no-check-certificate for a self-signed cert)
     ports:
       - "5000:5000"
       - "8080:8080"
