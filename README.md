@@ -237,9 +237,11 @@ To restore: stop DockVMap, put the snapshot at `<data-path>/dockvmap.db`, restor
 ```bash
 make help    # list all targets
 make dev     # backend (go run) + frontend (vite dev server) together
+make dev CONFIG=path/to/config.yaml   # ... against an alternative config file
 make test    # go test ./...
 make check   # frontend svelte-check + tsc
 make lint    # gofmt + go vet (+ golangci-lint if installed)
+make verify  # lint + test + check, in one go
 ```
 
 ## License
