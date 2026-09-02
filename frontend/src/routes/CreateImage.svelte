@@ -4,6 +4,7 @@
   import PackagePlus from "@lucide/svelte/icons/package-plus";
   import Check from "@lucide/svelte/icons/check";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+  import Plus from "@lucide/svelte/icons/plus";
   import LoaderCircle from "@lucide/svelte/icons/loader-circle";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
@@ -251,6 +252,13 @@
       empty={registries.length === 0}
       emptyMessage="No registries yet. Add one before creating a virtual image."
     >
+      {#snippet emptyAction()}
+        <Button onclick={() => push("/registries")}>
+          <Plus size={16} strokeWidth={2} />
+          Add registry
+        </Button>
+      {/snippet}
+
       <div class="stepper">
         <div class="stepper-step">
           <span

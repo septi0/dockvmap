@@ -21,13 +21,21 @@ export function formatBytes(bytes: number): string {
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`
 }
 
-export function formatRelativeTime(value: string | undefined, fallback = '-'): string {
-  if (!value) return fallback
+export function formatRelativeTime(
+  value: string | number | undefined,
+  fallback = '-',
+  reference = Date.now(),
+): string {
+  if (value === undefined || value === '') return fallback
 
-  const diffMs = new Date(value).getTime() - Date.now()
+  const time = new Date(value).getTime()
+
+  if (Number.isNaN(time)) return fallback
+
+  const diffMs = time - reference
   const abs = Math.abs(diffMs)
 
-  if (abs < 60_000) return diffMs >= 0 ? 'any moment' : 'just now'
+  if (abs < 60_000) return diffMs > 0 ? 'any moment' : 'just now'
 
   const mins = Math.round(abs / 60_000)
   const hours = Math.round(abs / 3_600_000)
