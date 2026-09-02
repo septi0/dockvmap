@@ -5,7 +5,7 @@ services:
     image: ghcr.io/septi0/dockvmap:latest
     restart: unless-stopped
 
-    # add config as DOCKVMAP_<KEY> vars here (see config.sample.yaml for keys);
+    # add config as DOCKVMAP_<KEY> vars here (see the README "Configuration" section for keys);
     # e.g. behind a reverse proxy:  DOCKVMAP_TRUSTED_PROXIES: gateway
     environment: {}
 

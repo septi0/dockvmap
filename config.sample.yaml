@@ -1,38 +1,20 @@
-logs_path:
-tag_filters_path: # leave blank to use the built-in default filters
-credential_encryption_key: "" # leave blank to auto-generate and persist a key at <data-path>/credential_encryption.key
-virtual_tag: current
-tags_check_interval: 24h
-tag_discovery_ttl: 1h # how long a repository's tag list is cached before it's refreshed
-session_lifetime: 168h
-# secure_cookies: true when tls.enabled is true, false otherwise
-web_server_http_listen: ":8080" # web UI/API bind when tls.enabled is false
-web_server_https_listen: ":8443" # web UI/API bind when tls.enabled is true
-proxy_server_listen: ":5000" # registry proxy bind; serves HTTPS in place when tls.enabled is true
-# proxy_public_host: "" # hostname (optionally host:port) clients use to pull images; defaults to the web UI's address if unset
-trusted_proxies: [] # CIDRs/IPs of reverse proxies you trust for the real client IP (must append to X-Forwarded-For, not pass it through). Use ["gateway"] to trust the container's default gateway (Docker bridge + published port)
-tls:
-  enabled: false
-  cert_file: ""
-  key_file: ""
-login_rate_limit:
-  enabled: true
-  max_attempts: 5
-  window: 15m
-  bypass_ips: []
-blob_cache:
-  enabled: true
-  lifetime: 24h
-  cleanup_interval: 1h
-  max_size: 10GB
-smtp:
-  enabled: false
-  host: ""
-  port: 587
-  username: ""
-  password: ""
-  from: ""
-  tls: true
-webhooks: []
-proxy_auth:
-  enabled: false
+# Minimal example. Every setting is optional and has a built-in default.
+# Full reference: README, "Configuration" section.
+
+# CIDRs/IPs of reverse proxies allowed to report the real client IP.
+# Use ["gateway"] to trust the container's default gateway (Docker bridge + published port).
+trusted_proxies: []
+
+# Terminate HTTPS in DockVMap instead of at a reverse proxy.
+# tls:
+#   enabled: true
+#   cert_file: /etc/dockvmap/tls/cert.pem
+#   key_file: /etc/dockvmap/tls/key.pem
+
+# Email notifications when a tracked image's tags change.
+# smtp:
+#   enabled: true
+#   host: smtp.example.com
+#   from: dockvmap@example.com
+#   username: user
+#   password: pass
