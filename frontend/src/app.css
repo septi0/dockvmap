@@ -431,11 +431,6 @@ select.filter-control {
   color: var(--color-warning);
 }
 
-.badge-danger {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
 .muted {
   color: var(--color-text-muted);
 }
@@ -520,69 +515,6 @@ select.filter-control {
 
 .item-list li:last-child .item-row {
   border-bottom: none;
-}
-
-.item-time {
-  flex-shrink: 0;
-  font-size: 0.8125rem;
-}
-
-/* --- Card header + stat tiles (dashboard cards, detail panels) ---------- */
-
-.card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-4);
-}
-
-.card-head-title {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.card-head .card-head-title h2 {
-  margin: 0;
-}
-
-.card-head-title svg {
-  color: var(--color-text-muted);
-}
-
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: var(--space-5) var(--space-6);
-}
-
-.stat-tile {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.stat-value {
-  font-size: 1.75rem;
-  font-weight: 600;
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-}
-
-.stat-value.danger {
-  color: var(--color-danger);
-}
-
-.stat-label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-.stat-caption {
-  margin: var(--space-5) 0 0;
-  font-size: 0.8125rem;
 }
 
 .tag-value {

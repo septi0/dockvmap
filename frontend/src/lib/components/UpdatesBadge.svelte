@@ -1,29 +1,29 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import { link } from 'svelte-spa-router'
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import Check from '@lucide/svelte/icons/check'
   import { updatesCount } from '../services/updatesCount'
-  import { createPoller } from '../utils/poller'
 
-  const POLL_INTERVAL_MS = 60000
+  onMount(() => updatesCount.start())
 
-  const poller = createPoller(async () => {
-    await updatesCount.refresh()
-    return true
-  }, POLL_INTERVAL_MS)
-
-  $effect(() => {
-    updatesCount.refresh()
-    poller.start()
-    return () => poller.stop()
-  })
+  let count = $derived($updatesCount)
 </script>
 
-<a href="/images?status=updateAvailable" use:link class="updates" class:updates-warning={$updatesCount > 0}>
-  {#if $updatesCount > 0}
+<a
+  href="/images?status=updateAvailable"
+  use:link
+  class="updates"
+  class:updates-warning={count !== null && count > 0}
+  class:updates-unknown={count === null}
+>
+  {#if count === null}
     <span class="icon"><TriangleAlert size={14} strokeWidth={1.75} /></span>
-    <span class="value">{$updatesCount}</span>
-    <span class="label">{$updatesCount === 1 ? 'update available' : 'updates available'}</span>
+    <span class="label">Updates unknown</span>
+  {:else if count > 0}
+    <span class="icon"><TriangleAlert size={14} strokeWidth={1.75} /></span>
+    <span class="value">{count}</span>
+    <span class="label">{count === 1 ? 'update available' : 'updates available'}</span>
   {:else}
     <span class="icon"><Check size={14} strokeWidth={1.75} /></span>
     <span class="label">All caught up</span>
@@ -65,6 +65,10 @@
   .label {
     font-size: 0.75rem;
     color: var(--color-text-muted);
+  }
+
+  .updates-unknown .label {
+    color: var(--color-text-faint);
   }
 
   .updates-warning {

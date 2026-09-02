@@ -2,7 +2,7 @@
   import { push } from "svelte-spa-router";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { auth } from "../lib/services/auth";
-  import { ApiError } from "../lib/api/client";
+  import { errorMessage } from "../lib/api/client";
   import AuthCard from "../lib/components/AuthCard.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import Field from "../lib/components/Field.svelte";
@@ -30,8 +30,7 @@
       await auth.bootstrap(username.trim(), email.trim(), password);
       push("/");
     } catch (err) {
-      error =
-        err instanceof ApiError ? err.message : "Failed to create account";
+      error = errorMessage(err, "Failed to create account");
     } finally {
       submitting = false;
     }

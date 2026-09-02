@@ -6,7 +6,7 @@
   import Field from "./Field.svelte";
   import Button from "./Button.svelte";
   import { updatePassword } from "../api/users";
-  import { ApiError } from "../api/client";
+  import { errorMessage } from "../api/client";
 
   let { open, onClose }: { open: boolean; onClose: () => void } = $props();
 
@@ -46,8 +46,7 @@
       newPassword = "";
       confirmPassword = "";
     } catch (err) {
-      error =
-        err instanceof ApiError ? err.message : "Failed to update password";
+      error = errorMessage(err, "Failed to update password");
     } finally {
       submitting = false;
     }

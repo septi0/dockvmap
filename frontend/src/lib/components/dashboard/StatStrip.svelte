@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import Boxes from "@lucide/svelte/icons/boxes";
   import CircleArrowUp from "@lucide/svelte/icons/circle-arrow-up";
   import CircleX from "@lucide/svelte/icons/circle-x";
@@ -7,64 +6,52 @@
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import StatTile from "./StatTile.svelte";
   import BusyOverlay from "./BusyOverlay.svelte";
-  import { dashboardSummary } from "../../services/dashboardSummary";
-  import { proxyMetrics } from "../../services/proxyMetrics";
-  import { tagRefreshStatus } from "../../services/tagRefreshStatus";
-  import { dashboardRefresh } from "../../services/dashboardRefresh";
-  import { formatDate, formatNumber, formatRelativeTime } from "../../utils/format";
+  import {
+    formatDate,
+    formatNumber,
+    formatRelativeTime,
+  } from "../../utils/format";
+  import type { DashboardSummary } from "../../api/types/dashboard";
+  import type { ProxyMetrics } from "../../api/types/metrics";
+  import type { DashboardSectionView } from "../../stores/dashboard";
+  import type { TagRefreshStatusState } from "../../stores/tagRefreshStatus";
 
-  const CARD_ID = "stat-strip";
+  let {
+    summary,
+    metrics,
+    tagRefresh,
+  }: {
+    summary: DashboardSectionView<DashboardSummary>;
+    metrics: DashboardSectionView<ProxyMetrics>;
+    tagRefresh: TagRefreshStatusState;
+  } = $props();
 
-  let loaded = $state(false);
-  let fetching = $state(false);
+  let counts = $derived(summary.data);
+  let loading = $derived(summary.loading);
+  let busy = $derived(summary.busy);
 
-  onMount(() => tagRefreshStatus.watch());
-
-  let refreshNonce = $derived($dashboardRefresh.nonce);
-
-  $effect(() => {
-    refreshNonce;
-    void load();
-  });
-
-  async function load() {
-    dashboardRefresh.begin(CARD_ID);
-    fetching = true;
-    let ok = false;
-
-    try {
-      const [summaryOk, metricsOk] = await Promise.all([
-        dashboardSummary.load(),
-        proxyMetrics.load(),
-        tagRefreshStatus.refresh(),
-      ]);
-
-      ok = summaryOk && metricsOk;
-    } finally {
-      fetching = false;
-      loaded = true;
-      dashboardRefresh.end(CARD_ID, ok);
-    }
-  }
-
-  let summary = $derived($dashboardSummary.data);
-  let metrics = $derived($proxyMetrics.data);
-  let refresh = $derived($tagRefreshStatus.data);
-
-  let skeleton = $derived(fetching && !loaded);
-  let busy = $derived(fetching && loaded);
+  let check = $derived(tagRefresh.unavailable ? null : tagRefresh.data);
 
   let refreshOverdue = $derived(
-    !!refresh &&
-      !refresh.running &&
-      !!refresh.nextDue &&
-      new Date(refresh.nextDue).getTime() <= Date.now(),
+    !!check &&
+      !check.running &&
+      !!check.nextDue &&
+      new Date(check.nextDue).getTime() <= Date.now(),
   );
 
   let lastCheck = $derived.by(() => {
-    if (!refresh) return { value: "—", tone: "neutral" as const, caption: undefined };
+    if (tagRefresh.unavailable) {
+      return {
+        value: "Unknown",
+        tone: "neutral" as const,
+        caption: "check status unavailable",
+      };
+    }
 
-    if (!refresh.enabled) {
+    if (!check)
+      return { value: "—", tone: "neutral" as const, caption: undefined };
+
+    if (!check.enabled) {
       return {
         value: "Off",
         tone: "neutral" as const,
@@ -72,20 +59,24 @@
       };
     }
 
-    if (refresh.running) {
-      return { value: "Running", tone: "accent" as const, caption: "checking now" };
+    if (check.running) {
+      return {
+        value: "Running",
+        tone: "accent" as const,
+        caption: "checking now",
+      };
     }
 
-    const last = refresh.lastRun
-      ? `last ${formatRelativeTime(refresh.lastRun)}`
+    const last = check.lastRun
+      ? `last ${formatRelativeTime(check.lastRun)}`
       : "never run";
 
     if (refreshOverdue) {
       return { value: "Overdue", tone: "warning" as const, caption: last };
     }
 
-    const next = refresh.nextDue
-      ? `next ${formatRelativeTime(refresh.nextDue)}`
+    const next = check.nextDue
+      ? `next ${formatRelativeTime(check.nextDue)}`
       : null;
 
     return {
@@ -96,17 +87,17 @@
   });
 
   let checkTimes = $derived.by(() => {
-    if (!refresh || !refresh.enabled) return undefined;
+    if (!check || !check.enabled) return undefined;
 
     const parts: string[] = [];
 
-    if (refresh.lastRun) parts.push(`Last run: ${formatDate(refresh.lastRun)}`);
-    if (refresh.nextDue) parts.push(`Next due: ${formatDate(refresh.nextDue)}`);
+    if (check.lastRun) parts.push(`Last run: ${formatDate(check.lastRun)}`);
+    if (check.nextDue) parts.push(`Next due: ${formatDate(check.nextDue)}`);
 
     return parts.length > 0 ? parts.join("\n") : undefined;
   });
 
-  let week = $derived(metrics?.windows.last7d ?? null);
+  let week = $derived(metrics.data?.windows.last7d ?? null);
 </script>
 
 <div class="stat-strip-wrap">
@@ -115,29 +106,29 @@
   <div class="stat-strip" class:is-busy={busy}>
     <StatTile
       label="Tracked images"
-      value={summary ? formatNumber(summary.images.total) : "—"}
+      value={counts ? formatNumber(counts.images.total) : "—"}
       href="/images"
-      loading={skeleton}
+      {loading}
     >
       {#snippet icon()}<Boxes size={13} strokeWidth={1.75} />{/snippet}
     </StatTile>
 
     <StatTile
       label="Updates available"
-      value={summary ? formatNumber(summary.images.updateAvailable) : "—"}
-      tone={summary && summary.images.updateAvailable > 0 ? "accent" : "neutral"}
+      value={counts ? formatNumber(counts.images.updateAvailable) : "—"}
+      tone={counts && counts.images.updateAvailable > 0 ? "accent" : "neutral"}
       href="/images?status=updateAvailable"
-      loading={skeleton}
+      {loading}
     >
       {#snippet icon()}<CircleArrowUp size={13} strokeWidth={1.75} />{/snippet}
     </StatTile>
 
     <StatTile
       label="Failed checks"
-      value={summary ? formatNumber(summary.images.failedCheck) : "—"}
-      tone={summary && summary.images.failedCheck > 0 ? "danger" : "neutral"}
+      value={counts ? formatNumber(counts.images.failedCheck) : "—"}
+      tone={counts && counts.images.failedCheck > 0 ? "danger" : "neutral"}
       href="/images?status=failedCheck"
-      loading={skeleton}
+      {loading}
     >
       {#snippet icon()}<CircleX size={13} strokeWidth={1.75} />{/snippet}
     </StatTile>
@@ -149,7 +140,7 @@
         ? `${formatNumber(week.upstreamFailures)} upstream failures`
         : undefined}
       captionTone={week && week.upstreamFailures > 0 ? "danger" : "muted"}
-      loading={skeleton}
+      {loading}
     >
       {#snippet icon()}<ArrowLeftRight size={13} strokeWidth={1.75} />{/snippet}
     </StatTile>
@@ -161,7 +152,7 @@
       valueStyle="badge"
       caption={lastCheck.caption}
       title={checkTimes}
-      loading={skeleton}
+      {loading}
     >
       {#snippet icon()}<RefreshCw size={13} strokeWidth={1.75} />{/snippet}
     </StatTile>

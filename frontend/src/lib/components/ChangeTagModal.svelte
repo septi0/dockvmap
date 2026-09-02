@@ -11,7 +11,7 @@
     updateImageTag,
     markImageTagsAsSeen,
   } from "../api/images";
-  import { ApiError } from "../api/client";
+  import { errorMessage } from "../api/client";
   import type { TagGroup } from "../api/types/images";
 
   let {
@@ -74,7 +74,7 @@
       tagGroups = result.tagGroups;
     } catch (err) {
       if (requestId !== loadToken) return;
-      tagsError = err instanceof ApiError ? err.message : "Failed to load tags";
+      tagsError = errorMessage(err, "Failed to load tags");
     } finally {
       if (requestId === loadToken) loadingTags = false;
     }
@@ -130,8 +130,7 @@
       onTagUpdated(selectedTag);
       onClose();
     } catch (err) {
-      updateError =
-        err instanceof ApiError ? err.message : "Failed to update tag";
+      updateError = errorMessage(err, "Failed to update tag");
     } finally {
       updating = false;
     }

@@ -3,31 +3,27 @@
   import { push } from "svelte-spa-router";
   import PackagePlus from "@lucide/svelte/icons/package-plus";
   import Check from "@lucide/svelte/icons/check";
-  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Plus from "@lucide/svelte/icons/plus";
-  import LoaderCircle from "@lucide/svelte/icons/loader-circle";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
-  import Field from "../lib/components/Field.svelte";
-  import Select from "../lib/components/Select.svelte";
   import Button from "../lib/components/Button.svelte";
-  import TagFamilyPicker from "../lib/components/TagFamilyPicker.svelte";
+  import SourceStep from "../lib/components/createImage/SourceStep.svelte";
+  import TagSelectionStep from "../lib/components/createImage/TagSelectionStep.svelte";
   import { listRegistries } from "../lib/api/registries";
-  import { inspectRepository, getDiscovery, createImage } from "../lib/api/images";
-  import { ApiError } from "../lib/api/client";
+  import { createImage } from "../lib/api/images";
+  import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
-  import { createPoller } from "../lib/utils/poller";
+  import { createTagDiscovery } from "../lib/services/tagDiscovery";
   import type { Registry } from "../lib/api/types/registries";
   import type { TagGroup, DiscoveryResult } from "../lib/api/types/images";
-
-  const DISCOVERY_POLL_INTERVAL_MS = 1000;
-  const MAX_CONSECUTIVE_POLL_ERRORS = 3;
 
   const STEP_LABELS: Record<1 | 2, string> = {
     1: "Source",
     2: "Choose a starting tag",
   };
+
+  const discovery = createTagDiscovery();
 
   let registries = $state<Registry[]>([]);
   let loadingRegistries = $state(true);
@@ -38,16 +34,6 @@
   let name = $state("");
   let registryId = $state("");
   let repository = $state("");
-  let inspecting = $state(false);
-  let discovering = $state(false);
-  let inspectError = $state<string | null>(null);
-
-  let discoveryId: number | null = null;
-  let consecutivePollErrors = 0;
-
-  let elapsedSeconds = $state(0);
-  let elapsedTimer: ReturnType<typeof setInterval> | null = null;
-  let tagsSeenSoFar = $state(0);
 
   let tagGroups = $state<TagGroup[]>([]);
   let tagCount = $state(0);
@@ -63,14 +49,15 @@
     try {
       registries = await listRegistries();
     } catch (err) {
-      registriesError =
-        err instanceof ApiError ? err.message : "Failed to load registries";
+      registriesError = errorMessage(err, "Failed to load registries");
     } finally {
       loadingRegistries = false;
     }
   }
 
   onMount(loadRegistries);
+  onMount(() => discovery.onResolved(applyDiscovery));
+  onDestroy(discovery.destroy);
 
   const registryOptions = $derived(
     registries.map((registry) => ({
@@ -82,43 +69,7 @@
     registries.find((r) => r.id === Number(registryId)),
   );
 
-  const formattedElapsed = $derived(
-    `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, "0")}`,
-  );
-
-  const discoverySubtitle = $derived(
-    tagsSeenSoFar > 0
-      ? `${tagsSeenSoFar.toLocaleString()} tags discovered so far…`
-      : `Fetching tags from ${selectedRegistry?.registry}/${repository}…`,
-  );
-
-  const showLeavePageHint = $derived(elapsedSeconds >= 15);
-
-  function startElapsedTimer() {
-    stopElapsedTimer();
-    elapsedSeconds = 0;
-    tagsSeenSoFar = 0;
-    elapsedTimer = setInterval(() => {
-      elapsedSeconds++;
-    }, 1000);
-  }
-
-  function stopElapsedTimer() {
-    if (elapsedTimer) {
-      clearInterval(elapsedTimer);
-      elapsedTimer = null;
-    }
-  }
-
   function applyDiscovery(result: DiscoveryResult) {
-    discovering = false;
-    stopElapsedTimer();
-
-    if (result.status === "failed") {
-      inspectError = result.error || "Tag discovery failed";
-      return;
-    }
-
     tagGroups = result.tagGroups ?? [];
     tagCount = result.tagCount ?? 0;
     ignoredCount = result.ignoredCount ?? 0;
@@ -126,81 +77,19 @@
     step = 2;
   }
 
-  const discoveryPoll = createPoller(async () => {
-    if (discoveryId === null) return false;
-
-    try {
-      const result = await getDiscovery(discoveryId);
-      consecutivePollErrors = 0;
-
-      if (result.status === "running") {
-        tagsSeenSoFar = result.tagsSeen ?? tagsSeenSoFar;
-        return true;
-      }
-
-      applyDiscovery(result);
-      return false;
-    } catch (err) {
-      consecutivePollErrors += 1;
-      if (consecutivePollErrors < MAX_CONSECUTIVE_POLL_ERRORS) return true;
-
-      discovering = false;
-      stopElapsedTimer();
-      inspectError =
-        err instanceof ApiError ? err.message : "Failed to check discovery status";
-      return false;
-    }
-  }, DISCOVERY_POLL_INTERVAL_MS);
-
-  async function handleInspect(event: SubmitEvent) {
+  function handleInspect(event: SubmitEvent) {
     event.preventDefault();
 
     if (!selectedRegistry) return;
 
-    discoveryPoll.stop();
-    inspectError = null;
-    inspecting = true;
-    discovering = false;
-
-    try {
-      const result = await inspectRepository({
-        registry: selectedRegistry.registry,
-        repository: repository.trim(),
-      });
-
-      if (result.status === "running") {
-        discovering = true;
-        startElapsedTimer();
-        tagsSeenSoFar = result.tagsSeen ?? 0;
-        discoveryId = result.id;
-        consecutivePollErrors = 0;
-        discoveryPoll.start();
-      } else {
-        applyDiscovery(result);
-      }
-    } catch (err) {
-      inspectError =
-        err instanceof ApiError ? err.message : "Failed to inspect repository";
-    } finally {
-      inspecting = false;
-    }
+    void discovery.start({
+      registry: selectedRegistry.registry,
+      repository: repository.trim(),
+    });
   }
-
-  function cancelDiscovery() {
-    discoveryPoll.stop();
-    stopElapsedTimer();
-    discovering = false;
-  }
-
-  onDestroy(() => {
-    discoveryPoll.stop();
-    stopElapsedTimer();
-  });
 
   function backToSource() {
-    discoveryPoll.stop();
-    stopElapsedTimer();
-    discovering = false;
+    discovery.cancel();
     step = 1;
     createError = null;
   }
@@ -221,10 +110,7 @@
       toast.success(`Virtual image "${name.trim()}" created.`);
       push("/images");
     } catch (err) {
-      createError =
-        err instanceof ApiError
-          ? err.message
-          : "Failed to create virtual image";
+      createError = errorMessage(err, "Failed to create virtual image");
     } finally {
       creating = false;
     }
@@ -287,114 +173,29 @@
 
       <div class="card wizard-card">
         {#if step === 1}
-          <form onsubmit={handleInspect}>
-            <Field
-              label="Virtual image name"
-              bind:value={name}
-              placeholder="myimage"
-              required
-              disabled={inspecting || discovering}
-            />
-            <Select
-              label="Registry"
-              bind:value={registryId}
-              options={registryOptions}
-              placeholder="Select a registry…"
-              required
-              disabled={inspecting || discovering}
-            />
-            <Field
-              label="Repository"
-              bind:value={repository}
-              placeholder="library/nginx"
-              required
-              disabled={inspecting || discovering}
-            />
-
-            {#if discovering}
-              <div class="discovery-panel" role="status">
-                <span class="discovery-icon">
-                  <LoaderCircle size={18} strokeWidth={2.5} />
-                </span>
-                <div class="discovery-body">
-                  <p class="discovery-title">
-                    Discovering tags…
-                    <span class="discovery-elapsed">{formattedElapsed}</span>
-                  </p>
-                  <p class="discovery-subtitle">{discoverySubtitle}</p>
-                  {#if showLeavePageHint}
-                    <p class="discovery-hint">
-                      It's safe to leave this page: discovery keeps running in
-                      the background.
-                    </p>
-                  {/if}
-                </div>
-                <button
-                  type="button"
-                  class="link discovery-cancel"
-                  onclick={cancelDiscovery}
-                >
-                  Cancel
-                </button>
-              </div>
-            {/if}
-
-            {#if inspectError}
-              <p class="error">
-                <TriangleAlert size={16} strokeWidth={2} />
-                {inspectError}
-              </p>
-            {/if}
-
-            {#if !discovering}
-              <Button type="submit" disabled={inspecting}>
-                {inspecting ? "Checking…" : "Check repository"}
-              </Button>
-            {/if}
-          </form>
-        {:else}
-          <p class="recap">
-            <span class="recap-text">
-              <strong>{selectedRegistry?.registry}</strong>/{repository}
-            </span>
-            <button type="button" class="link" onclick={backToSource}
-              >Edit</button
-            >
-          </p>
-
-          <p class="discovery-summary">
-            {tagCount}
-            {tagCount === 1 ? "tag" : "tags"} found
-            {#if ignoredCount > 0}
-              &middot; {ignoredCount} filtered out
-            {/if}
-          </p>
-
-          <TagFamilyPicker
-            {tagGroups}
-            bind:selectedTag
-            emptyMessage="No tags were found for this repository."
+          <SourceStep
+            bind:name
+            bind:registryId
+            bind:repository
+            {registryOptions}
+            registryLabel={selectedRegistry?.registry}
+            discovery={$discovery}
+            onSubmit={handleInspect}
+            onCancelDiscovery={discovery.cancel}
           />
-
-          {#if createError}
-            <p class="error tag-error">
-              <TriangleAlert size={16} strokeWidth={2} />
-              {createError}
-            </p>
-          {/if}
-
-          <div class="create-bar">
-            <span class="selection">
-              {#if selectedTag}
-                Selected tag: <span class="tag-value">{selectedTag}</span>
-              {:else}
-                <span class="muted">Pick a tag above to continue</span>
-              {/if}
-            </span>
-            <Button disabled={!selectedTag || creating} onclick={handleCreate}>
-              {creating ? "Creating…" : "Create virtual image"}
-            </Button>
-          </div>
+        {:else}
+          <TagSelectionStep
+            registryLabel={selectedRegistry?.registry}
+            {repository}
+            {tagGroups}
+            {tagCount}
+            {ignoredCount}
+            bind:selectedTag
+            {creating}
+            error={createError}
+            onBack={backToSource}
+            onCreate={handleCreate}
+          />
         {/if}
       </div>
     </AsyncState>
@@ -471,116 +272,5 @@
 
   .wizard-card {
     padding: var(--space-6);
-  }
-
-  .discovery-panel {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-3);
-    margin: var(--space-4) 0 0;
-    padding: var(--space-4);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    background: var(--color-accent-muted-bg);
-  }
-
-  .discovery-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: var(--radius-full);
-    background: var(--color-surface);
-    color: var(--color-accent);
-    flex-shrink: 0;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .discovery-body {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .discovery-title {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin: 0;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--color-text);
-  }
-
-  .discovery-elapsed {
-    font-family: monospace;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--color-text-muted);
-    background: var(--color-surface);
-    padding: 1px var(--space-2);
-    border-radius: var(--radius-full);
-    border: 1px solid var(--color-border);
-  }
-
-  .discovery-subtitle {
-    margin: var(--space-1) 0 0;
-    font-size: 0.8125rem;
-    color: var(--color-text-muted);
-    line-height: 1.4;
-  }
-
-  .discovery-hint {
-    margin: var(--space-2) 0 0;
-    font-size: 0.75rem;
-    color: var(--color-text-faint);
-    line-height: 1.4;
-  }
-
-  .discovery-cancel {
-    flex-shrink: 0;
-    align-self: center;
-  }
-
-  .recap {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    margin: 0 0 var(--space-5);
-    padding-bottom: var(--space-4);
-    border-bottom: 1px solid var(--color-border);
-    font-size: 0.875rem;
-  }
-
-  .recap-text {
-    font-family: monospace;
-    color: var(--color-text-muted);
-  }
-
-  .discovery-summary {
-    margin: 0 0 var(--space-4);
-    font-size: 0.8125rem;
-    color: var(--color-text-faint);
-  }
-
-  .link {
-    flex-shrink: 0;
-  }
-
-  .create-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-4);
-    margin-top: var(--space-5);
-  }
-
-  .tag-error {
-    margin-top: var(--space-4);
-  }
-
-  .selection {
-    font-size: 0.875rem;
   }
 </style>

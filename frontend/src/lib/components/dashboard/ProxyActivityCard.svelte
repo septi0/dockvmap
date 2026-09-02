@@ -4,44 +4,30 @@
   import DashboardCard from "./DashboardCard.svelte";
   import CardBody from "./CardBody.svelte";
   import CardState from "./CardState.svelte";
-  import { proxyMetrics } from "../../services/proxyMetrics";
-  import { dashboardRefresh } from "../../services/dashboardRefresh";
-  import type { ProxyMetricsWindow } from "../../api/types/metrics";
   import { formatBytes, formatNumber } from "../../utils/format";
-
-  const CARD_ID = "proxy-activity";
+  import type {
+    ProxyMetrics,
+    ProxyMetricsWindow,
+  } from "../../api/types/metrics";
+  import type { DashboardCardProps } from "./types";
 
   const WINDOWS: { value: ProxyMetricsWindow; label: string }[] = [
     { value: "last7d", label: "7 days" },
     { value: "last30d", label: "30 days" },
   ];
 
-  let refreshNonce = $derived($dashboardRefresh.nonce);
+  let {
+    data,
+    error,
+    loading,
+    busy,
+    onRetry,
+  }: DashboardCardProps<ProxyMetrics> = $props();
 
-  $effect(() => {
-    refreshNonce;
-    void load();
-  });
-
-  async function load() {
-    dashboardRefresh.begin(CARD_ID);
-    let ok = false;
-
-    try {
-      ok = await proxyMetrics.load();
-    } finally {
-      dashboardRefresh.end(CARD_ID, ok);
-    }
-  }
-
-  let metrics = $derived($proxyMetrics.data);
-  let loading = $derived($proxyMetrics.loading && !$proxyMetrics.data);
-  let busy = $derived($proxyMetrics.loading && !!$proxyMetrics.data);
-  let error = $derived($proxyMetrics.data ? null : $proxyMetrics.error);
   let activeWindow = $state<ProxyMetricsWindow>("last7d");
 
-  let view = $derived(metrics ? metrics.windows[activeWindow] : null);
-  let cache = $derived(metrics?.cache ?? null);
+  let view = $derived(data ? data.windows[activeWindow] : null);
+  let cache = $derived(data?.cache ?? null);
 
   let failureRateLabel = $derived.by(() => {
     if (!view || view.upstreamFailures === 0 || view.totalRequests === 0)
@@ -90,13 +76,7 @@
       >
         {#snippet icon()}<TriangleAlert size={30} strokeWidth={1.5} />{/snippet}
         {#snippet action()}
-          <button
-            type="button"
-            class="link"
-            onclick={() => dashboardRefresh.requestRefresh()}
-          >
-            Try again
-          </button>
+          <button type="button" class="link" onclick={onRetry}>Try again</button>
         {/snippet}
       </CardState>
     {/snippet}
@@ -153,6 +133,35 @@
 </DashboardCard>
 
 <style>
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: var(--space-5) var(--space-6);
+  }
+
+  .stat-tile {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+  }
+
+  .stat-value.danger {
+    color: var(--color-danger);
+  }
+
+  .stat-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
   .segmented {
     display: inline-flex;
     border: 1px solid var(--color-border);

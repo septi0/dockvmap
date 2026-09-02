@@ -11,7 +11,7 @@
   import DetailRow from "../lib/components/DetailRow.svelte";
   import DeviceIcon from "../lib/components/DeviceIcon.svelte";
   import { listAuditLogs, AUDIT_LOG_PAGE_SIZE } from "../lib/api/audit";
-  import { ApiError } from "../lib/api/client";
+  import { errorMessage } from "../lib/api/client";
   import { AUDIT_TYPES } from "../lib/api/types/audit";
   import type { AuditLog } from "../lib/api/types/audit";
   import { formatDate, formatAuditType } from "../lib/utils/format";
@@ -71,8 +71,7 @@
       total = result.total;
     } catch (err) {
       if (requestId !== loadToken) return;
-      error =
-        err instanceof ApiError ? err.message : "Failed to load audit log";
+      error = errorMessage(err, "Failed to load audit log");
     } finally {
       if (requestId === loadToken) {
         loading = false;

@@ -1,6 +1,6 @@
 import { api } from './client'
-import type { DashboardSummary } from './types/dashboard'
+import type { Dashboard } from './types/dashboard'
 
-export function getDashboardSummary() {
-  return api.get<DashboardSummary>('/dashboard/summary')
+export function getDashboard() {
+  return api.get<Dashboard>('/dashboard')
 }

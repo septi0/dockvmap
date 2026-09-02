@@ -16,7 +16,7 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/proxy-metrics", apiMethod(http.MethodGet, w.apiProxyMetrics))
 
-	mux.HandleFunc("/dashboard/summary", apiMethod(http.MethodGet, w.apiDashboardSummary))
+	mux.HandleFunc("/dashboard", apiMethod(http.MethodGet, w.apiDashboard))
 
 	mux.HandleFunc("/recent-failures", apiMethod(http.MethodGet, w.apiRecentFailures))
 

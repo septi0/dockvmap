@@ -5,7 +5,7 @@
   import Button from "./Button.svelte";
   import RegistryOptionsFields from "./RegistryOptionsFields.svelte";
   import { updateRegistry } from "../api/registries";
-  import { ApiError } from "../api/client";
+  import { errorMessage } from "../api/client";
   import type { Registry } from "../api/types/registries";
 
   let {
@@ -70,8 +70,7 @@
       onUpdated(updated);
       onClose();
     } catch (err) {
-      error =
-        err instanceof ApiError ? err.message : "Failed to update registry";
+      error = errorMessage(err, "Failed to update registry");
     } finally {
       submitting = false;
     }

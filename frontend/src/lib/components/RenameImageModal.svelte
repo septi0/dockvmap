@@ -5,7 +5,7 @@
   import Field from "./Field.svelte";
   import Button from "./Button.svelte";
   import { renameImage } from "../api/images";
-  import { ApiError } from "../api/client";
+  import { errorMessage } from "../api/client";
 
   let {
     open,
@@ -55,7 +55,7 @@
       onRenamed(trimmed);
       onClose();
     } catch (err) {
-      error = err instanceof ApiError ? err.message : "Failed to rename virtual image";
+      error = errorMessage(err, "Failed to rename virtual image");
     } finally {
       renaming = false;
     }

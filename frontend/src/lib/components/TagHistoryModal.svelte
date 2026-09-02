@@ -5,7 +5,7 @@
   import Modal from "./Modal.svelte";
   import Button from "./Button.svelte";
   import { getTagHistory, getImageTags, updateImageTag } from "../api/images";
-  import { ApiError } from "../api/client";
+  import { errorMessage } from "../api/client";
   import { formatDate } from "../utils/format";
   import type { TagHistoryEntry } from "../api/types/images";
 
@@ -47,8 +47,7 @@
       );
     } catch (err) {
       if (requestId !== loadToken) return;
-      loadError =
-        err instanceof ApiError ? err.message : "Failed to load tag history";
+      loadError = errorMessage(err, "Failed to load tag history");
     } finally {
       if (requestId === loadToken) loading = false;
     }
@@ -78,8 +77,7 @@
       onRestored(entry.tag);
       onClose();
     } catch (err) {
-      restoreError =
-        err instanceof ApiError ? err.message : "Failed to restore tag";
+      restoreError = errorMessage(err, "Failed to restore tag");
     } finally {
       restoring = null;
     }

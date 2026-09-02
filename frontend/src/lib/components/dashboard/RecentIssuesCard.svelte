@@ -4,56 +4,28 @@
   import DashboardCard from "./DashboardCard.svelte";
   import CardBody from "./CardBody.svelte";
   import CardState from "./CardState.svelte";
-  import { listRecentFailures } from "../../api/failures";
-  import { ApiError } from "../../api/client";
-  import { dashboardRefresh } from "../../services/dashboardRefresh";
-  import type { RecentFailure } from "../../api/types/failures";
   import { formatDate, formatRelativeTime } from "../../utils/format";
+  import type { RecentFailure } from "../../api/types/failures";
+  import type { DashboardCardProps } from "./types";
 
-  const CARD_ID = "recent-issues";
   const SHOWN = 5;
 
-  let failures = $state<RecentFailure[]>([]);
-  let loading = $state(true);
-  let loaded = $state(false);
-  let error = $state<string | null>(null);
+  let {
+    data,
+    error,
+    loading,
+    busy,
+    onRetry,
+  }: DashboardCardProps<RecentFailure[]> = $props();
 
-  let refreshNonce = $derived($dashboardRefresh.nonce);
-
-  $effect(() => {
-    refreshNonce;
-    void load();
-  });
-
-  async function load() {
-    dashboardRefresh.begin(CARD_ID);
-    loading = true;
-    error = null;
-
-    try {
-      failures = await listRecentFailures();
-    } catch (err) {
-      error =
-        err instanceof ApiError ? err.message : "Failed to load recent issues";
-    } finally {
-      loading = false;
-      loaded = true;
-      dashboardRefresh.end(CARD_ID, !error);
-    }
-  }
-
+  let failures = $derived(data ?? []);
   let shown = $derived(failures.slice(0, SHOWN));
 </script>
 
 <DashboardCard title="Recent issues">
   {#snippet icon()}<TriangleAlert size={16} strokeWidth={1.75} />{/snippet}
 
-  <CardBody
-    loading={loading && !loaded}
-    busy={loading && loaded}
-    hasError={!!error}
-    empty={failures.length === 0}
-  >
+  <CardBody {loading} {busy} hasError={!!error} empty={failures.length === 0}>
     {#snippet errorState()}
       <CardState
         tone="error"
@@ -62,13 +34,7 @@
       >
         {#snippet icon()}<TriangleAlert size={30} strokeWidth={1.5} />{/snippet}
         {#snippet action()}
-          <button
-            type="button"
-            class="link"
-            onclick={() => dashboardRefresh.requestRefresh()}
-          >
-            Try again
-          </button>
+          <button type="button" class="link" onclick={onRetry}>Try again</button>
         {/snippet}
       </CardState>
     {/snippet}

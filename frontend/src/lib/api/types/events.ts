@@ -8,9 +8,3 @@ export interface ImageEvent {
   notify: boolean
   notifSentAt?: string
 }
-
-export interface ListEventsResponse {
-  events: ImageEvent[]
-  hasMore: boolean
-  nextOffset: number
-}

@@ -4,7 +4,7 @@
   import Field from './Field.svelte'
   import Button from './Button.svelte'
   import { createProxyToken } from '../api/proxyTokens'
-  import { ApiError } from '../api/client'
+  import { errorMessage } from '../api/client'
   import type { CreateProxyTokenResult } from '../api/types/proxyTokens'
 
   let {
@@ -51,7 +51,7 @@
       reset()
       onClose()
     } catch (err) {
-      error = err instanceof ApiError ? err.message : 'Failed to create token'
+      error = errorMessage(err, 'Failed to create token')
     } finally {
       submitting = false
     }

@@ -18,7 +18,7 @@
   <div class="card-head">
     <div class="card-head-title">
       {#if icon}{@render icon()}{/if}
-      <h2>{title}</h2>
+      <h3>{title}</h3>
     </div>
     {#if action}{@render action()}{/if}
   </div>
@@ -29,6 +29,29 @@
 </div>
 
 <style>
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .card-head-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .card-head-title h3 {
+    margin: 0;
+    font-size: 1.0625rem;
+  }
+
+  .card-head-title :global(svg) {
+    color: var(--color-text-muted);
+  }
+
   .dashboard-card {
     display: flex;
     flex-direction: column;

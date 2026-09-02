@@ -4,6 +4,7 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Inbox from "@lucide/svelte/icons/inbox";
   import TableSkeleton from "./TableSkeleton.svelte";
+  import { resolveAsyncState } from "../utils/asyncState";
 
   let {
     loading,
@@ -28,9 +29,11 @@
     emptyAction?: Snippet;
     children: Snippet;
   } = $props();
+
+  let state = $derived(resolveAsyncState({ loading, hasError: !!error, empty, busy }));
 </script>
 
-{#if loading}
+{#if state.kind === "loading"}
   {#if columns}
     <TableSkeleton {columns} {rows} />
   {:else}
@@ -39,12 +42,12 @@
       <span class="muted">{loadingMessage}</span>
     </div>
   {/if}
-{:else if error}
+{:else if state.kind === "error"}
   <p class="error">
     <TriangleAlert size={16} strokeWidth={2} />
     {error}
   </p>
-{:else if empty}
+{:else if state.kind === "empty"}
   <div class="empty card">
     <span class="empty-icon"><Inbox size={28} strokeWidth={1.5} /></span>
     <p>{emptyMessage}</p>
@@ -54,12 +57,12 @@
   </div>
 {:else}
   <div class="result-wrap">
-    {#if busy}
+    {#if state.busy}
       <span class="result-spinner" aria-hidden="true">
         <LoaderCircle size={18} strokeWidth={3} />
       </span>
     {/if}
-    <div class="result" class:result-busy={busy}>
+    <div class="result" class:result-busy={state.busy}>
       {@render children()}
     </div>
   </div>

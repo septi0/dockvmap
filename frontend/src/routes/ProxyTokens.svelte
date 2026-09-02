@@ -13,7 +13,7 @@
   import ConfirmDialog from '../lib/components/ConfirmDialog.svelte'
   import { listProxyTokens, deleteProxyToken } from '../lib/api/proxyTokens'
   import { getProxyAuthStatus } from '../lib/api/system'
-  import { ApiError } from '../lib/api/client'
+  import { errorMessage } from '../lib/api/client'
   import { toast } from '../lib/services/toast'
   import { formatDate } from '../lib/utils/format'
   import type { ProxyToken, CreateProxyTokenResult } from '../lib/api/types/proxyTokens'
@@ -41,7 +41,7 @@
       tokens = result
     } catch (err) {
       if (requestId !== loadToken) return
-      error = err instanceof ApiError ? err.message : 'Failed to load proxy tokens'
+      error = errorMessage(err, 'Failed to load proxy tokens')
     } finally {
       if (requestId === loadToken) {
         loading = false
@@ -82,7 +82,7 @@
       await load()
       toast.success(`Token "${deletedLabel}" deleted.`)
     } catch (err) {
-      deleteError = err instanceof ApiError ? err.message : 'Failed to delete token'
+      deleteError = errorMessage(err, 'Failed to delete token')
     } finally {
       deleting = false
     }

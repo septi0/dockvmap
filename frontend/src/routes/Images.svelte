@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { onMount } from "svelte";
   import { push } from "svelte-spa-router";
   import Plus from "@lucide/svelte/icons/plus";
   import Package from "@lucide/svelte/icons/package";
@@ -20,7 +20,7 @@
   import { triggerTagRefresh } from "../lib/api/worker";
   import { toast } from "../lib/services/toast";
   import { tagRefreshStatus } from "../lib/services/tagRefreshStatus";
-  import { ApiError } from "../lib/api/client";
+  import { errorMessage } from "../lib/api/client";
   import {
     IMAGE_STATUS_FILTERS,
     type Image,
@@ -57,7 +57,6 @@
   let refreshAllError = $state<string | null>(null);
 
   let tagRefreshRunning = $derived($tagRefreshStatus.data?.running ?? false);
-  let wasTagRefreshRunning = false;
 
   function toStatusFilter(value: string): ImageStatusFilter | "" {
     return (IMAGE_STATUS_FILTERS as readonly string[]).includes(value)
@@ -82,7 +81,7 @@
       total = result.total;
     } catch (err) {
       if (requestId !== loadToken) return;
-      error = err instanceof ApiError ? err.message : "Failed to load images";
+      error = errorMessage(err, "Failed to load images");
     } finally {
       if (requestId === loadToken) {
         loading = false;
@@ -107,13 +106,11 @@
   onMount(() => tagRefreshStatus.watch());
 
   // reload the table once a background sweep finishes so tags/badges aren't stale
-  $effect(() => {
-    const running = tagRefreshRunning;
-    untrack(() => {
-      if (wasTagRefreshRunning && !running && loaded) load();
-      wasTagRefreshRunning = running;
-    });
-  });
+  onMount(() =>
+    tagRefreshStatus.onCompleted(() => {
+      if (loaded) load();
+    }),
+  );
 
   function imageHref(id: number) {
     return `#/images/${id}${writeListQuery({ search, status, offset })}`;
@@ -172,8 +169,7 @@
       tagRefreshStatus.notifyTriggered();
       toast.success("Tag check started - running in the background.");
     } catch (err) {
-      refreshAllError =
-        err instanceof ApiError ? err.message : "Failed to start tag check";
+      refreshAllError = errorMessage(err, "Failed to start tag check");
       tagRefreshStatus.refresh();
     } finally {
       refreshingAll = false;

@@ -9,67 +9,29 @@
   import DashboardCard from "./DashboardCard.svelte";
   import CardBody from "./CardBody.svelte";
   import CardState from "./CardState.svelte";
-  import { listImages } from "../../api/images";
-  import { ApiError } from "../../api/client";
-  import { dashboardRefresh } from "../../services/dashboardRefresh";
-  import { dashboardSummary } from "../../services/dashboardSummary";
   import { formatNumber } from "../../utils/format";
-  import type { Image } from "../../api/types/images";
+  import type { DashboardUpdates } from "../../api/types/dashboard";
+  import type { DashboardCardProps } from "./types";
 
-  const CARD_ID = "updates-available";
-  const LIMIT = 5;
+  let {
+    data,
+    trackedImages,
+    error,
+    loading,
+    busy,
+    onRetry,
+  }: DashboardCardProps<DashboardUpdates> & {
+    trackedImages: number | null;
+  } = $props();
 
-  let images = $state<Image[]>([]);
-  let total = $state(0);
-  let loading = $state(true);
-  let loaded = $state(false);
-  let error = $state<string | null>(null);
-
-  let refreshNonce = $derived($dashboardRefresh.nonce);
-
-  $effect(() => {
-    refreshNonce;
-    void load();
-  });
-
-  async function load() {
-    dashboardRefresh.begin(CARD_ID);
-    loading = true;
-    error = null;
-
-    try {
-      const [result] = await Promise.all([
-        listImages({
-          offset: 0,
-          limit: LIMIT,
-          status: "updateAvailable",
-        }),
-        dashboardSummary.load(),
-      ]);
-
-      images = result.images;
-      total = result.total;
-    } catch (err) {
-      error = err instanceof ApiError ? err.message : "Failed to load updates";
-    } finally {
-      loading = false;
-      loaded = true;
-      dashboardRefresh.end(CARD_ID, !error);
-    }
-  }
-
-  let trackedImages = $derived($dashboardSummary.data?.images.total ?? null);
+  let images = $derived(data?.images ?? []);
+  let total = $derived(data?.total ?? 0);
 </script>
 
 <DashboardCard title="Updates available">
   {#snippet icon()}<CircleArrowUp size={16} strokeWidth={1.75} />{/snippet}
 
-  <CardBody
-    loading={loading && !loaded}
-    busy={loading && loaded}
-    hasError={!!error}
-    empty={images.length === 0}
-  >
+  <CardBody {loading} {busy} hasError={!!error} empty={images.length === 0}>
     {#snippet errorState()}
       <CardState
         tone="error"
@@ -78,13 +40,7 @@
       >
         {#snippet icon()}<TriangleAlert size={30} strokeWidth={1.5} />{/snippet}
         {#snippet action()}
-          <button
-            type="button"
-            class="link"
-            onclick={() => dashboardRefresh.requestRefresh()}
-          >
-            Try again
-          </button>
+          <button type="button" class="link" onclick={onRetry}>Try again</button>
         {/snippet}
       </CardState>
     {/snippet}

@@ -22,7 +22,7 @@
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import { getImage, deleteImage } from "../lib/api/images";
   import { getPullInfo } from "../lib/api/metrics";
-  import { ApiError } from "../lib/api/client";
+  import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
   import { formatDate } from "../lib/utils/format";
   import { createPoller } from "../lib/utils/poller";
@@ -97,8 +97,7 @@
       syncRefreshPolling();
     } catch (err) {
       if (requestId !== loadToken) return;
-      error =
-        err instanceof ApiError ? err.message : "Failed to load virtual image";
+      error = errorMessage(err, "Failed to load virtual image");
     } finally {
       if (requestId === loadToken) loading = false;
     }
@@ -168,10 +167,7 @@
       toast.success(`Virtual image "${image.name}" deleted.`);
       push(backHref);
     } catch (err) {
-      deleteError =
-        err instanceof ApiError
-          ? err.message
-          : "Failed to delete virtual image";
+      deleteError = errorMessage(err, "Failed to delete virtual image");
     } finally {
       deleting = false;
     }

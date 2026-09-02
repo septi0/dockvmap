@@ -2,7 +2,7 @@
   import { push } from "svelte-spa-router";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { auth } from "../lib/services/auth";
-  import { ApiError } from "../lib/api/client";
+  import { errorMessage } from "../lib/api/client";
   import { takeIntendedLocation } from "../routes";
   import AuthCard from "../lib/components/AuthCard.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
@@ -23,7 +23,7 @@
       await auth.login(username.trim(), password);
       push(takeIntendedLocation());
     } catch (err) {
-      error = err instanceof ApiError ? err.message : "Failed to sign in";
+      error = errorMessage(err, "Failed to sign in");
     } finally {
       submitting = false;
     }

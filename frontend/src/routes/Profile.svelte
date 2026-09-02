@@ -17,7 +17,7 @@
   import { updateEmail, updatePreferences } from "../lib/api/users";
   import { getSMTPStatus } from "../lib/api/system";
   import { listSessions, invalidateSession } from "../lib/api/sessions";
-  import { ApiError } from "../lib/api/client";
+  import { errorMessage } from "../lib/api/client";
   import { auth } from "../lib/services/auth";
   import { formatDate } from "../lib/utils/format";
   import { parseUserAgent } from "../lib/utils/userAgent";
@@ -75,8 +75,7 @@
       sessions = result.sessions;
     } catch (err) {
       if (requestId !== sessionsLoadToken) return;
-      sessionsError =
-        err instanceof ApiError ? err.message : "Failed to load sessions";
+      sessionsError = errorMessage(err, "Failed to load sessions");
     } finally {
       if (requestId === sessionsLoadToken) {
         sessionsLoading = false;
@@ -106,8 +105,7 @@
       revokingSession = null;
       await loadSessions();
     } catch (err) {
-      revokeError =
-        err instanceof ApiError ? err.message : "Failed to revoke session";
+      revokeError = errorMessage(err, "Failed to revoke session");
     } finally {
       revokeSubmitting = false;
     }
@@ -134,8 +132,7 @@
       await auth.refresh();
       editingEmail = false;
     } catch (err) {
-      emailError =
-        err instanceof ApiError ? err.message : "Failed to update email";
+      emailError = errorMessage(err, "Failed to update email");
     } finally {
       emailSubmitting = false;
     }
@@ -153,9 +150,7 @@
     } catch (err) {
       notifyLevel = previous;
       notifyError =
-        err instanceof ApiError
-          ? err.message
-          : "Failed to update notification preference";
+        errorMessage(err, "Failed to update notification preference");
     } finally {
       notifySubmitting = false;
     }

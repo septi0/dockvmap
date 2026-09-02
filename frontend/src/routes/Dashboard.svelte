@@ -9,36 +9,36 @@
   import UpdatesAvailableCard from "../lib/components/dashboard/UpdatesAvailableCard.svelte";
   import RecentTagActivityCard from "../lib/components/dashboard/RecentTagActivityCard.svelte";
   import ProxyActivityCard from "../lib/components/dashboard/ProxyActivityCard.svelte";
-  import { dashboardRefresh } from "../lib/services/dashboardRefresh";
+  import { dashboard } from "../lib/services/dashboard";
+  import { dashboardSections } from "../lib/stores/dashboard";
   import { tagRefreshStatus } from "../lib/services/tagRefreshStatus";
   import { formatRelativeTime } from "../lib/utils/format";
 
   let now = $state(Date.now());
 
   onMount(() => {
+    const stopDashboard = dashboard.start();
+    const stopWatching = tagRefreshStatus.watch();
+    const stopListening = tagRefreshStatus.onCompleted(() => {
+      void dashboard.refresh();
+    });
     const tick = setInterval(() => (now = Date.now()), 30_000);
 
     return () => {
       clearInterval(tick);
-      dashboardRefresh.reset();
+      stopListening();
+      stopWatching();
+      stopDashboard();
     };
   });
 
-  let tagCheckRunning = $derived($tagRefreshStatus.data?.running ?? false);
-  let sawTagCheckRunning = false;
+  let sections = $derived($dashboardSections);
+  let settledAt = $derived($dashboard.settledAt);
+  let onRetry = () => void dashboard.refresh();
 
-  $effect(() => {
-    const running = tagCheckRunning;
-
-    if (sawTagCheckRunning && !running) dashboardRefresh.requestRefresh();
-
-    sawTagCheckRunning = running;
-  });
-
-  let pendingCount = $derived($dashboardRefresh.pending.length);
-  let settledAt = $derived($dashboardRefresh.settledAt);
-  let hasErrors = $derived($dashboardRefresh.errored.length > 0);
-  let refreshing = $derived(pendingCount > 0);
+  let hasErrors = $derived(
+    Object.values(sections).some((section) => section.error !== null),
+  );
 
   let statusLabel = $derived.by(() => {
     if (settledAt === null) return { text: "Loading…", warn: false };
@@ -60,19 +60,23 @@
     </div>
 
     <div class="header-actions">
-      <span class="updated" class:warn={statusLabel.warn} class:muted={!statusLabel.warn}>
+      <span
+        class="updated"
+        class:warn={statusLabel.warn}
+        class:muted={!statusLabel.warn}
+        aria-live="polite"
+      >
         {statusLabel.text}
       </span>
       <button
         type="button"
         class="icon-button bordered"
-        onclick={() => dashboardRefresh.requestRefresh()}
-        disabled={pendingCount > 0}
+        onclick={onRetry}
         aria-label="Refresh dashboard"
-        aria-busy={refreshing}
+        aria-busy={$dashboard.loading}
         title="Refresh"
       >
-        <span class="icon" class:spin={refreshing}>
+        <span class="icon" class:spin={$dashboard.loading}>
           <RefreshCw size={15} strokeWidth={2} />
         </span>
       </button>
@@ -82,22 +86,30 @@
   <div class="dashboard">
     <section class="dash-band">
       <h2 class="band-label">Overview</h2>
-      <StatStrip />
+      <StatStrip
+        summary={sections.summary}
+        metrics={sections.metrics}
+        tagRefresh={$tagRefreshStatus}
+      />
     </section>
 
     <section class="dash-band">
       <h2 class="band-label">Needs attention</h2>
       <div class="band-grid needs-attention">
-        <UpdatesAvailableCard />
-        <RecentIssuesCard />
+        <UpdatesAvailableCard
+          {...sections.updates}
+          trackedImages={sections.summary.data?.images.total ?? null}
+          {onRetry}
+        />
+        <RecentIssuesCard {...sections.issues} {onRetry} />
       </div>
     </section>
 
     <section class="dash-band">
       <h2 class="band-label">Activity &amp; health</h2>
       <div class="band-stack">
-        <ProxyActivityCard />
-        <RecentTagActivityCard />
+        <ProxyActivityCard {...sections.metrics} {onRetry} />
+        <RecentTagActivityCard {...sections.activity} {onRetry} />
       </div>
     </section>
   </div>
@@ -128,11 +140,6 @@
 
   .header-actions .icon {
     display: inline-flex;
-  }
-
-  .header-actions button:disabled {
-    opacity: 0.55;
-    cursor: default;
   }
 
   .dashboard {

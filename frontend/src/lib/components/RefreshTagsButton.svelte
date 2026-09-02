@@ -3,7 +3,7 @@
   import Button from "./Button.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import { refreshImageTags } from "../api/images";
-  import { ApiError } from "../api/client";
+  import { errorMessage } from "../api/client";
   import { toast } from "../services/toast";
 
   let {
@@ -50,7 +50,7 @@
           : "Tags refreshed.",
       );
     } catch (err) {
-      error = err instanceof ApiError ? err.message : "Failed to refresh tags";
+      error = errorMessage(err, "Failed to refresh tags");
     } finally {
       refreshing = false;
     }

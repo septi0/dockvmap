@@ -2,6 +2,7 @@
   import type { Snippet } from "svelte";
   import LoaderCircle from "@lucide/svelte/icons/loader-circle";
   import BusyOverlay from "./BusyOverlay.svelte";
+  import { resolveAsyncState } from "../../utils/asyncState";
 
   let {
     loading = false,
@@ -20,22 +21,24 @@
     emptyState?: Snippet;
     children: Snippet;
   } = $props();
+
+  let state = $derived(resolveAsyncState({ loading, hasError, empty, busy }));
 </script>
 
 <div class="card-body">
-  {#if loading}
+  {#if state.kind === "loading"}
     <div class="card-body-fill">
       <span class="card-body-spinner" aria-hidden="true">
         <LoaderCircle size={20} strokeWidth={3} />
       </span>
     </div>
-  {:else if hasError && errorState}
+  {:else if state.kind === "error" && errorState}
     {@render errorState()}
-  {:else if empty && emptyState}
+  {:else if state.kind === "empty" && emptyState}
     {@render emptyState()}
   {:else}
-    <BusyOverlay active={busy} />
-    <div class="card-body-content" class:is-busy={busy}>
+    <BusyOverlay active={state.busy} />
+    <div class="card-body-content" class:is-busy={state.busy}>
       {@render children()}
     </div>
   {/if}

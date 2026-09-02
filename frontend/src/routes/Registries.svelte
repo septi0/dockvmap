@@ -12,7 +12,7 @@
   import EditRegistryModal from "../lib/components/EditRegistryModal.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import { listRegistries, deleteRegistry } from "../lib/api/registries";
-  import { ApiError } from "../lib/api/client";
+  import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
   import type { Registry } from "../lib/api/types/registries";
 
@@ -38,8 +38,7 @@
       registries = result;
     } catch (err) {
       if (requestId !== loadToken) return;
-      error =
-        err instanceof ApiError ? err.message : "Failed to load registries";
+      error = errorMessage(err, "Failed to load registries");
     } finally {
       if (requestId === loadToken) {
         loading = false;
@@ -78,8 +77,7 @@
       await load();
       toast.success(`Registry "${deletedName}" deleted.`);
     } catch (err) {
-      deleteError =
-        err instanceof ApiError ? err.message : "Failed to delete registry";
+      deleteError = errorMessage(err, "Failed to delete registry");
     } finally {
       deleting = false;
     }
