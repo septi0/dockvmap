@@ -265,7 +265,7 @@ func (s *Store) UpdateImageCheck(ctx context.Context, tx DBTX, imageId int64, ch
 
 	result, err := db.ExecContext(ctx, `
 		UPDATE images
-		SET last_checked = ?, last_check_error = ?, tag_set_hash = ?, updated_at = CURRENT_TIMESTAMP
+		SET last_checked = ?, last_check_error = ?, tag_set_hash = ?
 		WHERE id = ?
 	`, checkedAt, checkErr, tagSetHash, imageId)
 
@@ -285,7 +285,7 @@ func (s *Store) UpdateImageCheck(ctx context.Context, tx DBTX, imageId int64, ch
 func (s *Store) TryStartImageRefresh(ctx context.Context, imageId int64) (bool, error) {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE images
-		SET refresh_status = ?, updated_at = CURRENT_TIMESTAMP
+		SET refresh_status = ?
 		WHERE id = ? AND refresh_status = ?
 	`, model.RefreshStatusRunning, imageId, model.RefreshStatusIdle)
 
@@ -305,7 +305,7 @@ func (s *Store) TryStartImageRefresh(ctx context.Context, imageId int64) (bool, 
 func (s *Store) SetImageRefreshStatus(ctx context.Context, imageId int64, status string) error {
 	if _, err := s.db.ExecContext(ctx, `
 		UPDATE images
-		SET refresh_status = ?, updated_at = CURRENT_TIMESTAMP
+		SET refresh_status = ?
 		WHERE id = ?
 	`, status, imageId); err != nil {
 		return fmt.Errorf("setting image refresh status %d: %w", imageId, err)
