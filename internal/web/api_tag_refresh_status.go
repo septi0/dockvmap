@@ -8,13 +8,13 @@ import (
 )
 
 func (w *Web) apiTriggerTagRefresh(rw http.ResponseWriter, r *http.Request) {
-	if w.workerActivity.Running(service.WorkerJobTagRefresh) {
+	if w.worker.Running(service.WorkerJobTagRefresh) {
 		apiError(rw, http.StatusConflict, "a tag check is already running")
 
 		return
 	}
 
-	if !w.workerTrigger.Trigger(service.WorkerJobTagRefresh) {
+	if !w.worker.Trigger(service.WorkerJobTagRefresh) {
 		apiError(rw, http.StatusConflict, "automatic tag checks are disabled")
 
 		return
@@ -30,7 +30,7 @@ func (w *Web) apiTagRefreshStatus(rw http.ResponseWriter, r *http.Request) {
 	var lastRun, nextDue *time.Time
 
 	if enabled {
-		at, ok, err := w.workerSchedule.LastRun(r.Context(), service.WorkerJobTagRefresh)
+		at, ok, err := w.worker.LastRun(r.Context(), service.WorkerJobTagRefresh)
 
 		if err != nil {
 			apiError(rw, http.StatusInternalServerError, "failed to read tag refresh status")
@@ -46,7 +46,7 @@ func (w *Web) apiTagRefreshStatus(rw http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	running := w.workerActivity.Running(service.WorkerJobTagRefresh)
+	running := w.worker.Running(service.WorkerJobTagRefresh)
 
 	apiJSON(rw, http.StatusOK, newTagRefreshStatusResponse(enabled, w.cfg.TagsCheckInterval, running, lastRun, nextDue))
 }

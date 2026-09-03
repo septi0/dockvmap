@@ -75,7 +75,7 @@ type systemTasksResponse struct {
 }
 
 func (w *Web) apiSystemTasks(rw http.ResponseWriter, r *http.Request) {
-	ticks, err := w.workerSchedule.Ticks(r.Context())
+	ticks, err := w.worker.Ticks(r.Context())
 
 	if err != nil {
 		apiError(rw, http.StatusInternalServerError, "internal server error")
@@ -88,7 +88,7 @@ func (w *Web) apiSystemTasks(rw http.ResponseWriter, r *http.Request) {
 		byJob[tick.Job] = tick
 	}
 
-	jobs := w.workerCatalog.Jobs()
+	jobs := w.worker.Catalog()
 	tasks := make([]systemTaskResponse, 0, len(jobs))
 
 	for _, job := range jobs {
@@ -99,7 +99,7 @@ func (w *Web) apiSystemTasks(rw http.ResponseWriter, r *http.Request) {
 			Enabled:         job.Enabled,
 			DisabledReason:  job.DisabledReason,
 			Triggerable:     job.Triggerable,
-			Running:         w.workerActivity.Running(job.Name),
+			Running:         w.worker.Running(job.Name),
 		}
 
 		if tick, ok := byJob[job.Name]; ok {
@@ -121,7 +121,7 @@ func (w *Web) apiSystemTasks(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *Web) apiRunSystemTask(rw http.ResponseWriter, r *http.Request) {
-	if !w.workerTrigger.Trigger(r.PathValue("name")) {
+	if !w.worker.Trigger(r.PathValue("name")) {
 		apiError(rw, http.StatusNotFound, "unknown or non-triggerable task")
 		return
 	}

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 )
@@ -177,6 +178,30 @@ func apiJSON(rw http.ResponseWriter, status int, value any) {
 
 func apiError(rw http.ResponseWriter, status int, message string) {
 	apiJSON(rw, status, map[string]string{"error": message})
+}
+
+func listAndCount[Row, Filter any](
+	rw http.ResponseWriter,
+	ctx context.Context,
+	filters Filter,
+	list func(context.Context, Filter) ([]Row, error),
+	count func(context.Context, Filter) (int64, error),
+) (rows []Row, total int64, ok bool) {
+	rows, err := list(ctx, filters)
+
+	if err != nil {
+		apiError(rw, http.StatusInternalServerError, "internal server error")
+		return nil, 0, false
+	}
+
+	total, err = count(ctx, filters)
+
+	if err != nil {
+		apiError(rw, http.StatusInternalServerError, "internal server error")
+		return nil, 0, false
+	}
+
+	return rows, total, true
 }
 
 func decodeJSON[T any](rw http.ResponseWriter, r *http.Request) (T, bool) {

@@ -72,9 +72,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 
 	health := service.NewHealth(db)
 	proxyTokens := service.NewProxyTokens(db, audit)
-	workerSchedule := service.NewWorkerSchedule(db)
-	workerTrigger := service.NewWorkerTrigger()
-	workerActivity := service.NewWorkerActivity()
+	worker := service.NewWorker(db)
 	proxyMetricsHistory := service.NewProxyMetricsHistory(db)
 	metrics := proxy.NewMetrics()
 
@@ -102,9 +100,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 
 	wDeps := workerDeps{
 		cfg:                 cfg,
-		schedule:            workerSchedule,
-		trigger:             workerTrigger,
-		activity:            workerActivity,
+		worker:              worker,
 		failures:            failureLog,
 		images:              images,
 		discoveries:         discoveries,
@@ -116,7 +112,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 	}
 
 	jobs := scheduledJobs(wDeps)
-	workerCatalog := service.NewWorkerCatalog(jobDescriptors(jobs))
+	worker.SetCatalog(jobDescriptors(jobs))
 
 	webDeps := web.Dependencies{
 		Config:               cfg,
@@ -131,10 +127,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		ProxyTokens:          proxyTokens,
 		ProxyMetricsHistory:  proxyMetricsHistory,
 		Failures:             failureLog,
-		WorkerSchedule:       workerSchedule,
-		WorkerCatalog:        workerCatalog,
-		WorkerTrigger:        workerTrigger,
-		WorkerActivity:       workerActivity,
+		Worker:               worker,
 		LoginRateLimitWindow: loginRateLimitWindow,
 		Version:              version,
 		DataPath:             dataPath,
@@ -159,7 +152,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 
 	go func() {
 		defer close(workerDone)
-		runScheduledJobs(workerCtx, jobs, workerSchedule, workerActivity)
+		runScheduledJobs(workerCtx, jobs, worker)
 	}()
 
 	awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)

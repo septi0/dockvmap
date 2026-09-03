@@ -97,20 +97,11 @@ type failureLister interface {
 	Count(ctx context.Context, filters model.BackgroundFailureListFilters) (int64, error)
 }
 
-type workerScheduleReader interface {
+type workerService interface {
 	LastRun(ctx context.Context, job string) (time.Time, bool, error)
 	Ticks(ctx context.Context) ([]model.WorkerTick, error)
-}
-
-type workerCatalogReader interface {
-	Jobs() []service.WorkerJobDescriptor
-}
-
-type workerTriggerer interface {
+	Catalog() []service.WorkerJobDescriptor
 	Trigger(job string) bool
-}
-
-type workerActivityReader interface {
 	Running(job string) bool
 }
 
@@ -127,10 +118,7 @@ type Web struct {
 	proxyMetricsHistory  proxyMetricsHistoryReader
 	cacheUsage           cacheUsageReader
 	failures             failureLister
-	workerSchedule       workerScheduleReader
-	workerCatalog        workerCatalogReader
-	workerTrigger        workerTriggerer
-	workerActivity       workerActivityReader
+	worker               workerService
 	cfg                  *config.Config
 	trustedProxies       ipmatch.Set
 	resolvedProxies      []string
@@ -154,10 +142,7 @@ type Dependencies struct {
 	ProxyMetricsHistory  proxyMetricsHistoryReader
 	CacheUsage           cacheUsageReader
 	Failures             failureLister
-	WorkerSchedule       workerScheduleReader
-	WorkerCatalog        workerCatalogReader
-	WorkerTrigger        workerTriggerer
-	WorkerActivity       workerActivityReader
+	Worker               workerService
 	LoginRateLimitWindow time.Duration
 	Version              string
 	DataPath             string
@@ -189,10 +174,7 @@ func New(deps Dependencies) (http.Handler, error) {
 		proxyMetricsHistory:  deps.ProxyMetricsHistory,
 		cacheUsage:           deps.CacheUsage,
 		failures:             deps.Failures,
-		workerSchedule:       deps.WorkerSchedule,
-		workerCatalog:        deps.WorkerCatalog,
-		workerTrigger:        deps.WorkerTrigger,
-		workerActivity:       deps.WorkerActivity,
+		worker:               deps.Worker,
 		cfg:                  deps.Config,
 		trustedProxies:       trustedProxies,
 		resolvedProxies:      proxies,

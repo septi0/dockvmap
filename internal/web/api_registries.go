@@ -46,9 +46,6 @@ func (w *Web) apiCreateRegistry(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidRegistry):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrRegistryAlreadyExists):
 			apiError(rw, http.StatusConflict, "registry already exists")
 
@@ -56,7 +53,7 @@ func (w *Web) apiCreateRegistry(rw http.ResponseWriter, r *http.Request) {
 			apiError(rw, http.StatusInternalServerError, errCredentialEncryptionNotConfiguredMsg)
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -95,9 +92,6 @@ func (w *Web) apiUpdateRegistry(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidRegistry):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrRegistryAlreadyExists):
 			apiError(rw, http.StatusConflict, "registry already exists")
 
@@ -105,7 +99,7 @@ func (w *Web) apiUpdateRegistry(rw http.ResponseWriter, r *http.Request) {
 			apiError(rw, http.StatusInternalServerError, errCredentialEncryptionNotConfiguredMsg)
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -141,17 +135,12 @@ func (w *Web) apiDeleteRegistry(rw http.ResponseWriter, r *http.Request) {
 	deleted, err := w.registries.DeleteByID(r.Context(), registryID)
 
 	if err != nil {
-		if errors.Is(err, service.ErrInvalidRegistry) {
-			apiError(rw, http.StatusBadRequest, err.Error())
-			return
-		}
-
 		if errors.Is(err, service.ErrRegistryInUse) {
 			apiError(rw, http.StatusConflict, "registry is used by one or more images")
 			return
 		}
 
-		apiError(rw, http.StatusInternalServerError, "internal server error")
+		apiServiceError(rw, err)
 		return
 	}
 

@@ -28,13 +28,7 @@ func parseAuditLogListFilters(r *http.Request) (model.AuditLogListFilters, error
 		return model.AuditLogListFilters{}, fmt.Errorf("type must be one of the known audit event types")
 	}
 
-	since, err := parseTimeParam(r, "since")
-
-	if err != nil {
-		return model.AuditLogListFilters{}, err
-	}
-
-	until, err := parseTimeParam(r, "until")
+	since, until, err := parseDateRange(r)
 
 	if err != nil {
 		return model.AuditLogListFilters{}, err
@@ -56,17 +50,9 @@ func (w *Web) apiListAuditLogs(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logs, err := w.audit.List(r.Context(), filters)
+	logs, total, ok := listAndCount(rw, r.Context(), filters, w.audit.List, w.audit.Count)
 
-	if err != nil {
-		apiError(rw, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	total, err := w.audit.Count(r.Context(), filters)
-
-	if err != nil {
-		apiError(rw, http.StatusInternalServerError, "internal server error")
+	if !ok {
 		return
 	}
 

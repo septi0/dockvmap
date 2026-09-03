@@ -28,13 +28,7 @@ func parseFailureListFilters(r *http.Request) (model.BackgroundFailureListFilter
 		return model.BackgroundFailureListFilters{}, fmt.Errorf("source must be one of the known failure sources")
 	}
 
-	since, err := parseTimeParam(r, "since")
-
-	if err != nil {
-		return model.BackgroundFailureListFilters{}, err
-	}
-
-	until, err := parseTimeParam(r, "until")
+	since, until, err := parseDateRange(r)
 
 	if err != nil {
 		return model.BackgroundFailureListFilters{}, err
@@ -56,17 +50,9 @@ func (w *Web) apiListFailures(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	failures, err := w.failures.List(r.Context(), filters)
+	failures, total, ok := listAndCount(rw, r.Context(), filters, w.failures.List, w.failures.Count)
 
-	if err != nil {
-		apiError(rw, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	total, err := w.failures.Count(r.Context(), filters)
-
-	if err != nil {
-		apiError(rw, http.StatusInternalServerError, "internal server error")
+	if !ok {
 		return
 	}
 

@@ -1,11 +1,8 @@
 package web
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
-
-	"github.com/septi0/dockvmap/internal/service"
 )
 
 func (w *Web) apiListProxyTokens(rw http.ResponseWriter, r *http.Request) {
@@ -34,12 +31,7 @@ func (w *Web) apiCreateProxyToken(rw http.ResponseWriter, r *http.Request) {
 	id, token, err := w.proxyTokens.Create(r.Context(), request.Label)
 
 	if err != nil {
-		if errors.Is(err, service.ErrInvalidProxyToken) {
-			apiError(rw, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		apiError(rw, http.StatusInternalServerError, "internal server error")
+		apiServiceError(rw, err)
 		return
 	}
 
@@ -61,12 +53,7 @@ func (w *Web) apiDeleteProxyToken(rw http.ResponseWriter, r *http.Request) {
 	deleted, err := w.proxyTokens.Delete(r.Context(), id)
 
 	if err != nil {
-		if errors.Is(err, service.ErrInvalidProxyToken) {
-			apiError(rw, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		apiError(rw, http.StatusInternalServerError, "internal server error")
+		apiServiceError(rw, err)
 		return
 	}
 

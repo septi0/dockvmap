@@ -88,7 +88,7 @@ func runExecuteJob(t *testing.T, ctx context.Context, run func(context.Context) 
 	store := &recordingScheduleStore{}
 	job := scheduledJob{name: "test-job", run: run}
 
-	executeJob(ctx, job, service.NewWorkerSchedule(store), service.NewWorkerActivity())
+	executeJob(ctx, job, service.NewWorker(store))
 
 	return store.runs
 }

@@ -45,9 +45,7 @@ func counted(n int64, err error) (int, error) { return int(n), err }
 
 type workerDeps struct {
 	cfg                 *config.Config
-	schedule            *service.WorkerSchedule
-	trigger             *service.WorkerTrigger
-	activity            *service.WorkerActivity
+	worker              *service.Worker
 	failures            *service.FailureLog
 	images              *service.Images
 	discoveries         *service.Discoveries
@@ -100,7 +98,7 @@ func scheduledJobs(deps workerDeps) []scheduledJob {
 			description: tagRefreshDesc,
 			interval:    interval,
 			enabled:     true,
-			trigger:     deps.trigger.Register(service.WorkerJobTagRefresh),
+			trigger:     deps.worker.Register(service.WorkerJobTagRefresh),
 			run:         func(ctx context.Context) (int, error) { return runImageTagRefresh(ctx, deps.images) },
 		})
 	} else {
@@ -158,7 +156,7 @@ func blobCacheJobs(deps workerDeps) []scheduledJob {
 			description: cleanupDesc,
 			interval:    interval,
 			enabled:     true,
-			trigger:     deps.trigger.Register("blob-cache-cleanup"),
+			trigger:     deps.worker.Register("blob-cache-cleanup"),
 			doneMsg:     "removed expired cached blobs",
 			run:         func(ctx context.Context) (int, error) { return deps.cache.Cleanup(ctx) },
 		})
@@ -176,7 +174,7 @@ func blobCacheJobs(deps workerDeps) []scheduledJob {
 		description: orphanDesc,
 		interval:    blobOrphanScanInterval,
 		enabled:     true,
-		trigger:     deps.trigger.Register("blob-cache-orphan-scan"),
+		trigger:     deps.worker.Register("blob-cache-orphan-scan"),
 		doneMsg:     "removed orphaned cached blob files",
 		run:         func(ctx context.Context) (int, error) { return deps.cache.ScanOrphans(ctx) },
 	})
@@ -236,7 +234,7 @@ func jobDescriptors(jobs []scheduledJob) []service.WorkerJobDescriptor {
 	return descriptors
 }
 
-func runScheduledJobs(ctx context.Context, jobs []scheduledJob, schedule *service.WorkerSchedule, activity *service.WorkerActivity) {
+func runScheduledJobs(ctx context.Context, jobs []scheduledJob, worker *service.Worker) {
 	var wg sync.WaitGroup
 
 	staggerIndex := 0
@@ -256,24 +254,24 @@ func runScheduledJobs(ctx context.Context, jobs []scheduledJob, schedule *servic
 
 		go func() {
 			defer wg.Done()
-			runScheduledJob(ctx, job, schedule, activity, offset)
+			runScheduledJob(ctx, job, worker, offset)
 		}()
 	}
 
 	wg.Wait()
 }
 
-func runScheduledJob(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, activity *service.WorkerActivity, offset time.Duration) {
-	timer := time.NewTimer(firstRunDelay(ctx, job, schedule, offset))
+func runScheduledJob(ctx context.Context, job scheduledJob, worker *service.Worker, offset time.Duration) {
+	timer := time.NewTimer(firstRunDelay(ctx, job, worker, offset))
 	defer timer.Stop()
 
 	for {
 		select {
 		case <-timer.C:
-			runAndReschedule(ctx, job, schedule, activity, timer)
+			runAndReschedule(ctx, job, worker, timer)
 
 		case <-job.trigger:
-			runAndReschedule(ctx, job, schedule, activity, timer)
+			runAndReschedule(ctx, job, worker, timer)
 
 		case <-ctx.Done():
 			if job.onShutdown != nil {
@@ -293,10 +291,10 @@ func runScheduledJob(ctx context.Context, job scheduledJob, schedule *service.Wo
 }
 
 // a manual trigger reschedules a full interval from now, exactly like a natural tick
-func runAndReschedule(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, activity *service.WorkerActivity, timer *time.Timer) {
+func runAndReschedule(ctx context.Context, job scheduledJob, worker *service.Worker, timer *time.Timer) {
 	start := time.Now()
 
-	executeJob(ctx, job, schedule, activity)
+	executeJob(ctx, job, worker)
 
 	next := rescheduleDelay(job.interval, time.Since(start))
 
@@ -311,8 +309,8 @@ func runAndReschedule(ctx context.Context, job scheduledJob, schedule *service.W
 	timer.Reset(next)
 }
 
-func firstRunDelay(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, offset time.Duration) time.Duration {
-	lastRun, ok, err := schedule.LastRun(ctx, job.name)
+func firstRunDelay(ctx context.Context, job scheduledJob, worker *service.Worker, offset time.Duration) time.Duration {
+	lastRun, ok, err := worker.LastRun(ctx, job.name)
 
 	if err != nil {
 		slog.Error("reading worker schedule failed, deferring first run by a full interval", "job", job.name, "error", err)
@@ -347,15 +345,15 @@ func rescheduleDelay(interval, elapsed time.Duration) time.Duration {
 	return 0
 }
 
-func executeJob(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, activity *service.WorkerActivity) {
+func executeJob(ctx context.Context, job scheduledJob, worker *service.Worker) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error(job.name+" worker panicked", "panic", r, "stack", string(debug.Stack()))
 		}
 	}()
 
-	activity.Begin(job.name)
-	defer activity.End(job.name)
+	worker.Begin(job.name)
+	defer worker.End(job.name)
 
 	count, err := job.run(ctx)
 
@@ -374,7 +372,7 @@ func executeJob(ctx context.Context, job scheduledJob, schedule *service.WorkerS
 	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 
-	if writeErr := schedule.RecordRun(runCtx, job.name, int64(count), err); writeErr != nil {
+	if writeErr := worker.RecordRun(runCtx, job.name, int64(count), err); writeErr != nil {
 		slog.Error("recording worker run failed", "job", job.name, "error", writeErr)
 	}
 }

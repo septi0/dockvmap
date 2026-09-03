@@ -29,9 +29,6 @@ func (w *Web) apiBootstrapUser(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidUser):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrUsernameConflict):
 			apiError(rw, http.StatusConflict, "username already exists")
 
@@ -39,7 +36,7 @@ func (w *Web) apiBootstrapUser(rw http.ResponseWriter, r *http.Request) {
 			apiError(rw, http.StatusForbidden, "initial setup has already been completed")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -58,9 +55,6 @@ func (w *Web) apiUpdateUserPassword(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidUser):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrIncorrectCurrentPassword):
 			apiError(rw, http.StatusForbidden, "current password is incorrect")
 
@@ -68,7 +62,7 @@ func (w *Web) apiUpdateUserPassword(rw http.ResponseWriter, r *http.Request) {
 			apiError(rw, http.StatusUnauthorized, "authentication required")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -87,14 +81,11 @@ func (w *Web) apiUpdateUserEmail(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidUser):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrUserNotFound):
 			apiError(rw, http.StatusUnauthorized, "authentication required")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -123,10 +114,8 @@ func (w *Web) apiUpdateUserPreferences(rw http.ResponseWriter, r *http.Request) 
 		switch {
 		case errors.Is(err, service.ErrUserNotFound):
 			apiError(rw, http.StatusUnauthorized, "authentication required")
-		case errors.Is(err, service.ErrInvalidUser):
-			apiError(rw, http.StatusBadRequest, err.Error())
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return

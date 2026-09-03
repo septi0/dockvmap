@@ -37,13 +37,7 @@ func tagsEventListWhere(filters model.ImageEventListFilters) (string, []any) {
 		b.add("ie.image_id = ?", filters.ImageID)
 	}
 
-	if filters.Since != nil {
-		b.add("ie.created_at >= ?", sqliteDatetime(*filters.Since))
-	}
-
-	if filters.Until != nil {
-		b.add("ie.created_at <= ?", sqliteDatetime(*filters.Until))
-	}
+	b.dateRange("ie.created_at", filters.Since, filters.Until)
 
 	return b.clause(), b.args
 }
@@ -51,15 +45,7 @@ func tagsEventListWhere(filters model.ImageEventListFilters) (string, []any) {
 func (s *Store) CountTagsEvents(ctx context.Context, filters model.ImageEventListFilters) (int64, error) {
 	where, args := tagsEventListWhere(filters)
 
-	query := fmt.Sprintf(`SELECT COUNT(*) FROM tags_events ie %s`, where)
-
-	var count int64
-
-	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		return 0, fmt.Errorf("counting tags events: %w", err)
-	}
-
-	return count, nil
+	return s.countWhere(ctx, "tags_events ie", where, args)
 }
 
 func (s *Store) ListTagsEvents(ctx context.Context, filters model.ImageEventListFilters) ([]model.ImageEvent, error) {

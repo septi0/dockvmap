@@ -26,13 +26,7 @@ func backgroundFailureListWhere(filters model.BackgroundFailureListFilters) (str
 		b.add("source = ?", filters.Source)
 	}
 
-	if filters.Since != nil {
-		b.add("occurred_at >= ?", sqliteDatetime(*filters.Since))
-	}
-
-	if filters.Until != nil {
-		b.add("occurred_at <= ?", sqliteDatetime(*filters.Until))
-	}
+	b.dateRange("occurred_at", filters.Since, filters.Until)
 
 	return b.clause(), b.args
 }
@@ -40,15 +34,7 @@ func backgroundFailureListWhere(filters model.BackgroundFailureListFilters) (str
 func (s *Store) CountBackgroundFailures(ctx context.Context, filters model.BackgroundFailureListFilters) (int64, error) {
 	where, args := backgroundFailureListWhere(filters)
 
-	query := fmt.Sprintf(`SELECT COUNT(*) FROM background_failures %s`, where)
-
-	var count int64
-
-	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		return 0, fmt.Errorf("counting background failures: %w", err)
-	}
-
-	return count, nil
+	return s.countWhere(ctx, "background_failures", where, args)
 }
 
 func (s *Store) ListBackgroundFailures(ctx context.Context, filters model.BackgroundFailureListFilters) ([]model.BackgroundFailure, error) {

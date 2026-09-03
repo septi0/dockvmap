@@ -98,20 +98,11 @@ func (w *Web) apiCreateImage(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrImageAlreadyExists):
 			apiError(rw, http.StatusConflict, "image name already exists")
 
-		case errors.Is(err, service.ErrUpstreamNotFound), errors.Is(err, service.ErrUpstreamUnauthorized):
-			apiError(rw, http.StatusNotFound, "repository does not exist or may require authentication")
-
 		case errors.Is(err, service.ErrTagUnavailable):
 			apiError(rw, http.StatusConflict, "upstream image tag is not available")
-
-		case errors.Is(err, service.ErrUpstreamUnavailable):
-			apiError(rw, http.StatusBadGateway, "upstream registry check failed")
 
 		case errors.Is(err, service.ErrFailedToRefreshTags):
 			apiJSON(rw, http.StatusCreated, map[string]any{
@@ -120,7 +111,7 @@ func (w *Web) apiCreateImage(rw http.ResponseWriter, r *http.Request) {
 			})
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -141,22 +132,7 @@ func (w *Web) apiInspectRepository(rw http.ResponseWriter, r *http.Request) {
 	discovery, err := w.discoveries.Check(r.Context(), request.Registry, request.Repository)
 
 	if err != nil {
-		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
-		case errors.Is(err, service.ErrUpstreamNotFound),
-			errors.Is(err, service.ErrUpstreamUnauthorized):
-
-			apiError(rw, http.StatusNotFound, "repository does not exist or may require authentication")
-
-		case errors.Is(err, service.ErrUpstreamUnavailable):
-			apiError(rw, http.StatusBadGateway, "upstream registry check failed")
-
-		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
-		}
-
+		apiServiceError(rw, err)
 		return
 	}
 
@@ -176,14 +152,11 @@ func (w *Web) apiGetDiscovery(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrTagDiscoveryNotFound):
 			apiError(rw, http.StatusNotFound, "discovery not found")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -204,14 +177,7 @@ func (w *Web) apiDeleteImage(rw http.ResponseWriter, r *http.Request) {
 	deleted, err := w.images.Delete(r.Context(), id)
 
 	if err != nil {
-		if errors.Is(err, service.ErrInvalidImage) {
-			apiError(rw, http.StatusBadRequest, err.Error())
-
-			return
-		}
-
-		apiError(rw, http.StatusInternalServerError, "internal server error")
-
+		apiServiceError(rw, err)
 		return
 	}
 
@@ -237,14 +203,11 @@ func (w *Web) apiRefreshImageTags(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrImageNotFound):
 			apiError(rw, http.StatusNotFound, "image not found")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -316,9 +279,6 @@ func (w *Web) apiUpdateImageTag(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrImageNotFound):
 			apiError(rw, http.StatusNotFound, "image not found")
 
@@ -326,7 +286,7 @@ func (w *Web) apiUpdateImageTag(rw http.ResponseWriter, r *http.Request) {
 			apiError(rw, http.StatusConflict, "image tag is not available")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -353,9 +313,6 @@ func (w *Web) apiRenameImage(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrImageNotFound):
 			apiError(rw, http.StatusNotFound, "image not found")
 
@@ -363,7 +320,7 @@ func (w *Web) apiRenameImage(rw http.ResponseWriter, r *http.Request) {
 			apiError(rw, http.StatusConflict, "image name already exists")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -385,14 +342,11 @@ func (w *Web) apiGetImage(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrImageNotFound):
 			apiError(rw, http.StatusNotFound, "image not found")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -414,14 +368,11 @@ func (w *Web) apiGetImageTags(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrImageNotFound):
 			apiError(rw, http.StatusNotFound, "image not found")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -453,14 +404,11 @@ func (w *Web) apiGetImageTagHistory(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrImageNotFound):
 			apiError(rw, http.StatusNotFound, "image not found")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return
@@ -482,14 +430,11 @@ func (w *Web) apiMarkImageTagsAsSeen(rw http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		switch {
-		case errors.Is(err, service.ErrInvalidImage):
-			apiError(rw, http.StatusBadRequest, err.Error())
-
 		case errors.Is(err, service.ErrImageNotFound):
 			apiError(rw, http.StatusNotFound, "image not found")
 
 		default:
-			apiError(rw, http.StatusInternalServerError, "internal server error")
+			apiServiceError(rw, err)
 		}
 
 		return

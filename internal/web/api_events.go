@@ -41,13 +41,7 @@ func parseImageEventListFilters(r *http.Request) (model.ImageEventListFilters, e
 		imageID = parsed
 	}
 
-	since, err := parseTimeParam(r, "since")
-
-	if err != nil {
-		return model.ImageEventListFilters{}, err
-	}
-
-	until, err := parseTimeParam(r, "until")
+	since, until, err := parseDateRange(r)
 
 	if err != nil {
 		return model.ImageEventListFilters{}, err
@@ -70,17 +64,9 @@ func (w *Web) apiListEvents(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	events, err := w.events.List(r.Context(), filters)
+	events, total, ok := listAndCount(rw, r.Context(), filters, w.events.List, w.events.Count)
 
-	if err != nil {
-		apiError(rw, http.StatusInternalServerError, "internal server error")
-		return
-	}
-
-	total, err := w.events.Count(r.Context(), filters)
-
-	if err != nil {
-		apiError(rw, http.StatusInternalServerError, "internal server error")
+	if !ok {
 		return
 	}
 

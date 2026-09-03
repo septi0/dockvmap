@@ -41,13 +41,7 @@ func auditLogListWhere(filters model.AuditLogListFilters) (string, []any) {
 		b.add("type = ?", filters.Type)
 	}
 
-	if filters.Since != nil {
-		b.add("created_at >= ?", sqliteDatetime(*filters.Since))
-	}
-
-	if filters.Until != nil {
-		b.add("created_at <= ?", sqliteDatetime(*filters.Until))
-	}
+	b.dateRange("created_at", filters.Since, filters.Until)
 
 	return b.clause(), b.args
 }
@@ -55,15 +49,7 @@ func auditLogListWhere(filters model.AuditLogListFilters) (string, []any) {
 func (s *Store) CountAuditLogs(ctx context.Context, filters model.AuditLogListFilters) (int64, error) {
 	where, args := auditLogListWhere(filters)
 
-	query := fmt.Sprintf(`SELECT COUNT(*) FROM audit_logs %s`, where)
-
-	var count int64
-
-	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		return 0, fmt.Errorf("counting audit logs: %w", err)
-	}
-
-	return count, nil
+	return s.countWhere(ctx, "audit_logs", where, args)
 }
 
 func (s *Store) ListAuditLogs(ctx context.Context, filters model.AuditLogListFilters) ([]model.AuditLog, error) {
