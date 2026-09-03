@@ -49,3 +49,11 @@ export function formatAuditType(type: string): string {
   const label = type.toLowerCase().replaceAll('_', ' ')
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
+
+export function toRfc3339DayStart(date: string): string | undefined {
+  return date ? new Date(`${date}T00:00:00`).toISOString() : undefined
+}
+
+export function toRfc3339DayEnd(date: string): string | undefined {
+  return date ? new Date(`${date}T23:59:59`).toISOString() : undefined
+}

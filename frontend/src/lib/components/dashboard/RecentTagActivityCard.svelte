@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { push } from "svelte-spa-router";
+  import { push, link } from "svelte-spa-router";
   import Activity from "@lucide/svelte/icons/activity";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import DashboardCard from "./DashboardCard.svelte";
@@ -8,9 +8,10 @@
   import {
     formatAuditType,
     formatDate,
+    formatNumber,
     formatRelativeTime,
   } from "../../utils/format";
-  import type { ImageEvent } from "../../api/types/events";
+  import type { DashboardActivity } from "../../api/types/dashboard";
   import type { DashboardCardProps } from "./types";
 
   let {
@@ -19,9 +20,10 @@
     loading,
     busy,
     onRetry,
-  }: DashboardCardProps<ImageEvent[]> = $props();
+  }: DashboardCardProps<DashboardActivity> = $props();
 
-  let events = $derived(data ?? []);
+  let events = $derived(data?.events ?? []);
+  let total = $derived(data?.total ?? 0);
 </script>
 
 <DashboardCard title="Recent tag activity">
@@ -77,6 +79,12 @@
         </li>
       {/each}
     </ul>
+
+    {#if total > events.length}
+      <a class="view-all link" href="/tag-activity" use:link>
+        View all {formatNumber(total)} tag events
+      </a>
+    {/if}
   </CardBody>
 </DashboardCard>
 
@@ -84,5 +92,10 @@
   .item-time {
     flex-shrink: 0;
     font-size: 0.8125rem;
+  }
+
+  .view-all {
+    display: inline-block;
+    margin-top: var(--space-3);
   }
 </style>

@@ -44,7 +44,8 @@ type registryService interface {
 }
 
 type eventService interface {
-	List(ctx context.Context, offset, limit int) ([]model.ImageEvent, error)
+	List(ctx context.Context, filters model.ImageEventListFilters) ([]model.ImageEvent, error)
+	Count(ctx context.Context, filters model.ImageEventListFilters) (int64, error)
 }
 
 type auditService interface {

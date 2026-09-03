@@ -21,10 +21,15 @@ export interface DashboardUpdates {
   total: number
 }
 
+export interface DashboardActivity {
+  events: ImageEvent[]
+  total: number
+}
+
 export interface Dashboard {
   summary: DashboardSection<DashboardSummary>
   updates: DashboardSection<DashboardUpdates>
   issues: DashboardSection<RecentFailure[]>
-  activity: DashboardSection<ImageEvent[]>
+  activity: DashboardSection<DashboardActivity>
   metrics: DashboardSection<ProxyMetrics>
 }

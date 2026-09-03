@@ -31,8 +31,12 @@ type fakeEvents struct {
 	err  error
 }
 
-func (f fakeEvents) List(context.Context, int, int) ([]model.ImageEvent, error) {
+func (f fakeEvents) List(context.Context, model.ImageEventListFilters) ([]model.ImageEvent, error) {
 	return f.list, f.err
+}
+
+func (f fakeEvents) Count(context.Context, model.ImageEventListFilters) (int64, error) {
+	return int64(len(f.list)), f.err
 }
 
 type fakeFailures struct {
@@ -103,7 +107,7 @@ func TestDashboardAllSectionsSucceed(t *testing.T) {
 		t.Errorf("updates images = %+v, want 1", resp.Updates.Data)
 	}
 
-	if resp.Activity.Data == nil || len(*resp.Activity.Data) != 1 {
+	if resp.Activity.Data == nil || len(resp.Activity.Data.Events) != 1 {
 		t.Errorf("activity = %+v, want 1 event", resp.Activity.Data)
 	}
 }

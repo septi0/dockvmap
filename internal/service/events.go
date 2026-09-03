@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"slices"
 	"sort"
 
 	"github.com/septi0/dockvmap/internal/model"
@@ -21,9 +22,20 @@ const (
 	EventTypeUpgradeAvailable = "UPGRADE_AVAILABLE"
 )
 
+var TagEventTypes = []string{
+	EventTypeTagAdded,
+	EventTypeTagRemoved,
+	EventTypeUpgradeAvailable,
+}
+
+func IsValidTagEventType(t string) bool {
+	return slices.Contains(TagEventTypes, t)
+}
+
 type eventStore interface {
 	AddTagsEvent(ctx context.Context, imageID int64, eventType string, notify bool, data model.TagsEventData) error
-	ListTagsEvents(ctx context.Context, offset, limit int) ([]model.ImageEvent, error)
+	ListTagsEvents(ctx context.Context, filters model.ImageEventListFilters) ([]model.ImageEvent, error)
+	CountTagsEvents(ctx context.Context, filters model.ImageEventListFilters) (int64, error)
 }
 
 type eventHandler interface {
@@ -84,8 +96,12 @@ func upgradeBecameAvailable(image *model.Image, updateAvailable bool, updateAvai
 	return image.UpdateAvailableTag == nil || *image.UpdateAvailableTag != updateAvailableTag
 }
 
-func (e *Events) List(ctx context.Context, offset, limit int) ([]model.ImageEvent, error) {
-	return e.store.ListTagsEvents(ctx, offset, limit)
+func (e *Events) List(ctx context.Context, filters model.ImageEventListFilters) ([]model.ImageEvent, error) {
+	return e.store.ListTagsEvents(ctx, filters)
+}
+
+func (e *Events) Count(ctx context.Context, filters model.ImageEventListFilters) (int64, error) {
+	return e.store.CountTagsEvents(ctx, filters)
 }
 
 func diffImageTags(oldTags []model.ImageTag, newTags []model.ImageTag) ([]model.ImageTag, []model.ImageTag) {

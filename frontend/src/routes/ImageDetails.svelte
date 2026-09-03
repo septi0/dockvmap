@@ -16,6 +16,7 @@
   import Button from "../lib/components/Button.svelte";
   import ChangeTagModal from "../lib/components/ChangeTagModal.svelte";
   import TagHistoryModal from "../lib/components/TagHistoryModal.svelte";
+  import TagActivitySection from "../lib/components/TagActivitySection.svelte";
   import RefreshTagsButton from "../lib/components/RefreshTagsButton.svelte";
   import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
   import RenameImageModal from "../lib/components/RenameImageModal.svelte";
@@ -43,6 +44,8 @@
 
   let showTagModal = $state(false);
   let showHistoryModal = $state(false);
+
+  let activityReload = $state(0);
 
   let copyError = $state<string | null>(null);
 
@@ -75,6 +78,7 @@
     }
     if (next.refreshStatus === "running") return true;
     mergeImage(next);
+    activityReload++;
     return false;
   }, REFRESH_POLL_INTERVAL_MS);
 
@@ -121,6 +125,7 @@
     try {
       mergeImage(await getImage(imageId));
       syncRefreshPolling();
+      activityReload++;
     } catch {}
   }
 
@@ -266,6 +271,8 @@
         <DetailRow label="Created">{formatDate(image.createdAt)}</DetailRow>
         <DetailRow label="Updated">{formatDate(image.updatedAt)}</DetailRow>
       </div>
+
+      <TagActivitySection imageId={image.id} reloadSignal={activityReload} />
 
       <div class="card section-card">
         <h2>Pull command</h2>

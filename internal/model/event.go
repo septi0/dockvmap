@@ -16,3 +16,11 @@ type ImageEvent struct {
 type TagsEventData struct {
 	Tags []string `json:"tags"`
 }
+
+type ImageEventListFilters struct {
+	Pagination
+	Type    string
+	ImageID int64
+	Since   *time.Time
+	Until   *time.Time
+}

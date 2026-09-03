@@ -11,7 +11,7 @@ import (
 
 const (
 	dashboardUpdatesLimit  = 5
-	dashboardActivityLimit = 8
+	dashboardActivityLimit = 5
 )
 
 type dashboardSection[T any] struct {
@@ -40,11 +40,16 @@ type dashboardUpdatesData struct {
 	Total  int64           `json:"total"`
 }
 
+type dashboardActivityData struct {
+	Events []model.ImageEvent `json:"events"`
+	Total  int64              `json:"total"`
+}
+
 type dashboardResponse struct {
 	Summary  dashboardSection[dashboardSummaryData]    `json:"summary"`
 	Updates  dashboardSection[dashboardUpdatesData]    `json:"updates"`
 	Issues   dashboardSection[[]recentFailureResponse] `json:"issues"`
-	Activity dashboardSection[[]model.ImageEvent]      `json:"activity"`
+	Activity dashboardSection[dashboardActivityData]   `json:"activity"`
 	Metrics  dashboardSection[proxyMetricsResponse]    `json:"metrics"`
 }
 
@@ -135,18 +140,28 @@ func (w *Web) dashboardIssues(ctx context.Context) dashboardSection[[]recentFail
 	return dashboardData(responses)
 }
 
-func (w *Web) dashboardActivity(ctx context.Context) dashboardSection[[]model.ImageEvent] {
-	events, err := w.events.List(ctx, 0, dashboardActivityLimit)
+func (w *Web) dashboardActivity(ctx context.Context) dashboardSection[dashboardActivityData] {
+	filters := model.ImageEventListFilters{
+		Pagination: model.Pagination{Offset: 0, Limit: dashboardActivityLimit},
+	}
+
+	events, err := w.events.List(ctx, filters)
 
 	if err != nil {
-		return dashboardError[[]model.ImageEvent]("failed to load tag activity")
+		return dashboardError[dashboardActivityData]("failed to load tag activity")
+	}
+
+	total, err := w.events.Count(ctx, filters)
+
+	if err != nil {
+		return dashboardError[dashboardActivityData]("failed to load tag activity")
 	}
 
 	if events == nil {
 		events = []model.ImageEvent{}
 	}
 
-	return dashboardData(events)
+	return dashboardData(dashboardActivityData{Events: events, Total: total})
 }
 
 func (w *Web) dashboardMetrics(ctx context.Context) dashboardSection[proxyMetricsResponse] {

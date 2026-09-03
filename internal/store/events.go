@@ -26,21 +26,62 @@ func (s *Store) AddTagsEvent(ctx context.Context, imageID int64, eventType strin
 	return nil
 }
 
-func (s *Store) ListTagsEvents(ctx context.Context, offset, limit int) ([]model.ImageEvent, error) {
-	rows, err := s.db.QueryContext(ctx, `
+func tagsEventListWhere(filters model.ImageEventListFilters) (string, []any) {
+	b := &whereBuilder{}
+
+	if filters.Type != "" {
+		b.add("ie.type = ?", filters.Type)
+	}
+
+	if filters.ImageID != 0 {
+		b.add("ie.image_id = ?", filters.ImageID)
+	}
+
+	if filters.Since != nil {
+		b.add("ie.created_at >= ?", sqliteDatetime(*filters.Since))
+	}
+
+	if filters.Until != nil {
+		b.add("ie.created_at <= ?", sqliteDatetime(*filters.Until))
+	}
+
+	return b.clause(), b.args
+}
+
+func (s *Store) CountTagsEvents(ctx context.Context, filters model.ImageEventListFilters) (int64, error) {
+	where, args := tagsEventListWhere(filters)
+
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM tags_events ie %s`, where)
+
+	var count int64
+
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting tags events: %w", err)
+	}
+
+	return count, nil
+}
+
+func (s *Store) ListTagsEvents(ctx context.Context, filters model.ImageEventListFilters) ([]model.ImageEvent, error) {
+	where, args := tagsEventListWhere(filters)
+
+	query := fmt.Sprintf(`
 		SELECT ie.id, ie.image_id, i.name, ie.type, ie.data, ie.created_at, ie.notify, ie.notif_sent_at
 		FROM tags_events ie
 		LEFT JOIN images i ON ie.image_id = i.id
+		%s
 		ORDER BY ie.created_at DESC, ie.id DESC
 		LIMIT ? OFFSET ?
-	`, limit, offset)
+	`, where)
+
+	rows, err := s.db.QueryContext(ctx, query, append(args, filters.Limit, filters.Offset)...)
 
 	if err != nil {
 		return nil, fmt.Errorf("querying tags events: %w", err)
 	}
 	defer rows.Close()
 
-	events := make([]model.ImageEvent, 0, limit)
+	events := make([]model.ImageEvent, 0, filters.Limit)
 
 	for rows.Next() {
 		var event model.ImageEvent

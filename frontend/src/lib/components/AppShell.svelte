@@ -25,6 +25,7 @@
     { label: "Registries", href: "/registries" },
     { label: "Virtual Images", href: "/images" },
     { label: "Proxy Tokens", href: "/proxy-tokens" },
+    { label: "Tag activity", href: "/tag-activity" },
     { label: "Audit Log", href: "/audit-log" },
   ];
 </script>

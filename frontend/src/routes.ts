@@ -10,6 +10,7 @@ import Registries from './routes/Registries.svelte'
 import Images from './routes/Images.svelte'
 import CreateImage from './routes/CreateImage.svelte'
 import ImageDetails from './routes/ImageDetails.svelte'
+import TagActivity from './routes/TagActivity.svelte'
 import AuditLog from './routes/AuditLog.svelte'
 import ProxyTokens from './routes/ProxyTokens.svelte'
 import Profile from './routes/Profile.svelte'
@@ -56,6 +57,7 @@ export default {
   '/images': wrap({ component: Images, conditions: [requireAuth] }),
   '/images/new': wrap({ component: CreateImage, conditions: [requireAuth] }),
   '/images/:id': wrap({ component: ImageDetails, conditions: [requireAuth] }),
+  '/tag-activity': wrap({ component: TagActivity, conditions: [requireAuth] }),
   '/audit-log': wrap({ component: AuditLog, conditions: [requireAuth] }),
   '/proxy-tokens': wrap({ component: ProxyTokens, conditions: [requireAuth] }),
   '/account/profile': wrap({ component: Profile, conditions: [requireAuth] }),

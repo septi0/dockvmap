@@ -1,26 +1,25 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import ScrollText from "@lucide/svelte/icons/scroll-text";
+  import { link } from "svelte-spa-router";
+  import Activity from "@lucide/svelte/icons/activity";
+  import X from "@lucide/svelte/icons/x";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Pagination from "../lib/components/Pagination.svelte";
   import FilterBar from "../lib/components/FilterBar.svelte";
   import DateRangeFilter from "../lib/components/DateRangeFilter.svelte";
-  import Modal from "../lib/components/Modal.svelte";
-  import DetailRow from "../lib/components/DetailRow.svelte";
-  import DeviceIcon from "../lib/components/DeviceIcon.svelte";
-  import { listAuditLogs, AUDIT_LOG_PAGE_SIZE } from "../lib/api/audit";
+  import { listTagEvents, TAG_ACTIVITY_PAGE_SIZE } from "../lib/api/events";
+  import { getImage } from "../lib/api/images";
   import { errorMessage } from "../lib/api/client";
-  import { AUDIT_TYPES } from "../lib/api/types/audit";
-  import type { AuditLog } from "../lib/api/types/audit";
+  import { TAG_EVENT_TYPES } from "../lib/api/types/events";
+  import type { ImageEvent } from "../lib/api/types/events";
   import {
     formatDate,
     formatAuditType,
     toRfc3339DayStart,
     toRfc3339DayEnd,
   } from "../lib/utils/format";
-  import { parseUserAgent } from "../lib/utils/userAgent";
   import {
     readListQuery,
     pushListQuery,
@@ -29,25 +28,30 @@
 
   const FILTER_DEFAULTS = {
     type: "",
+    imageId: 0,
     since: "",
     until: "",
     offset: 0,
   };
 
-  let auditLogs = $state<AuditLog[]>([]);
+  let events = $state<ImageEvent[]>([]);
   let total = $state(0);
   let offset = $state(0);
   let selectedType = $state("");
+  let selectedImageId = $state(0);
+  let filterImageName = $state("");
   let sinceDate = $state("");
   let untilDate = $state("");
   let loading = $state(true);
   let loaded = $state(false);
   let error = $state<string | null>(null);
-  let selectedEntry = $state<AuditLog | null>(null);
   let loadToken = 0;
 
   let hasActiveFilters = $derived(
-    selectedType !== "" || sinceDate !== "" || untilDate !== "",
+    selectedType !== "" ||
+      selectedImageId !== 0 ||
+      sinceDate !== "" ||
+      untilDate !== "",
   );
 
   async function load() {
@@ -56,19 +60,20 @@
     error = null;
 
     try {
-      const result = await listAuditLogs({
+      const result = await listTagEvents({
         offset,
-        limit: AUDIT_LOG_PAGE_SIZE,
+        limit: TAG_ACTIVITY_PAGE_SIZE,
         type: selectedType || undefined,
+        imageId: selectedImageId || undefined,
         since: toRfc3339DayStart(sinceDate),
         until: toRfc3339DayEnd(untilDate),
       });
       if (requestId !== loadToken) return;
-      auditLogs = result.auditLogs;
+      events = result.events;
       total = result.total;
     } catch (err) {
       if (requestId !== loadToken) return;
-      error = errorMessage(err, "Failed to load audit log");
+      error = errorMessage(err, "Failed to load tag activity");
     } finally {
       if (requestId === loadToken) {
         loading = false;
@@ -77,18 +82,34 @@
     }
   }
 
+  async function resolveImageName(id: number) {
+    if (id === 0) {
+      filterImageName = "";
+      return;
+    }
+
+    try {
+      filterImageName = (await getImage(id)).name;
+    } catch {
+      filterImageName = "";
+    }
+  }
+
   function syncFromUrl() {
     const filters = readListQuery(FILTER_DEFAULTS);
     selectedType = filters.type;
+    selectedImageId = filters.imageId;
     sinceDate = filters.since;
     untilDate = filters.until;
     offset = filters.offset;
+    resolveImageName(selectedImageId);
     load();
   }
 
   function syncToUrl() {
-    pushListQuery("/audit-log", {
+    pushListQuery("/tag-activity", {
       type: selectedType,
+      imageId: selectedImageId,
       since: sinceDate,
       until: untilDate,
       offset,
@@ -109,13 +130,16 @@
     load();
   }
 
-  function selectRow(event: MouseEvent, entry: AuditLog) {
-    if ((event.target as HTMLElement).closest("button")) return;
-    selectedEntry = entry;
+  function clearImageFilter() {
+    selectedImageId = 0;
+    filterImageName = "";
+    handleFilterChange();
   }
 
   function clearFilters() {
     selectedType = "";
+    selectedImageId = 0;
+    filterImageName = "";
     sinceDate = "";
     untilDate = "";
     offset = 0;
@@ -124,12 +148,12 @@
   }
 </script>
 
-<PageTitle title="Audit Log" />
+<PageTitle title="Tag activity" />
 
 <AppShell>
   <div class="title-row">
-    <ScrollText size={20} strokeWidth={1.75} />
-    <h1>Audit Log</h1>
+    <Activity size={20} strokeWidth={1.75} />
+    <h1>Tag activity</h1>
   </div>
 
   <FilterBar active={hasActiveFilters} onClear={clearFilters}>
@@ -142,7 +166,7 @@
         onchange={handleFilterChange}
       >
         <option value="">All events</option>
-        {#each AUDIT_TYPES as type (type)}
+        {#each TAG_EVENT_TYPES as type (type)}
           <option value={type}>{formatAuditType(type)}</option>
         {/each}
       </select>
@@ -156,14 +180,30 @@
         onChange={handleFilterChange}
       />
     </div>
+
+    {#if selectedImageId !== 0}
+      <span class="active-filter">
+        <span class="active-filter-label">
+          Image: {filterImageName || `#${selectedImageId}`}
+        </span>
+        <button
+          type="button"
+          class="active-filter-dismiss"
+          aria-label="Clear image filter"
+          onclick={clearImageFilter}
+        >
+          <X size={13} strokeWidth={2.5} />
+        </button>
+      </span>
+    {/if}
   </FilterBar>
 
   <AsyncState
     loading={loading && !loaded}
     busy={loading && loaded}
     {error}
-    empty={auditLogs.length === 0}
-    emptyMessage="No audit events yet."
+    empty={events.length === 0}
+    emptyMessage="No tag activity yet."
     columns={4}
   >
     <div class="card table-wrap">
@@ -172,25 +212,25 @@
           <tr>
             <th>Time</th>
             <th>Event</th>
-            <th>User</th>
-            <th>IP</th>
+            <th>Image</th>
+            <th>Tags</th>
           </tr>
         </thead>
         <tbody>
-          {#each auditLogs as entry (entry.id)}
-            <tr class="clickable" onclick={(event) => selectRow(event, entry)}>
+          {#each events as event (event.id)}
+            <tr>
+              <td>{formatDate(event.createdAt)}</td>
+              <td>{formatAuditType(event.type)}</td>
               <td>
-                <button
-                  type="button"
-                  class="row-trigger"
-                  onclick={() => (selectedEntry = entry)}
+                <a
+                  class="row-link"
+                  href={`/images/${event.imageId}`}
+                  use:link
                 >
-                  {formatDate(entry.createdAt)}
-                </button>
+                  {event.imageName}
+                </a>
               </td>
-              <td>{formatAuditType(entry.type)}</td>
-              <td>{entry.username ?? "-"}</td>
-              <td>{entry.ip ?? "-"}</td>
+              <td class="tags-cell">{event.data.tags.join(", ")}</td>
             </tr>
           {/each}
         </tbody>
@@ -199,97 +239,60 @@
 
     <Pagination
       {total}
-      limit={AUDIT_LOG_PAGE_SIZE}
+      limit={TAG_ACTIVITY_PAGE_SIZE}
       {offset}
       onOffsetChange={handleOffsetChange}
     />
   </AsyncState>
 </AppShell>
 
-<Modal
-  open={selectedEntry !== null}
-  onClose={() => (selectedEntry = null)}
-  title="Audit event"
->
-  {#if selectedEntry}
-    <DetailRow label="Time">{formatDate(selectedEntry.createdAt)}</DetailRow>
-    <DetailRow label="Event">{formatAuditType(selectedEntry.type)}</DetailRow>
-    <DetailRow label="User">{selectedEntry.username ?? "System"}</DetailRow>
-    <DetailRow label="IP">{selectedEntry.ip ?? "-"}</DetailRow>
-    <DetailRow label="User agent">
-      {#if selectedEntry.userAgent}
-        {@const ua = parseUserAgent(selectedEntry.userAgent)}
-        <span class="ua-line">
-          <span class="icon"><DeviceIcon device={ua.device} /></span>
-          {ua.label}
-        </span>
-        <span class="ua-raw muted">{selectedEntry.userAgent}</span>
-      {:else}
-        -
-      {/if}
-    </DetailRow>
-
-    {#if selectedEntry.data && Object.keys(selectedEntry.data).length > 0}
-      <DetailRow label="Details">
-        <pre class="data">{JSON.stringify(selectedEntry.data, null, 2)}</pre>
-      </DetailRow>
-    {/if}
-  {/if}
-</Modal>
-
 <style>
   .title-row {
     margin-bottom: var(--space-4);
   }
 
-  .clickable {
-    cursor: pointer;
-  }
-
-  .row-trigger {
-    padding: 0;
-    border: none;
-    background: none;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-    text-align: left;
-  }
-
-  .row-trigger:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
-    border-radius: 2px;
-  }
-
-  .data {
-    margin: 0;
-    padding: var(--space-3);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-x: auto;
-  }
-
-  .ua-line {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .ua-line .icon {
+  .active-filter {
     display: inline-flex;
-    flex-shrink: 0;
-    color: var(--color-text-muted);
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+    border: 1px solid var(--color-accent);
+    border-radius: var(--radius-full);
+    background: var(--color-accent-muted-bg);
+    font-size: 0.8125rem;
   }
 
-  .ua-raw {
-    display: block;
-    margin-top: 2px;
+  .active-filter-label {
+    color: var(--color-text);
+  }
+
+  .active-filter-dismiss {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border: none;
+    border-radius: var(--radius-full);
+    background: none;
+    color: var(--color-text-muted);
+    cursor: pointer;
+  }
+
+  .active-filter-dismiss:hover {
+    color: var(--color-text);
+  }
+
+  .row-link {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+
+  .row-link:hover {
+    text-decoration: underline;
+  }
+
+  .tags-cell {
+    font-family: ui-monospace, monospace;
     font-size: 0.8125rem;
     word-break: break-word;
   }
