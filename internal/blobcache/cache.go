@@ -95,8 +95,10 @@ func (c *Cache) Serve(ctx context.Context, rw http.ResponseWriter, r *http.Reque
 		return false, c.store.DeleteCachedBlob(ctx, digest)
 	}
 
-	if err := c.store.TouchCachedBlob(ctx, digest, now); err != nil {
-		return false, err
+	if !blob.AccessedAt.After(now.Add(-c.lifetime / 10)) {
+		if err := c.store.TouchCachedBlob(ctx, digest, now); err != nil {
+			return false, err
+		}
 	}
 
 	rw.Header().Set("Docker-Content-Digest", blob.Digest)

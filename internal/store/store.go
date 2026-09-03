@@ -81,8 +81,8 @@ func open(path, credentialEncryptionKey string) (*Store, error) {
 		return nil, fmt.Errorf("opening db: %w", err)
 	}
 
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(10)
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(25)
 	db.SetConnMaxLifetime(0)
 
 	if err := db.PingContext(context.Background()); err != nil {

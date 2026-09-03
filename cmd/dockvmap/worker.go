@@ -21,7 +21,7 @@ const tagDiscoveryCleanupInterval = 24 * time.Hour
 const tagDiscoveryRetention = 7 * 24 * time.Hour
 const backgroundFailureCleanupInterval = 24 * time.Hour
 const backgroundFailureRetention = 30 * 24 * time.Hour
-const proxyMetricsFlushInterval = time.Minute
+const proxyMetricsFlushInterval = 5 * time.Minute
 const proxyMetricsCleanupInterval = 24 * time.Hour
 const proxyMetricsRetention = 30 * 24 * time.Hour
 
@@ -357,32 +357,25 @@ func executeJob(ctx context.Context, job scheduledJob, schedule *service.WorkerS
 	activity.Begin(job.name)
 	defer activity.End(job.name)
 
-	markCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-
-	if err := schedule.MarkRun(markCtx, job.name); err != nil {
-		slog.Error("recording worker run failed", "job", job.name, "error", err)
-	}
-
 	count, err := job.run(ctx)
 
-	recordedCount, recordedErr := int64(count), err
-
 	if ctx.Err() != nil {
-		recordedCount, recordedErr = 0, nil
-	} else if err != nil {
+		return
+	}
+
+	if err != nil {
 		slog.Error(job.name+" tick failed", "error", err)
 	}
 
-	if recordedCount > 0 && job.doneMsg != "" {
-		slog.Info(job.doneMsg, "count", recordedCount)
+	if count > 0 && job.doneMsg != "" {
+		slog.Info(job.doneMsg, "count", count)
 	}
 
-	outcomeCtx, outcomeCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer outcomeCancel()
+	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 
-	if outcomeErr := schedule.MarkOutcome(outcomeCtx, job.name, recordedCount, recordedErr); outcomeErr != nil {
-		slog.Error("recording worker outcome failed", "job", job.name, "error", outcomeErr)
+	if writeErr := schedule.RecordRun(runCtx, job.name, int64(count), err); writeErr != nil {
+		slog.Error("recording worker run failed", "job", job.name, "error", writeErr)
 	}
 }
 

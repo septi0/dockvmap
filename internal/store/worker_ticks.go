@@ -70,30 +70,21 @@ func (s *Store) ListWorkerTicks(ctx context.Context) ([]model.WorkerTick, error)
 	return ticks, nil
 }
 
-func (s *Store) RecordWorkerTick(ctx context.Context, job string, at time.Time) error {
-	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO worker_ticks (job, last_run_at)
-		VALUES (?, ?)
-		ON CONFLICT(job) DO UPDATE SET last_run_at = excluded.last_run_at
-	`, job, at); err != nil {
-		return fmt.Errorf("recording worker tick %q: %w", job, err)
-	}
-
-	return nil
-}
-
-func (s *Store) RecordWorkerOutcome(ctx context.Context, job string, count int64, errText string) error {
+func (s *Store) RecordWorkerRun(ctx context.Context, job string, at time.Time, count int64, errText string) error {
 	var errArg any
 	if errText != "" {
 		errArg = errText
 	}
 
 	if _, err := s.db.ExecContext(ctx, `
-		UPDATE worker_ticks
-		SET last_error = ?, last_count = ?
-		WHERE job = ?
-	`, errArg, count, job); err != nil {
-		return fmt.Errorf("recording worker outcome %q: %w", job, err)
+		INSERT INTO worker_ticks (job, last_run_at, last_count, last_error)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(job) DO UPDATE SET
+			last_run_at = excluded.last_run_at,
+			last_count = excluded.last_count,
+			last_error = excluded.last_error
+	`, job, at, count, errArg); err != nil {
+		return fmt.Errorf("recording worker run %q: %w", job, err)
 	}
 
 	return nil

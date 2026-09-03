@@ -197,6 +197,32 @@ func TestVersionContains(t *testing.T) {
 	}
 }
 
+func TestTagSetHash(t *testing.T) {
+	if tagSetHash([]string{"a", "b", "c"}) != tagSetHash([]string{"c", "a", "b"}) {
+		t.Error("hash must not depend on input order")
+	}
+
+	if tagSetHash([]string{"a", "b"}) == tagSetHash([]string{"a", "b", "c"}) {
+		t.Error("adding a tag must change the hash")
+	}
+
+	if tagSetHash([]string{"ab", "c"}) == tagSetHash([]string{"a", "bc"}) {
+		t.Error("tag boundaries must be significant")
+	}
+
+	if tagSetHash(nil) != tagSetHash([]string{}) {
+		t.Error("nil and empty slice must hash alike")
+	}
+
+	if tagSetHash(nil) == tagSetHash([]string{"a"}) {
+		t.Error("empty and non-empty sets must differ")
+	}
+
+	if tagSetHash(nil) == "" {
+		t.Error("hash must be a non-empty digest")
+	}
+}
+
 func TestNumberPrefix(t *testing.T) {
 	cases := []struct {
 		name   string

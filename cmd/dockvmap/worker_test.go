@@ -59,14 +59,14 @@ func TestRescheduleDelay(t *testing.T) {
 	}
 }
 
-type recordedOutcome struct {
+type recordedRun struct {
 	job   string
 	count int64
 	err   string
 }
 
 type recordingScheduleStore struct {
-	outcomes []recordedOutcome
+	runs []recordedRun
 }
 
 func (s *recordingScheduleStore) GetWorkerTick(context.Context, string) (time.Time, bool, error) {
@@ -77,16 +77,12 @@ func (s *recordingScheduleStore) ListWorkerTicks(context.Context) ([]model.Worke
 	return nil, nil
 }
 
-func (s *recordingScheduleStore) RecordWorkerTick(context.Context, string, time.Time) error {
+func (s *recordingScheduleStore) RecordWorkerRun(_ context.Context, job string, _ time.Time, count int64, errText string) error {
+	s.runs = append(s.runs, recordedRun{job: job, count: count, err: errText})
 	return nil
 }
 
-func (s *recordingScheduleStore) RecordWorkerOutcome(_ context.Context, job string, count int64, errText string) error {
-	s.outcomes = append(s.outcomes, recordedOutcome{job: job, count: count, err: errText})
-	return nil
-}
-
-func runExecuteJob(t *testing.T, ctx context.Context, run func(context.Context) (int, error)) recordedOutcome {
+func runExecuteJob(t *testing.T, ctx context.Context, run func(context.Context) (int, error)) []recordedRun {
 	t.Helper()
 
 	store := &recordingScheduleStore{}
@@ -94,42 +90,38 @@ func runExecuteJob(t *testing.T, ctx context.Context, run func(context.Context) 
 
 	executeJob(ctx, job, service.NewWorkerSchedule(store), service.NewWorkerActivity())
 
-	if len(store.outcomes) != 1 {
-		t.Fatalf("expected exactly one recorded outcome, got %d", len(store.outcomes))
-	}
-
-	return store.outcomes[0]
+	return store.runs
 }
 
 func TestExecuteJobRecordsCount(t *testing.T) {
-	got := runExecuteJob(t, context.Background(), func(context.Context) (int, error) {
+	runs := runExecuteJob(t, context.Background(), func(context.Context) (int, error) {
 		return 7, nil
 	})
 
-	if got.count != 7 || got.err != "" {
-		t.Fatalf("recorded outcome = %+v, want count 7 and no error", got)
+	if len(runs) != 1 || runs[0].count != 7 || runs[0].err != "" {
+		t.Fatalf("recorded runs = %+v, want one run with count 7 and no error", runs)
 	}
 }
 
 func TestExecuteJobRecordsError(t *testing.T) {
-	got := runExecuteJob(t, context.Background(), func(context.Context) (int, error) {
+	runs := runExecuteJob(t, context.Background(), func(context.Context) (int, error) {
 		return 0, errors.New("boom")
 	})
 
-	if got.err != "boom" {
-		t.Fatalf("recorded outcome = %+v, want error %q", got, "boom")
+	if len(runs) != 1 || runs[0].err != "boom" {
+		t.Fatalf("recorded runs = %+v, want one run with error %q", runs, "boom")
 	}
 }
 
-func TestExecuteJobInterruptedRunRecordsCleanRow(t *testing.T) {
+func TestExecuteJobInterruptedRunSkipsWrite(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	got := runExecuteJob(t, ctx, func(context.Context) (int, error) {
+	runs := runExecuteJob(t, ctx, func(context.Context) (int, error) {
 		return 3, context.Canceled
 	})
 
-	if got.count != 0 || got.err != "" {
-		t.Fatalf("interrupted run recorded %+v, want a clean row (count 0, no error)", got)
+	if len(runs) != 0 {
+		t.Fatalf("interrupted run recorded %+v, want no write", runs)
 	}
 }

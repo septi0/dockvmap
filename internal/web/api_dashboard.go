@@ -79,26 +79,16 @@ func (w *Web) apiDashboard(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *Web) dashboardSummary(ctx context.Context) dashboardSection[dashboardSummaryData] {
+	counts, err := w.images.StatusCounts(ctx)
+
+	if err != nil {
+		return dashboardError[dashboardSummaryData]("failed to load image counts")
+	}
+
 	var data dashboardSummaryData
-
-	counts := []struct {
-		status model.ImageStatusFilter
-		target *int64
-	}{
-		{"", &data.Images.Total},
-		{model.ImageStatusUpdateAvailable, &data.Images.UpdateAvailable},
-		{model.ImageStatusFailedCheck, &data.Images.FailedCheck},
-	}
-
-	for _, c := range counts {
-		count, err := w.images.Count(ctx, model.ImageListFilters{Status: c.status})
-
-		if err != nil {
-			return dashboardError[dashboardSummaryData]("failed to load image counts")
-		}
-
-		*c.target = count
-	}
+	data.Images.Total = counts.Total
+	data.Images.UpdateAvailable = counts.UpdateAvailable
+	data.Images.FailedCheck = counts.FailedCheck
 
 	return dashboardData(data)
 }

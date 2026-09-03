@@ -1,0 +1,1 @@
+ALTER TABLE images ADD COLUMN tag_set_hash TEXT NOT NULL DEFAULT '';

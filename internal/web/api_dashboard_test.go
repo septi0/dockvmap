@@ -26,6 +26,10 @@ func (f fakeImages) Count(context.Context, model.ImageListFilters) (int64, error
 	return int64(len(f.list)), f.err
 }
 
+func (f fakeImages) StatusCounts(context.Context) (model.ImageStatusCounts, error) {
+	return model.ImageStatusCounts{Total: int64(len(f.list))}, f.err
+}
+
 type fakeEvents struct {
 	list []model.ImageEvent
 	err  error

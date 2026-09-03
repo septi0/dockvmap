@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -44,8 +46,10 @@ type imageStore interface {
 	GetImage(ctx context.Context, name string) (*model.Image, error)
 	GetRegistryInfoByID(ctx context.Context, registryID int64) (*model.RegistryInfo, error)
 	ListImages(ctx context.Context, filters model.ImageListFilters) ([]model.Image, error)
+	ListImagesAfterID(ctx context.Context, afterID int64, limit int) ([]model.Image, error)
 	CountImages(ctx context.Context, filters model.ImageListFilters) (int64, error)
-	UpdateImageCheck(ctx context.Context, tx store.DBTX, imageId int64, checkErr *string, checkedAt time.Time) (bool, error)
+	ImageStatusCounts(ctx context.Context) (model.ImageStatusCounts, error)
+	UpdateImageCheck(ctx context.Context, tx store.DBTX, imageId int64, checkErr *string, checkedAt time.Time, tagSetHash string) (bool, error)
 	TryStartImageRefresh(ctx context.Context, imageId int64) (bool, error)
 	SetImageRefreshStatus(ctx context.Context, imageId int64, status string) error
 	ResetRunningImageRefreshes(ctx context.Context) (int64, error)
@@ -283,6 +287,10 @@ func (i *Images) List(ctx context.Context, filters model.ImageListFilters) ([]mo
 
 func (i *Images) Count(ctx context.Context, filters model.ImageListFilters) (int64, error) {
 	return i.store.CountImages(ctx, filters)
+}
+
+func (i *Images) StatusCounts(ctx context.Context) (model.ImageStatusCounts, error) {
+	return i.store.ImageStatusCounts(ctx)
 }
 
 func (i *Images) GetByID(ctx context.Context, imageId int64) (*model.Image, error) {
@@ -626,7 +634,7 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 
 			i.failures.Record(ctx, FailureSourceRefresh, image.Name, err)
 
-			if _, updateErr := i.store.UpdateImageCheck(ctx, nil, image.ID, &message, checkedAt); updateErr != nil {
+			if _, updateErr := i.store.UpdateImageCheck(ctx, nil, image.ID, &message, checkedAt, image.TagSetHash); updateErr != nil {
 				return fmt.Errorf("checking tags: %v; recording check failure: %w", err, updateErr)
 			}
 
@@ -634,6 +642,16 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 		}
 
 		sourceTags = i.tagFilter.Apply(sourceTags)
+	}
+
+	tagsHash := tagSetHash(sourceTags)
+
+	if tagsHash == image.TagSetHash {
+		if _, err := i.store.UpdateImageCheck(ctx, nil, image.ID, nil, checkedAt, tagsHash); err != nil {
+			return fmt.Errorf("recording tag check for %q: %w", image.Name, err)
+		}
+
+		return nil
 	}
 
 	analyzedTags := taganalyzer.Analyze(sourceTags)
@@ -662,7 +680,7 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 		return fmt.Errorf("deleting not seen tags for %q: %w", image.Name, err)
 	}
 
-	if _, err := i.store.UpdateImageCheck(ctx, tx, image.ID, nil, checkedAt); err != nil {
+	if _, err := i.store.UpdateImageCheck(ctx, tx, image.ID, nil, checkedAt, tagsHash); err != nil {
 		return fmt.Errorf("recording tag check for %q: %w", image.Name, err)
 	}
 
@@ -733,14 +751,15 @@ func (i *Images) RecoverFromRestart(ctx context.Context) error {
 }
 
 func (i *Images) RefreshAll(ctx context.Context) (int, error) {
-	batchSize := 100
-	offset := 0
+	const batchSize = 100
+
+	var afterID int64
 	refreshed := 0
 
 	var refreshErrors []error
 
 	for {
-		images, err := i.List(ctx, model.ImageListFilters{Pagination: model.Pagination{Offset: offset, Limit: batchSize}})
+		images, err := i.store.ListImagesAfterID(ctx, afterID, batchSize)
 
 		if err != nil {
 			return refreshed, fmt.Errorf("listing virtual images: %w", err)
@@ -750,7 +769,7 @@ func (i *Images) RefreshAll(ctx context.Context) (int, error) {
 			break
 		}
 
-		offset += len(images)
+		afterID = images[len(images)-1].ID
 
 		for _, image := range images {
 			if err := ctx.Err(); err != nil {
@@ -823,6 +842,20 @@ func (i *Images) MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, erro
 
 func containsTag(tags []string, tag string) bool {
 	return slices.Contains(tags, tag)
+}
+
+func tagSetHash(tags []string) string {
+	sorted := slices.Clone(tags)
+	slices.Sort(sorted)
+
+	h := sha256.New()
+
+	for _, tag := range sorted {
+		h.Write([]byte(tag))
+		h.Write([]byte{0})
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func versionSegments(tag taganalyzer.TagAnalysis) [][]int64 {

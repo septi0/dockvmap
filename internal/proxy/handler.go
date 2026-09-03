@@ -31,12 +31,13 @@ type tokenVerifier interface {
 }
 
 type Proxy struct {
-	cfg     *config.Config
-	images  imageResolver
-	client  *oci.Client
-	cache   *blobcache.Cache
-	metrics *Metrics
-	tokens  tokenVerifier
+	cfg          *config.Config
+	images       imageResolver
+	resolveCache *resolveCache
+	client       *oci.Client
+	cache        *blobcache.Cache
+	metrics      *Metrics
+	tokens       tokenVerifier
 }
 
 func New(cfg *config.Config, images imageResolver, client *oci.Client, cache *blobcache.Cache, metrics *Metrics, tokens tokenVerifier) *Proxy {
@@ -45,12 +46,13 @@ func New(cfg *config.Config, images imageResolver, client *oci.Client, cache *bl
 	}
 
 	return &Proxy{
-		cfg:     cfg,
-		images:  images,
-		client:  client,
-		cache:   cache,
-		metrics: metrics,
-		tokens:  tokens,
+		cfg:          cfg,
+		images:       images,
+		resolveCache: newResolveCache(),
+		client:       client,
+		cache:        cache,
+		metrics:      metrics,
+		tokens:       tokens,
 	}
 }
 
@@ -141,7 +143,7 @@ func (p *Proxy) authenticate(r *http.Request) bool {
 }
 
 func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, reference string) {
-	img, err := p.images.Resolve(r.Context(), name)
+	img, err := p.resolveCache.resolve(r.Context(), name, p.images.Resolve)
 
 	if err != nil {
 		slog.Error("manifest lookup failed", "method", r.Method, "name", name, "error", err)
@@ -207,7 +209,7 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 }
 
 func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest string) {
-	img, err := p.images.Resolve(r.Context(), name)
+	img, err := p.resolveCache.resolve(r.Context(), name, p.images.Resolve)
 
 	if err != nil {
 		slog.Error("blob lookup failed", "method", r.Method, "name", name, "error", err)
@@ -354,10 +356,12 @@ func writeOCIError(w http.ResponseWriter, status int, code, message string) {
 	})
 }
 
+const maxUpstreamErrorBody = 8 << 10
+
 func writeUpstreamOCIError(w http.ResponseWriter, response *http.Response, resource string) {
 	var upstream ociError
 
-	if err := json.NewDecoder(response.Body).Decode(&upstream); err == nil && len(upstream.Errors) > 0 {
+	if err := json.NewDecoder(io.LimitReader(response.Body, maxUpstreamErrorBody)).Decode(&upstream); err == nil && len(upstream.Errors) > 0 {
 		writeOCIError(w, response.StatusCode, upstream.Errors[0].Code, upstream.Errors[0].Message)
 		return
 	}

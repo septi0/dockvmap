@@ -23,6 +23,7 @@ import (
 
 const registryDataCacheTTL = 30 * time.Second
 const tokenCacheMaxEntries = 512
+const insecureClientCacheMaxEntries = 32
 const tagsListPageSize = 1000
 const maxTagListPages = 1000
 const maxRetryAttempts = 3
@@ -76,7 +77,7 @@ func newRegistryCache() *registryCache {
 		tokens:          expirable.NewLRU[string, cachedToken](tokenCacheMaxEntries, nil, 0),
 		credentials:     expirable.NewLRU[string, *Credentials](0, nil, registryDataCacheTTL),
 		options:         expirable.NewLRU[string, *RegistryOptions](0, nil, registryDataCacheTTL),
-		insecureClients: expirable.NewLRU[string, *http.Client](0, nil, registryDataCacheTTL),
+		insecureClients: expirable.NewLRU[string, *http.Client](insecureClientCacheMaxEntries, nil, 0),
 	}
 }
 

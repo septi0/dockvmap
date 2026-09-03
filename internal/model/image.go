@@ -22,6 +22,7 @@ type Image struct {
 	UpdateAvailable    bool       `json:"updateAvailable"`
 	UpdateAvailableTag *string    `json:"updateAvailableTag,omitempty"`
 	RefreshStatus      string     `json:"refreshStatus"`
+	TagSetHash         string     `json:"-"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
@@ -46,4 +47,10 @@ type ImageListFilters struct {
 	Pagination
 	Search string
 	Status ImageStatusFilter
+}
+
+type ImageStatusCounts struct {
+	Total           int64
+	UpdateAvailable int64
+	FailedCheck     int64
 }
