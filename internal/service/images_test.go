@@ -171,6 +171,21 @@ func TestUpdateAvailableFor(t *testing.T) {
 	}
 }
 
+func TestEffectiveUpdateAvailable(t *testing.T) {
+	tags := []model.ImageTag{
+		mt("1.3.0", 1, 0, false, true, []int64{1, 3, 0}),
+		mt("1.2.0", 1, 1, false, true, []int64{1, 2, 0}),
+	}
+
+	if avail, tag := effectiveUpdateAvailable(false, tags, "1.2.0"); !avail || tag != "1.3.0" {
+		t.Errorf("unpinned = (%v, %q); want (true, %q)", avail, tag, "1.3.0")
+	}
+
+	if avail, tag := effectiveUpdateAvailable(true, tags, "1.2.0"); avail || tag != "" {
+		t.Errorf("pinned = (%v, %q); want (false, \"\")", avail, tag)
+	}
+}
+
 func TestVersionContains(t *testing.T) {
 	cases := []struct {
 		name  string

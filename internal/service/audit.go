@@ -16,6 +16,7 @@ const (
 	AuditTypeImageCreated    = "IMAGE_CREATED"
 	AuditTypeImageTagChanged = "IMAGE_TAG_CHANGED"
 	AuditTypeImageRenamed    = "IMAGE_RENAMED"
+	AuditTypeImagePinChanged = "IMAGE_PIN_CHANGED"
 	AuditTypeImageDeleted    = "IMAGE_DELETED"
 
 	AuditTypeUserBootstrapped         = "USER_BOOTSTRAPPED"
@@ -42,6 +43,7 @@ var AuditTypes = []string{
 	AuditTypeImageCreated,
 	AuditTypeImageTagChanged,
 	AuditTypeImageRenamed,
+	AuditTypeImagePinChanged,
 	AuditTypeImageDeleted,
 
 	AuditTypeUserBootstrapped,

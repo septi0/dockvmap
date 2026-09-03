@@ -431,6 +431,11 @@ select.filter-control {
   color: var(--color-warning);
 }
 
+.badge-success {
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+}
+
 .muted {
   color: var(--color-text-muted);
 }

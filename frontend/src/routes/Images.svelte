@@ -7,6 +7,7 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Check from "@lucide/svelte/icons/check";
+  import Pin from "@lucide/svelte/icons/pin";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
@@ -34,6 +35,7 @@
     { value: "", label: "All images" },
     { value: "updateAvailable", label: "Updates available" },
     { value: "failedCheck", label: "Failed checks" },
+    { value: "pinned", label: "Pinned" },
   ];
 
   let showRefreshAllConfirm = $state(false);
@@ -205,7 +207,15 @@
               <td>{image.tag}</td>
               <td>{formatDate(image.lastChecked, "Never")}</td>
               <td>
-                {#if image.updateAvailable}
+                {#if image.pinned}
+                  <span
+                    class="badge badge-success"
+                    title="Pinned: new versions aren't flagged or emailed"
+                  >
+                    <Pin size={12} strokeWidth={2} />
+                    Pinned
+                  </span>
+                {:else if image.updateAvailable}
                   <span
                     class="badge badge-warning"
                     title={image.updateAvailableTag

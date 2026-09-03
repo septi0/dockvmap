@@ -21,6 +21,7 @@ type Image struct {
 	LastCheckError     *string    `json:"lastCheckError,omitempty"`
 	UpdateAvailable    bool       `json:"updateAvailable"`
 	UpdateAvailableTag *string    `json:"updateAvailableTag,omitempty"`
+	Pinned             bool       `json:"pinned"`
 	RefreshStatus      string     `json:"refreshStatus"`
 	TagSetHash         string     `json:"-"`
 	CreatedAt          time.Time  `json:"createdAt"`
@@ -32,11 +33,13 @@ type ImageStatusFilter string
 const (
 	ImageStatusUpdateAvailable ImageStatusFilter = "updateAvailable"
 	ImageStatusFailedCheck     ImageStatusFilter = "failedCheck"
+	ImageStatusPinned          ImageStatusFilter = "pinned"
 )
 
 var ImageStatusFilters = []ImageStatusFilter{
 	ImageStatusUpdateAvailable,
 	ImageStatusFailedCheck,
+	ImageStatusPinned,
 }
 
 func (f ImageStatusFilter) Valid() bool {

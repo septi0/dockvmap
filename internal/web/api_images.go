@@ -35,7 +35,7 @@ func parseImageListFilters(r *http.Request) (model.ImageListFilters, error) {
 	status := model.ImageStatusFilter(r.URL.Query().Get("status"))
 
 	if status != "" && !status.Valid() {
-		return model.ImageListFilters{}, fmt.Errorf("status must be one of: updateAvailable, failedCheck")
+		return model.ImageListFilters{}, fmt.Errorf("status must be one of: updateAvailable, failedCheck, pinned")
 	}
 
 	return model.ImageListFilters{
@@ -327,6 +327,37 @@ func (w *Web) apiRenameImage(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	apiJSON(rw, http.StatusOK, map[string]string{"status": "renamed"})
+}
+
+func (w *Web) apiSetImagePin(rw http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+
+	if err != nil {
+		apiError(rw, http.StatusBadRequest, "image id must be a valid integer")
+
+		return
+	}
+
+	request, ok := decodeJSON[setImagePinRequest](rw, r)
+	if !ok {
+		return
+	}
+
+	err = w.images.SetPinned(r.Context(), id, request.Pinned)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrImageNotFound):
+			apiError(rw, http.StatusNotFound, "image not found")
+
+		default:
+			apiServiceError(rw, err)
+		}
+
+		return
+	}
+
+	apiJSON(rw, http.StatusOK, map[string]string{"status": "updated"})
 }
 
 func (w *Web) apiGetImage(rw http.ResponseWriter, r *http.Request) {

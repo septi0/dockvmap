@@ -50,6 +50,10 @@ export function renameImage(id: number, name: string) {
   return api.put<{ status: string }>(`/images/${id}/name`, { name })
 }
 
+export function setImagePin(id: number, pinned: boolean) {
+  return api.put<{ status: string }>(`/images/${id}/pin`, { pinned })
+}
+
 export function refreshImageTags(id: number) {
   return api.post<{ status: 'refreshed' | 'running' | 'error'; error?: string }>(
     `/images/${id}/refresh-tags`,

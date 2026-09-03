@@ -55,6 +55,7 @@ type imageStore interface {
 	ResetRunningImageRefreshes(ctx context.Context) (int64, error)
 	UpdateImageTag(ctx context.Context, tx store.DBTX, imageId int64, tag string) (bool, error)
 	UpdateImageName(ctx context.Context, imageId int64, name string) (bool, error)
+	UpdateImagePinned(ctx context.Context, tx store.DBTX, imageId int64, pinned bool) (bool, error)
 	UpdateImageUpdateAvailable(ctx context.Context, tx store.DBTX, imageId int64, available bool, targetTag *string) (bool, error)
 	GetImageTags(ctx context.Context, imageId int64) ([]model.ImageTag, error)
 	GetImageTag(ctx context.Context, imageId int64, tag string) (*model.ImageTag, error)
@@ -157,6 +158,11 @@ type auditImageTagChangedData struct {
 type auditImageRenamedData struct {
 	OldName string `json:"oldName"`
 	NewName string `json:"newName"`
+}
+
+type auditImagePinChangedData struct {
+	Name   string `json:"name"`
+	Pinned bool   `json:"pinned"`
 }
 
 type ImagesDeps struct {
@@ -386,7 +392,7 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string, sourc
 		return fmt.Errorf("checking available tags for %q: %w", image.Name, err)
 	}
 
-	updateAvailable, updateAvailableTag := updateAvailableFor(allTags, tag)
+	updateAvailable, updateAvailableTag := effectiveUpdateAvailable(image.Pinned, allTags, tag)
 
 	tx, err := i.store.BeginTx(ctx)
 
@@ -497,6 +503,60 @@ func (i *Images) Rename(ctx context.Context, imageId int64, name string) error {
 	return nil
 }
 
+func (i *Images) SetPinned(ctx context.Context, imageId int64, pinned bool) error {
+	if imageId < 1 {
+		return fmt.Errorf("%w: id must be positive", ErrInvalidImage)
+	}
+
+	unlock := i.refreshLocker.lock(imageId)
+	defer unlock()
+
+	image, err := i.store.GetImageByID(ctx, imageId)
+
+	if err != nil {
+		return err
+	}
+
+	if image == nil {
+		return fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
+	}
+
+	if image.Pinned == pinned {
+		return nil
+	}
+
+	tags, err := i.store.GetImageTags(ctx, imageId)
+
+	if err != nil {
+		return fmt.Errorf("getting tags for %q: %w", image.Name, err)
+	}
+
+	updateAvailable, updateAvailableTag := effectiveUpdateAvailable(pinned, tags, image.Tag)
+
+	tx, err := i.store.BeginTx(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback()
+
+	if _, err := i.store.UpdateImagePinned(ctx, tx, imageId, pinned); err != nil {
+		return fmt.Errorf("updating pinned state for %q: %w", image.Name, err)
+	}
+
+	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
+		return err
+	}
+
+	recordAudit(ctx, i.audit, AuditTypeImagePinChanged, auditImagePinChangedData{
+		Name:   image.Name,
+		Pinned: pinned,
+	})
+
+	return nil
+}
+
 func (i *Images) commitUpdateAvailable(ctx context.Context, tx store.Transaction, image *model.Image, updateAvailable bool, updateAvailableTag string) error {
 	var targetTag *string
 	if updateAvailableTag != "" {
@@ -508,6 +568,14 @@ func (i *Images) commitUpdateAvailable(ctx context.Context, tx store.Transaction
 	}
 
 	return tx.Commit()
+}
+
+func effectiveUpdateAvailable(pinned bool, tags []model.ImageTag, currentTag string) (bool, string) {
+	if pinned {
+		return false, ""
+	}
+
+	return updateAvailableFor(tags, currentTag)
 }
 
 func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string) {
@@ -684,7 +752,7 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 		return fmt.Errorf("recording tag check for %q: %w", image.Name, err)
 	}
 
-	updateAvailable, updateAvailableTag := updateAvailableFor(tags, image.Tag)
+	updateAvailable, updateAvailableTag := effectiveUpdateAvailable(image.Pinned, tags, image.Tag)
 
 	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
 		return err

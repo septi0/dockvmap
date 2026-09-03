@@ -28,6 +28,8 @@ func imageListWhere(filters model.ImageListFilters) (string, []any) {
 		b.add(`i.update_available = 1`)
 	case model.ImageStatusFailedCheck:
 		b.add(`i.last_check_error IS NOT NULL`)
+	case model.ImageStatusPinned:
+		b.add(`i.pinned = 1`)
 	}
 
 	return b.clause(), b.args
@@ -37,7 +39,7 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 	where, args := imageListWhere(filters)
 
 	query := fmt.Sprintf(`
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.refresh_status, i.tag_set_hash, i.created_at, i.updated_at
+		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.tag_set_hash, i.created_at, i.updated_at
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
 		%s
@@ -61,7 +63,7 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 		if err := rows.Scan(
 			&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
 			&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
-			&img.RefreshStatus, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
+			&img.Pinned, &img.RefreshStatus, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scanning image row: %w", err)
 		}
@@ -151,14 +153,14 @@ func (s *Store) GetImage(ctx context.Context, name string) (*model.Image, error)
 	var img model.Image
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.refresh_status, i.tag_set_hash, i.created_at, i.updated_at
+		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.tag_set_hash, i.created_at, i.updated_at
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
 		WHERE i.name = ?
 	`, name).Scan(
 		&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
 		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
-		&img.RefreshStatus, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
+		&img.Pinned, &img.RefreshStatus, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
 	)
 
 	if err != nil {
@@ -176,14 +178,14 @@ func (s *Store) GetImageByID(ctx context.Context, imageId int64) (*model.Image, 
 	var img model.Image
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.refresh_status, i.tag_set_hash, i.created_at, i.updated_at
+		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.tag_set_hash, i.created_at, i.updated_at
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
 		WHERE i.id = ?
 	`, imageId).Scan(
 		&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
 		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
-		&img.RefreshStatus, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
+		&img.Pinned, &img.RefreshStatus, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
 	)
 
 	if err != nil {
@@ -339,6 +341,27 @@ func (s *Store) UpdateImageTag(ctx context.Context, tx DBTX, imageId int64, tag 
 
 	if err != nil {
 		return false, fmt.Errorf("updating image %d tag: %w", imageId, err)
+	}
+
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("checking updated image %d: %w", imageId, err)
+	}
+
+	return updated != 0, nil
+}
+
+func (s *Store) UpdateImagePinned(ctx context.Context, tx DBTX, imageId int64, pinned bool) (bool, error) {
+	db := s.executor(tx)
+
+	result, err := db.ExecContext(ctx, `
+		UPDATE images
+		SET pinned = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, pinned, imageId)
+
+	if err != nil {
+		return false, fmt.Errorf("updating image %d pinned: %w", imageId, err)
 	}
 
 	updated, err := result.RowsAffected()

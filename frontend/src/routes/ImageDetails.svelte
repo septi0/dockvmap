@@ -5,6 +5,8 @@
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
+  import Pin from "@lucide/svelte/icons/pin";
+  import PinOff from "@lucide/svelte/icons/pin-off";
   import History from "@lucide/svelte/icons/history";
   import Activity from "@lucide/svelte/icons/activity";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
@@ -22,7 +24,7 @@
   import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
   import RenameImageModal from "../lib/components/RenameImageModal.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
-  import { getImage, deleteImage } from "../lib/api/images";
+  import { getImage, deleteImage, setImagePin } from "../lib/api/images";
   import { getPullInfo } from "../lib/api/metrics";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
@@ -57,6 +59,9 @@
   let deleteError = $state<string | null>(null);
 
   let showRenameModal = $state(false);
+
+  let pinning = $state(false);
+  let pinError = $state<string | null>(null);
 
   let refreshStatus = $state<"idle" | "running" | "stale">("idle");
   let modalReloadToken = $state(0);
@@ -151,6 +156,28 @@
     await refreshImageDetails();
   }
 
+  async function togglePin() {
+    if (!image) return;
+
+    const next = !image.pinned;
+    pinError = null;
+    pinning = true;
+
+    try {
+      await setImagePin(imageId, next);
+      await refreshImageDetails();
+      toast.success(
+        next
+          ? "Image pinned. New versions won't be flagged or emailed."
+          : "Image unpinned. Update tracking resumed.",
+      );
+    } catch (err) {
+      pinError = errorMessage(err, "Failed to update pin state");
+    } finally {
+      pinning = false;
+    }
+  }
+
   async function handleDelete() {
     if (!image) return;
 
@@ -225,6 +252,50 @@
                 {:else}
                   A newer tag is available in this tag's family.
                 {/if}
+              </p>
+            {/if}
+          </div>
+        </DetailRow>
+        <DetailRow label="Update tracking">
+          <div class="detail-cell">
+            <span class="detail-cell-row">
+              <span class="tracking-state" class:is-pinned={image.pinned}>
+                {#if image.pinned}
+                  <Pin size={14} strokeWidth={2} />
+                  Pinned to the current tag
+                {:else}
+                  Tracking new versions
+                {/if}
+              </span>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={pinning}
+                onclick={togglePin}
+              >
+                {#if image.pinned}
+                  <PinOff size={14} strokeWidth={2} />
+                  Unpin image
+                {:else}
+                  <Pin size={14} strokeWidth={2} />
+                  Pin image
+                {/if}
+              </Button>
+            </span>
+            <p class="tracking-hint muted">
+              {#if image.pinned}
+                Upstream tags are still fetched, but newer versions aren't
+                flagged as an available update or sent in tag notification
+                emails.
+              {:else}
+                Newer tags in this tag's family are flagged as an available
+                update and included in tag notification emails.
+              {/if}
+            </p>
+            {#if pinError}
+              <p class="error">
+                <TriangleAlert size={16} strokeWidth={2} />
+                {pinError}
               </p>
             {/if}
           </div>
@@ -413,6 +484,23 @@
 
   .field-hint {
     margin: var(--space-1) 0 var(--space-4);
+    font-size: 0.8125rem;
+  }
+
+  .tracking-state {
+    font-weight: 500;
+  }
+
+  .tracking-state.is-pinned {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-weight: 600;
+    color: var(--color-success);
+  }
+
+  .tracking-hint {
+    margin: 0;
     font-size: 0.8125rem;
   }
 

@@ -110,6 +110,9 @@ func (w *Web) apiSystemTasks(rw http.ResponseWriter, r *http.Request) {
 
 			if job.Enabled && job.Interval > 0 {
 				nextDue := lastRun.Add(job.Interval)
+				if now := time.Now(); nextDue.Before(now) {
+					nextDue = now
+				}
 				task.NextDue = &nextDue
 			}
 		}

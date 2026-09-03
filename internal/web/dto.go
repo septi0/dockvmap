@@ -58,6 +58,7 @@ type imageResponse struct {
 	LastCheckError     *string    `json:"lastCheckError,omitempty"`
 	UpdateAvailable    bool       `json:"updateAvailable"`
 	UpdateAvailableTag *string    `json:"updateAvailableTag,omitempty"`
+	Pinned             bool       `json:"pinned"`
 	RefreshStatus      string     `json:"refreshStatus"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
@@ -75,6 +76,7 @@ func newImageResponse(image model.Image) imageResponse {
 		LastCheckError:     image.LastCheckError,
 		UpdateAvailable:    image.UpdateAvailable,
 		UpdateAvailableTag: image.UpdateAvailableTag,
+		Pinned:             image.Pinned,
 		RefreshStatus:      image.RefreshStatus,
 		CreatedAt:          image.CreatedAt,
 		UpdatedAt:          image.UpdatedAt,
@@ -116,6 +118,10 @@ func newTagHistoryResponse(history []model.ImageTagHistory) tagHistoryResponse {
 
 type renameImageRequest struct {
 	Name string `json:"name"`
+}
+
+type setImagePinRequest struct {
+	Pinned bool `json:"pinned"`
 }
 
 type pullInfoResponse struct {

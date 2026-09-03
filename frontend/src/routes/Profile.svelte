@@ -1,7 +1,6 @@
 <script lang="ts">
   import UserRound from "@lucide/svelte/icons/user-round";
   import Pencil from "@lucide/svelte/icons/pencil";
-  import Save from "@lucide/svelte/icons/save";
   import KeyRound from "@lucide/svelte/icons/key-round";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import AppShell from "../lib/components/AppShell.svelte";
@@ -9,12 +8,12 @@
   import AsyncState from "../lib/components/AsyncState.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import DetailRow from "../lib/components/DetailRow.svelte";
-  import Field from "../lib/components/Field.svelte";
   import Button from "../lib/components/Button.svelte";
   import ChangePasswordModal from "../lib/components/ChangePasswordModal.svelte";
+  import ChangeEmailModal from "../lib/components/ChangeEmailModal.svelte";
   import DeviceIcon from "../lib/components/DeviceIcon.svelte";
   import { onMount } from "svelte";
-  import { updateEmail, updatePreferences } from "../lib/api/users";
+  import { updatePreferences } from "../lib/api/users";
   import { getSMTPStatus } from "../lib/api/system";
   import { listSessions, invalidateSession } from "../lib/api/sessions";
   import { errorMessage } from "../lib/api/client";
@@ -26,10 +25,7 @@
 
   let initial = $derived($auth.user?.username?.[0]?.toUpperCase() ?? "?");
 
-  let editingEmail = $state(false);
-  let email = $state($auth.user?.email ?? "");
-  let emailError = $state<string | null>(null);
-  let emailSubmitting = $state(false);
+  let showEmailModal = $state(false);
 
   let notifyLevel = $state<NotifyLevel>($auth.user?.notifyLevel ?? "all");
   let notifyError = $state<string | null>(null);
@@ -111,31 +107,8 @@
     }
   }
 
-  function startEditingEmail() {
-    email = $auth.user?.email ?? "";
-    emailError = null;
-    editingEmail = true;
-  }
-
-  function cancelEditingEmail() {
-    editingEmail = false;
-    emailError = null;
-  }
-
-  async function handleEmailSubmit(event: SubmitEvent) {
-    event.preventDefault();
-    emailError = null;
-    emailSubmitting = true;
-
-    try {
-      await updateEmail(email.trim());
-      await auth.refresh();
-      editingEmail = false;
-    } catch (err) {
-      emailError = errorMessage(err, "Failed to update email");
-    } finally {
-      emailSubmitting = false;
-    }
+  async function handleEmailSaved() {
+    await auth.refresh();
   }
 
   async function handleNotifyChange() {
@@ -177,58 +150,25 @@
         <h2 class="profile-username">{$auth.user?.username}</h2>
         <p class="profile-email">{$auth.user?.email}</p>
       </div>
-      {#if !editingEmail}
-        <div class="profile-actions">
-          <Button variant="secondary" size="sm" onclick={startEditingEmail}>
-            <Pencil size={14} strokeWidth={2} />
-            Edit email
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onclick={() => (showPasswordModal = true)}
-          >
-            <KeyRound size={14} strokeWidth={2} />
-            Change password
-          </Button>
-        </div>
-      {/if}
+      <div class="profile-actions">
+        <Button
+          variant="secondary"
+          size="sm"
+          onclick={() => (showEmailModal = true)}
+        >
+          <Pencil size={14} strokeWidth={2} />
+          Edit email
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onclick={() => (showPasswordModal = true)}
+        >
+          <KeyRound size={14} strokeWidth={2} />
+          Change password
+        </Button>
+      </div>
     </div>
-
-    {#if editingEmail}
-      <form class="inline-form" onsubmit={handleEmailSubmit}>
-        {#if emailError}
-          <p class="error">
-            <TriangleAlert size={16} strokeWidth={2} />
-            {emailError}
-          </p>
-        {/if}
-
-        <Field
-          label="Email"
-          type="email"
-          bind:value={email}
-          autocomplete="email"
-          required
-        />
-
-        <div class="inline-form-actions">
-          <Button type="submit" size="sm" disabled={emailSubmitting}>
-            <Save size={14} strokeWidth={2} />
-            {emailSubmitting ? "Saving…" : "Save"}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={emailSubmitting}
-            onclick={cancelEditingEmail}
-          >
-            Cancel
-          </Button>
-        </div>
-      </form>
-    {/if}
   </div>
 
   <div class="card section-card">
@@ -342,6 +282,13 @@
   </div>
 </AppShell>
 
+<ChangeEmailModal
+  open={showEmailModal}
+  currentEmail={$auth.user?.email ?? ""}
+  onClose={() => (showEmailModal = false)}
+  onSaved={handleEmailSaved}
+/>
+
 <ChangePasswordModal
   open={showPasswordModal}
   onClose={() => (showPasswordModal = false)}
@@ -401,19 +348,6 @@
     flex-direction: column;
     gap: var(--space-2);
     flex-shrink: 0;
-  }
-
-  .inline-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    max-width: 360px;
-    margin-top: var(--space-4);
-  }
-
-  .inline-form-actions {
-    display: flex;
-    gap: var(--space-2);
   }
 
   .session-row {

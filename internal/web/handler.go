@@ -26,6 +26,7 @@ type imageService interface {
 	StartBackgroundRefresh(imageId int64) (bool, error)
 	UpdateTag(ctx context.Context, imageId int64, tag string, source model.TagHistorySource) error
 	Rename(ctx context.Context, imageId int64, name string) error
+	SetPinned(ctx context.Context, imageId int64, pinned bool) error
 	MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, error)
 	GetTagHistory(ctx context.Context, imageId int64) ([]model.ImageTagHistory, error)
 }

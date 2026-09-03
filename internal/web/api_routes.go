@@ -151,6 +151,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/images/{id}/name", apiMethod(http.MethodPut, w.apiRenameImage))
 
+	mux.HandleFunc("/images/{id}/pin", apiMethod(http.MethodPut, w.apiSetImagePin))
+
 	mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 		apiError(rw, http.StatusNotFound, "API endpoint not found")
 	})

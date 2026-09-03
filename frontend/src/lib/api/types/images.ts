@@ -9,6 +9,7 @@ export interface Image {
   lastCheckError?: string
   updateAvailable: boolean
   updateAvailableTag?: string
+  pinned: boolean
   refreshStatus: 'idle' | 'running'
   createdAt: string
   updatedAt: string
@@ -19,7 +20,7 @@ export interface ListImagesResponse {
   total: number
 }
 
-export const IMAGE_STATUS_FILTERS = ['updateAvailable', 'failedCheck'] as const
+export const IMAGE_STATUS_FILTERS = ['updateAvailable', 'failedCheck', 'pinned'] as const
 
 export type ImageStatusFilter = (typeof IMAGE_STATUS_FILTERS)[number]
 
