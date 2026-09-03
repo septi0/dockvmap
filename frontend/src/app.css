@@ -517,6 +517,11 @@ select.filter-control {
   border-bottom: none;
 }
 
+.view-all {
+  display: inline-block;
+  margin-top: var(--space-3);
+}
+
 .tag-value {
   font-family: monospace;
   font-weight: 600;

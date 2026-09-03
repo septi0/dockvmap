@@ -8,8 +8,7 @@
   import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
-  import CreateRegistryModal from "../lib/components/CreateRegistryModal.svelte";
-  import EditRegistryModal from "../lib/components/EditRegistryModal.svelte";
+  import RegistryModal from "../lib/components/RegistryModal.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import { listRegistries, deleteRegistry } from "../lib/api/registries";
   import { errorMessage } from "../lib/api/client";
@@ -49,14 +48,9 @@
 
   onMount(load);
 
-  async function handleCreated(registry: Registry) {
+  async function handleSaved(registry: Registry, action: "created" | "updated") {
     await load();
-    toast.success(`Registry "${registry.registry}" created.`);
-  }
-
-  async function handleUpdated(registry: Registry) {
-    await load();
-    toast.success(`Registry "${registry.registry}" updated.`);
+    toast.success(`Registry "${registry.registry}" ${action}.`);
   }
 
   function cancelDelete() {
@@ -173,17 +167,19 @@
   </AsyncState>
 </AppShell>
 
-<CreateRegistryModal
+<RegistryModal
+  mode="create"
   open={showCreateModal}
   onClose={() => (showCreateModal = false)}
-  onCreated={handleCreated}
+  onSaved={(registry) => handleSaved(registry, "created")}
 />
 
-<EditRegistryModal
+<RegistryModal
+  mode="edit"
   open={editingRegistry !== null}
   registry={editingRegistry}
   onClose={() => (editingRegistry = null)}
-  onUpdated={handleUpdated}
+  onSaved={(registry) => handleSaved(registry, "updated")}
 />
 
 <ConfirmDialog

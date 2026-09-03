@@ -8,7 +8,6 @@
   import DetailRow from "../DetailRow.svelte";
   import DeviceIcon from "../DeviceIcon.svelte";
   import { listAuditLogs, AUDIT_LOG_PAGE_SIZE } from "../../api/audit";
-  import { errorMessage } from "../../api/client";
   import { AUDIT_TYPES } from "../../api/types/audit";
   import type { AuditLog } from "../../api/types/audit";
   import {
@@ -18,117 +17,43 @@
     toRfc3339DayEnd,
   } from "../../utils/format";
   import { parseUserAgent } from "../../utils/userAgent";
-  import {
-    readListQuery,
-    pushListQuery,
-    watchListQuery,
-  } from "../../utils/listQuery";
+  import { createListView } from "../../utils/listView.svelte";
 
-  const FILTER_DEFAULTS = {
-    type: "",
-    since: "",
-    until: "",
-    offset: 0,
-  };
-
-  let auditLogs = $state<AuditLog[]>([]);
-  let total = $state(0);
-  let offset = $state(0);
-  let selectedType = $state("");
-  let sinceDate = $state("");
-  let untilDate = $state("");
-  let loading = $state(true);
-  let loaded = $state(false);
-  let error = $state<string | null>(null);
   let selectedEntry = $state<AuditLog | null>(null);
-  let loadToken = 0;
 
-  let hasActiveFilters = $derived(
-    selectedType !== "" || sinceDate !== "" || untilDate !== "",
-  );
-
-  async function load() {
-    const requestId = ++loadToken;
-    loading = true;
-    error = null;
-
-    try {
-      const result = await listAuditLogs({
-        offset,
+  const view = createListView<
+    { type: string; since: string; until: string; offset: number },
+    AuditLog
+  >({
+    routePath: "/system/audit",
+    defaults: { type: "", since: "", until: "", offset: 0 },
+    errorFallback: "Failed to load audit log",
+    fetch: (q) =>
+      listAuditLogs({
+        offset: q.offset,
         limit: AUDIT_LOG_PAGE_SIZE,
-        type: selectedType || undefined,
-        since: toRfc3339DayStart(sinceDate),
-        until: toRfc3339DayEnd(untilDate),
-      });
-      if (requestId !== loadToken) return;
-      auditLogs = result.auditLogs;
-      total = result.total;
-    } catch (err) {
-      if (requestId !== loadToken) return;
-      error = errorMessage(err, "Failed to load audit log");
-    } finally {
-      if (requestId === loadToken) {
-        loading = false;
-        loaded = true;
-      }
-    }
-  }
+        type: q.type || undefined,
+        since: toRfc3339DayStart(q.since),
+        until: toRfc3339DayEnd(q.until),
+      }).then((r) => ({ items: r.auditLogs, total: r.total })),
+  });
 
-  function syncFromUrl() {
-    const filters = readListQuery(FILTER_DEFAULTS);
-    selectedType = filters.type;
-    sinceDate = filters.since;
-    untilDate = filters.until;
-    offset = filters.offset;
-    load();
-  }
-
-  function syncToUrl() {
-    pushListQuery("/system/audit", {
-      type: selectedType,
-      since: sinceDate,
-      until: untilDate,
-      offset,
-    });
-  }
-
-  onMount(() => watchListQuery(syncFromUrl));
-
-  function handleOffsetChange(newOffset: number) {
-    offset = newOffset;
-    syncToUrl();
-    load();
-  }
-
-  function handleFilterChange() {
-    offset = 0;
-    syncToUrl();
-    load();
-  }
+  onMount(view.init);
 
   function selectRow(event: MouseEvent, entry: AuditLog) {
     if ((event.target as HTMLElement).closest("button")) return;
     selectedEntry = entry;
   }
-
-  function clearFilters() {
-    selectedType = "";
-    sinceDate = "";
-    untilDate = "";
-    offset = 0;
-    syncToUrl();
-    load();
-  }
 </script>
 
-<FilterBar active={hasActiveFilters} onClear={clearFilters}>
+<FilterBar active={view.hasActiveFilters} onClear={view.clear}>
   <div class="filter-field">
     <span class="filter-label">Event</span>
     <select
       class="input filter-control"
-      class:is-active={selectedType !== ""}
-      bind:value={selectedType}
-      onchange={handleFilterChange}
+      class:is-active={view.filters.type !== ""}
+      bind:value={view.filters.type}
+      onchange={view.applyFilters}
     >
       <option value="">All events</option>
       {#each AUDIT_TYPES as type (type)}
@@ -140,18 +65,18 @@
   <div class="filter-field">
     <span class="filter-label">Date</span>
     <DateRangeFilter
-      bind:since={sinceDate}
-      bind:until={untilDate}
-      onChange={handleFilterChange}
+      bind:since={view.filters.since}
+      bind:until={view.filters.until}
+      onChange={view.applyFilters}
     />
   </div>
 </FilterBar>
 
 <AsyncState
-  loading={loading && !loaded}
-  busy={loading && loaded}
-  {error}
-  empty={auditLogs.length === 0}
+  loading={view.loading && !view.loaded}
+  busy={view.loading && view.loaded}
+  error={view.error}
+  empty={view.items.length === 0}
   emptyMessage="No audit events yet."
   columns={4}
 >
@@ -166,7 +91,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each auditLogs as entry (entry.id)}
+        {#each view.items as entry (entry.id)}
           <tr class="clickable" onclick={(event) => selectRow(event, entry)}>
             <td>
               <button
@@ -187,10 +112,10 @@
   </div>
 
   <Pagination
-    {total}
+    total={view.total}
     limit={AUDIT_LOG_PAGE_SIZE}
-    {offset}
-    onOffsetChange={handleOffsetChange}
+    offset={view.filters.offset}
+    onOffsetChange={view.setOffset}
   />
 </AsyncState>
 

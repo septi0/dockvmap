@@ -5,6 +5,7 @@
   import DashboardCard from "./DashboardCard.svelte";
   import CardBody from "./CardBody.svelte";
   import CardState from "./CardState.svelte";
+  import CardErrorState from "./CardErrorState.svelte";
   import {
     formatDate,
     formatNumber,
@@ -33,16 +34,7 @@
 
   <CardBody {loading} {busy} hasError={!!error} empty={failures.length === 0}>
     {#snippet errorState()}
-      <CardState
-        tone="error"
-        title="Couldn’t load recent issues"
-        description={error ?? undefined}
-      >
-        {#snippet icon()}<TriangleAlert size={30} strokeWidth={1.5} />{/snippet}
-        {#snippet action()}
-          <button type="button" class="link" onclick={onRetry}>Try again</button>
-        {/snippet}
-      </CardState>
+      <CardErrorState title="Couldn’t load recent issues" {error} {onRetry} />
     {/snippet}
 
     {#snippet emptyState()}
@@ -108,8 +100,4 @@
     color: var(--color-danger);
   }
 
-  .view-all {
-    display: inline-block;
-    margin-top: var(--space-4);
-  }
 </style>

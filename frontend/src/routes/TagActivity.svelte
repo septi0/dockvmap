@@ -11,7 +11,6 @@
   import DateRangeFilter from "../lib/components/DateRangeFilter.svelte";
   import { listTagEvents, TAG_ACTIVITY_PAGE_SIZE } from "../lib/api/events";
   import { getImage } from "../lib/api/images";
-  import { errorMessage } from "../lib/api/client";
   import { TAG_EVENT_TYPES } from "../lib/api/types/events";
   import type { ImageEvent } from "../lib/api/types/events";
   import {
@@ -20,131 +19,56 @@
     toRfc3339DayStart,
     toRfc3339DayEnd,
   } from "../lib/utils/format";
-  import {
-    readListQuery,
-    pushListQuery,
-    watchListQuery,
-  } from "../lib/utils/listQuery";
+  import { createListView } from "../lib/utils/listView.svelte";
 
-  const FILTER_DEFAULTS = {
-    type: "",
-    imageId: 0,
-    since: "",
-    until: "",
-    offset: 0,
-  };
-
-  let events = $state<ImageEvent[]>([]);
-  let total = $state(0);
-  let offset = $state(0);
-  let selectedType = $state("");
-  let selectedImageId = $state(0);
   let filterImageName = $state("");
-  let sinceDate = $state("");
-  let untilDate = $state("");
-  let loading = $state(true);
-  let loaded = $state(false);
-  let error = $state<string | null>(null);
-  let loadToken = 0;
 
-  let hasActiveFilters = $derived(
-    selectedType !== "" ||
-      selectedImageId !== 0 ||
-      sinceDate !== "" ||
-      untilDate !== "",
-  );
-
-  async function load() {
-    const requestId = ++loadToken;
-    loading = true;
-    error = null;
-
-    try {
-      const result = await listTagEvents({
-        offset,
+  const view = createListView<
+    {
+      type: string;
+      imageId: number;
+      since: string;
+      until: string;
+      offset: number;
+    },
+    ImageEvent
+  >({
+    routePath: "/tag-activity",
+    defaults: { type: "", imageId: 0, since: "", until: "", offset: 0 },
+    errorFallback: "Failed to load tag activity",
+    fetch: (q) =>
+      listTagEvents({
+        offset: q.offset,
         limit: TAG_ACTIVITY_PAGE_SIZE,
-        type: selectedType || undefined,
-        imageId: selectedImageId || undefined,
-        since: toRfc3339DayStart(sinceDate),
-        until: toRfc3339DayEnd(untilDate),
-      });
-      if (requestId !== loadToken) return;
-      events = result.events;
-      total = result.total;
-    } catch (err) {
-      if (requestId !== loadToken) return;
-      error = errorMessage(err, "Failed to load tag activity");
-    } finally {
-      if (requestId === loadToken) {
-        loading = false;
-        loaded = true;
-      }
-    }
-  }
+        type: q.type || undefined,
+        imageId: q.imageId || undefined,
+        since: toRfc3339DayStart(q.since),
+        until: toRfc3339DayEnd(q.until),
+      }).then((r) => ({ items: r.events, total: r.total })),
+  });
 
-  async function resolveImageName(id: number) {
+  onMount(view.init);
+
+  $effect(() => {
+    const id = view.filters.imageId;
+
     if (id === 0) {
       filterImageName = "";
       return;
     }
 
-    try {
-      filterImageName = (await getImage(id)).name;
-    } catch {
-      filterImageName = "";
-    }
-  }
-
-  function syncFromUrl() {
-    const filters = readListQuery(FILTER_DEFAULTS);
-    selectedType = filters.type;
-    selectedImageId = filters.imageId;
-    sinceDate = filters.since;
-    untilDate = filters.until;
-    offset = filters.offset;
-    resolveImageName(selectedImageId);
-    load();
-  }
-
-  function syncToUrl() {
-    pushListQuery("/tag-activity", {
-      type: selectedType,
-      imageId: selectedImageId,
-      since: sinceDate,
-      until: untilDate,
-      offset,
-    });
-  }
-
-  onMount(() => watchListQuery(syncFromUrl));
-
-  function handleOffsetChange(newOffset: number) {
-    offset = newOffset;
-    syncToUrl();
-    load();
-  }
-
-  function handleFilterChange() {
-    offset = 0;
-    syncToUrl();
-    load();
-  }
+    getImage(id)
+      .then((img) => {
+        filterImageName = img.name;
+      })
+      .catch(() => {
+        filterImageName = "";
+      });
+  });
 
   function clearImageFilter() {
-    selectedImageId = 0;
-    filterImageName = "";
-    handleFilterChange();
-  }
-
-  function clearFilters() {
-    selectedType = "";
-    selectedImageId = 0;
-    filterImageName = "";
-    sinceDate = "";
-    untilDate = "";
-    offset = 0;
-    syncToUrl();
-    load();
+    view.filters.imageId = 0;
+    view.applyFilters();
   }
 </script>
 
@@ -156,14 +80,14 @@
     <h1>Tag activity</h1>
   </div>
 
-  <FilterBar active={hasActiveFilters} onClear={clearFilters}>
+  <FilterBar active={view.hasActiveFilters} onClear={view.clear}>
     <div class="filter-field">
       <span class="filter-label">Event</span>
       <select
         class="input filter-control"
-        class:is-active={selectedType !== ""}
-        bind:value={selectedType}
-        onchange={handleFilterChange}
+        class:is-active={view.filters.type !== ""}
+        bind:value={view.filters.type}
+        onchange={view.applyFilters}
       >
         <option value="">All events</option>
         {#each TAG_EVENT_TYPES as type (type)}
@@ -175,16 +99,16 @@
     <div class="filter-field">
       <span class="filter-label">Date</span>
       <DateRangeFilter
-        bind:since={sinceDate}
-        bind:until={untilDate}
-        onChange={handleFilterChange}
+        bind:since={view.filters.since}
+        bind:until={view.filters.until}
+        onChange={view.applyFilters}
       />
     </div>
 
-    {#if selectedImageId !== 0}
+    {#if view.filters.imageId !== 0}
       <span class="active-filter">
         <span class="active-filter-label">
-          Image: {filterImageName || `#${selectedImageId}`}
+          Image: {filterImageName || `#${view.filters.imageId}`}
         </span>
         <button
           type="button"
@@ -199,10 +123,10 @@
   </FilterBar>
 
   <AsyncState
-    loading={loading && !loaded}
-    busy={loading && loaded}
-    {error}
-    empty={events.length === 0}
+    loading={view.loading && !view.loaded}
+    busy={view.loading && view.loaded}
+    error={view.error}
+    empty={view.items.length === 0}
     emptyMessage="No tag activity yet."
     columns={4}
   >
@@ -217,7 +141,7 @@
           </tr>
         </thead>
         <tbody>
-          {#each events as event (event.id)}
+          {#each view.items as event (event.id)}
             <tr>
               <td>{formatDate(event.createdAt)}</td>
               <td>{formatAuditType(event.type)}</td>
@@ -238,10 +162,10 @@
     </div>
 
     <Pagination
-      {total}
+      total={view.total}
       limit={TAG_ACTIVITY_PAGE_SIZE}
-      {offset}
-      onOffsetChange={handleOffsetChange}
+      offset={view.filters.offset}
+      onOffsetChange={view.setOffset}
     />
   </AsyncState>
 </AppShell>

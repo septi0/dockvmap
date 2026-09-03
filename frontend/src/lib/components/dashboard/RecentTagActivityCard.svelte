@@ -1,10 +1,10 @@
 <script lang="ts">
   import { push, link } from "svelte-spa-router";
   import Activity from "@lucide/svelte/icons/activity";
-  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import DashboardCard from "./DashboardCard.svelte";
   import CardBody from "./CardBody.svelte";
   import CardState from "./CardState.svelte";
+  import CardErrorState from "./CardErrorState.svelte";
   import {
     formatAuditType,
     formatDate,
@@ -31,16 +31,7 @@
 
   <CardBody {loading} {busy} hasError={!!error} empty={events.length === 0}>
     {#snippet errorState()}
-      <CardState
-        tone="error"
-        title="Couldn’t load tag activity"
-        description={error ?? undefined}
-      >
-        {#snippet icon()}<TriangleAlert size={30} strokeWidth={1.5} />{/snippet}
-        {#snippet action()}
-          <button type="button" class="link" onclick={onRetry}>Try again</button>
-        {/snippet}
-      </CardState>
+      <CardErrorState title="Couldn’t load tag activity" {error} {onRetry} />
     {/snippet}
 
     {#snippet emptyState()}
@@ -94,8 +85,4 @@
     font-size: 0.8125rem;
   }
 
-  .view-all {
-    display: inline-block;
-    margin-top: var(--space-3);
-  }
 </style>

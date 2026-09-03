@@ -1,9 +1,8 @@
 <script lang="ts">
   import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
-  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import DashboardCard from "./DashboardCard.svelte";
   import CardBody from "./CardBody.svelte";
-  import CardState from "./CardState.svelte";
+  import CardErrorState from "./CardErrorState.svelte";
   import { formatBytes, formatNumber } from "../../utils/format";
   import type {
     ProxyMetrics,
@@ -69,16 +68,7 @@
 
   <CardBody {loading} {busy} hasError={!!error}>
     {#snippet errorState()}
-      <CardState
-        tone="error"
-        title="Couldn’t load proxy metrics"
-        description={error ?? undefined}
-      >
-        {#snippet icon()}<TriangleAlert size={30} strokeWidth={1.5} />{/snippet}
-        {#snippet action()}
-          <button type="button" class="link" onclick={onRetry}>Try again</button>
-        {/snippet}
-      </CardState>
+      <CardErrorState title="Couldn’t load proxy metrics" {error} {onRetry} />
     {/snippet}
 
     {#if view}

@@ -4,11 +4,11 @@
   import CircleArrowUp from "@lucide/svelte/icons/circle-arrow-up";
   import CircleCheck from "@lucide/svelte/icons/circle-check";
   import Plus from "@lucide/svelte/icons/plus";
-  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Button from "../Button.svelte";
   import DashboardCard from "./DashboardCard.svelte";
   import CardBody from "./CardBody.svelte";
   import CardState from "./CardState.svelte";
+  import CardErrorState from "./CardErrorState.svelte";
   import { formatNumber } from "../../utils/format";
   import type { DashboardUpdates } from "../../api/types/dashboard";
   import type { DashboardCardProps } from "./types";
@@ -33,16 +33,7 @@
 
   <CardBody {loading} {busy} hasError={!!error} empty={images.length === 0}>
     {#snippet errorState()}
-      <CardState
-        tone="error"
-        title="Couldn’t load updates"
-        description={error ?? undefined}
-      >
-        {#snippet icon()}<TriangleAlert size={30} strokeWidth={1.5} />{/snippet}
-        {#snippet action()}
-          <button type="button" class="link" onclick={onRetry}>Try again</button>
-        {/snippet}
-      </CardState>
+      <CardErrorState title="Couldn’t load updates" {error} {onRetry} />
     {/snippet}
 
     {#snippet emptyState()}
@@ -131,8 +122,4 @@
     color: var(--color-accent);
   }
 
-  .view-all {
-    display: inline-block;
-    margin-top: var(--space-3);
-  }
 </style>

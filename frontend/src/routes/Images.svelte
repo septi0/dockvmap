@@ -27,14 +27,8 @@
     type ImageStatusFilter,
   } from "../lib/api/types/images";
   import { formatDate } from "../lib/utils/format";
-  import {
-    readListQuery,
-    writeListQuery,
-    pushListQuery,
-    watchListQuery,
-  } from "../lib/utils/listQuery";
-
-  const FILTER_DEFAULTS = { search: "", status: "", offset: 0 };
+  import { writeListQuery } from "../lib/utils/listQuery";
+  import { createListView } from "../lib/utils/listView.svelte";
 
   const STATUS_OPTIONS: { value: ImageStatusFilter | ""; label: string }[] = [
     { value: "", label: "All images" },
@@ -42,110 +36,45 @@
     { value: "failedCheck", label: "Failed checks" },
   ];
 
-  let images = $state<Image[]>([]);
-  let total = $state(0);
-  let offset = $state(0);
-  let search = $state("");
-  let status = $state<ImageStatusFilter | "">("");
-  let loading = $state(true);
-  let loaded = $state(false);
-  let error = $state<string | null>(null);
-  let loadToken = 0;
-
   let showRefreshAllConfirm = $state(false);
   let refreshingAll = $state(false);
   let refreshAllError = $state<string | null>(null);
 
   let tagRefreshRunning = $derived($tagRefreshStatus.data?.running ?? false);
 
-  function toStatusFilter(value: string): ImageStatusFilter | "" {
-    return (IMAGE_STATUS_FILTERS as readonly string[]).includes(value)
-      ? (value as ImageStatusFilter)
-      : "";
-  }
-
-  async function load() {
-    const requestId = ++loadToken;
-    loading = true;
-    error = null;
-
-    try {
-      const result = await listImages({
-        offset,
+  const view = createListView<
+    { search: string; status: string; offset: number },
+    Image
+  >({
+    routePath: "/images",
+    defaults: { search: "", status: "", offset: 0 },
+    errorFallback: "Failed to load images",
+    fetch: (q) =>
+      listImages({
+        offset: q.offset,
         limit: IMAGES_PAGE_SIZE,
-        search: search || undefined,
-        status: status || undefined,
-      });
-      if (requestId !== loadToken) return;
-      images = result.images;
-      total = result.total;
-    } catch (err) {
-      if (requestId !== loadToken) return;
-      error = errorMessage(err, "Failed to load images");
-    } finally {
-      if (requestId === loadToken) {
-        loading = false;
-        loaded = true;
-      }
-    }
-  }
+        search: q.search || undefined,
+        status: (IMAGE_STATUS_FILTERS as readonly string[]).includes(q.status)
+          ? (q.status as ImageStatusFilter)
+          : undefined,
+      }).then((r) => ({ items: r.images, total: r.total })),
+  });
 
-  function syncFromUrl() {
-    const filters = readListQuery(FILTER_DEFAULTS);
-    search = filters.search;
-    status = toStatusFilter(filters.status);
-    offset = filters.offset;
-    load();
-  }
-
-  function syncToUrl() {
-    pushListQuery("/images", { search, status, offset });
-  }
-
-  onMount(() => watchListQuery(syncFromUrl));
+  onMount(view.init);
   onMount(() => tagRefreshStatus.watch());
-
-  // reload the table once a background sweep finishes so tags/badges aren't stale
   onMount(() =>
     tagRefreshStatus.onCompleted(() => {
-      if (loaded) load();
+      if (view.loaded) view.reload();
     }),
   );
 
-  function imageHref(id: number) {
-    return `#/images/${id}${writeListQuery({ search, status, offset })}`;
+  function rowQuery() {
+    return writeListQuery({ ...view.filters });
   }
 
   function openImage(event: MouseEvent, id: number) {
     if ((event.target as HTMLElement).closest("a")) return;
-    push(`/images/${id}${writeListQuery({ search, status, offset })}`);
-  }
-
-  function handleOffsetChange(newOffset: number) {
-    offset = newOffset;
-    syncToUrl();
-    load();
-  }
-
-  function handleSearch(value: string) {
-    search = value;
-    offset = 0;
-    syncToUrl();
-    load();
-  }
-
-  function handleStatusChange() {
-    offset = 0;
-    syncToUrl();
-    load();
-  }
-
-  function clearFilters() {
-    search = "";
-    status = "";
-    offset = 0;
-    syncToUrl();
-    load();
+    push(`/images/${id}${rowQuery()}`);
   }
 
   function openRefreshAll() {
@@ -204,19 +133,19 @@
     </div>
   </div>
 
-  <FilterBar active={search !== "" || status !== ""} onClear={clearFilters}>
+  <FilterBar active={view.hasActiveFilters} onClear={view.clear}>
     <SearchInput
-      bind:value={search}
+      bind:value={view.filters.search}
       placeholder="Search images…"
-      onSearch={handleSearch}
+      onSearch={view.applyFilters}
     />
     <div class="filter-field">
       <span class="filter-label">Status</span>
       <select
         class="input filter-control"
-        class:is-active={status !== ""}
-        bind:value={status}
-        onchange={handleStatusChange}
+        class:is-active={view.filters.status !== ""}
+        bind:value={view.filters.status}
+        onchange={view.applyFilters}
       >
         {#each STATUS_OPTIONS as option (option.value)}
           <option value={option.value}>{option.label}</option>
@@ -226,10 +155,10 @@
   </FilterBar>
 
   <AsyncState
-    loading={loading && !loaded}
-    busy={loading && loaded}
-    {error}
-    empty={images.length === 0}
+    loading={view.loading && !view.loaded}
+    busy={view.loading && view.loaded}
+    error={view.error}
+    empty={view.items.length === 0}
     emptyMessage="No virtual images yet. Add one to start tracking tags."
     columns={6}
   >
@@ -253,11 +182,13 @@
           </tr>
         </thead>
         <tbody>
-          {#each images as image (image.id)}
+          {#each view.items as image (image.id)}
             <tr class="clickable" onclick={(event) => openImage(event, image.id)}>
               <td>
                 <span class="name-cell">
-                  <a class="row-link" href={imageHref(image.id)}>{image.name}</a>
+                  <a class="row-link" href={`#/images/${image.id}${rowQuery()}`}
+                    >{image.name}</a
+                  >
                   {#if image.lastCheckError}
                     <span
                       class="check-error-icon"
@@ -300,10 +231,10 @@
     </div>
 
     <Pagination
-      {total}
+      total={view.total}
       limit={IMAGES_PAGE_SIZE}
-      {offset}
-      onOffsetChange={handleOffsetChange}
+      offset={view.filters.offset}
+      onOffsetChange={view.setOffset}
     />
   </AsyncState>
 </AppShell>

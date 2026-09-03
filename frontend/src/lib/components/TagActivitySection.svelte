@@ -139,8 +139,4 @@
     font-size: 0.8125rem;
   }
 
-  .view-all {
-    display: inline-block;
-    margin-top: var(--space-3);
-  }
 </style>

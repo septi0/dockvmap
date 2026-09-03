@@ -4,24 +4,33 @@
   import Field from "./Field.svelte";
   import Button from "./Button.svelte";
   import RegistryOptionsFields from "./RegistryOptionsFields.svelte";
-  import { createRegistry, testRegistry } from "../api/registries";
+  import {
+    createRegistry,
+    updateRegistry,
+    testRegistry,
+    testExistingRegistry,
+  } from "../api/registries";
   import { errorMessage } from "../api/client";
   import type { Registry } from "../api/types/registries";
 
   let {
     open,
+    mode,
+    registry = null,
     onClose,
-    onCreated,
+    onSaved,
   }: {
     open: boolean;
+    mode: "create" | "edit";
+    registry?: Registry | null;
     onClose: () => void;
-    onCreated: (registry: Registry) => void;
+    onSaved: (registry: Registry) => void;
   } = $props();
 
   let registryHost = $state("");
   let username = $state("");
   let credential = $state("");
-  let addAuth = $state(false);
+  let editingAuth = $state(false);
   let insecure = $state(false);
   let allowSelfSignedCerts = $state(false);
   let error = $state<string | null>(null);
@@ -29,24 +38,25 @@
   let testing = $state(false);
   let testResult = $state<{ ok: boolean; message: string } | null>(null);
 
-  function reset() {
-    registryHost = "";
-    username = "";
-    credential = "";
-    addAuth = false;
-    insecure = false;
-    allowSelfSignedCerts = false;
-    error = null;
-    submitting = false;
-    testing = false;
-    testResult = null;
-  }
+  const isEdit = $derived(mode === "edit");
+  const ready = $derived(mode === "create" || registry !== null);
 
-  function currentParams() {
+  $effect(() => {
+    if (!open) return;
+
+    registryHost = isEdit ? (registry?.registry ?? "") : "";
+    username = isEdit ? (registry?.username ?? "") : "";
+    credential = "";
+    editingAuth = false;
+    insecure = registry?.options.insecure ?? false;
+    allowSelfSignedCerts = registry?.options.allow_self_signed_certs ?? false;
+    error = null;
+    testResult = null;
+  });
+
+  function baseParams() {
     return {
       registry: registryHost.trim(),
-      username: addAuth ? username.trim() : "",
-      credential: addAuth ? credential : "",
       options: { insecure, allow_self_signed_certs: allowSelfSignedCerts },
     };
   }
@@ -56,7 +66,19 @@
     testing = true;
 
     try {
-      const result = await testRegistry(currentParams());
+      const result =
+        isEdit && registry
+          ? await testExistingRegistry(registry.id, {
+              ...baseParams(),
+              username: editingAuth ? username.trim() : undefined,
+              credential: editingAuth ? credential : undefined,
+            })
+          : await testRegistry({
+              ...baseParams(),
+              username: editingAuth ? username.trim() : "",
+              credential: editingAuth ? credential : "",
+            });
+
       testResult = result.ok
         ? { ok: true, message: "Connection succeeded." }
         : { ok: false, message: result.error ?? "Connection failed." };
@@ -71,13 +93,13 @@
   }
 
   function handleClose() {
-    reset();
+    error = null;
     onClose();
   }
 
-  function removeAuth() {
-    addAuth = false;
-    username = "";
+  function cancelAuthEdit() {
+    editingAuth = false;
+    username = isEdit ? (registry?.username ?? "") : "";
     credential = "";
   }
 
@@ -87,19 +109,37 @@
     submitting = true;
 
     try {
-      const registry = await createRegistry(currentParams());
-      onCreated(registry);
-      reset();
+      const saved =
+        isEdit && registry
+          ? await updateRegistry(registry.id, {
+              ...baseParams(),
+              username: editingAuth ? username.trim() : undefined,
+              credential: editingAuth ? credential : undefined,
+            })
+          : await createRegistry({
+              ...baseParams(),
+              username: editingAuth ? username.trim() : "",
+              credential: editingAuth ? credential : "",
+            });
+
+      onSaved(saved);
       onClose();
     } catch (err) {
-      error = errorMessage(err, "Failed to create registry");
+      error = errorMessage(
+        err,
+        isEdit ? "Failed to update registry" : "Failed to create registry",
+      );
     } finally {
       submitting = false;
     }
   }
 </script>
 
-<Modal {open} onClose={handleClose} title="Add registry">
+<Modal
+  open={open && ready}
+  onClose={handleClose}
+  title={isEdit ? "Edit registry" : "Add registry"}
+>
   <form onsubmit={handleSubmit}>
     {#if error}
       <p class="error">
@@ -111,15 +151,23 @@
     <Field
       label="Registry host"
       bind:value={registryHost}
-      placeholder="docker.io"
+      placeholder={isEdit ? undefined : "docker.io"}
       required
     />
 
-    {#if !addAuth}
+    {#if !editingAuth}
       <div class="auth-status">
-        <span class="muted">Anonymous - no authentication</span>
-        <button type="button" class="link" onclick={() => (addAuth = true)}>
-          Add authentication
+        <span class="muted">
+          {#if !isEdit}
+            Anonymous - no authentication
+          {:else if registry?.authenticationConfigured}
+            Authentication is configured.
+          {:else}
+            No authentication configured.
+          {/if}
+        </span>
+        <button type="button" class="link" onclick={() => (editingAuth = true)}>
+          {isEdit ? "Change" : "Add authentication"}
         </button>
       </div>
     {:else}
@@ -127,18 +175,21 @@
         label="Username"
         bind:value={username}
         autocomplete="username"
-        required
+        required={!isEdit}
       />
       <Field
         label="Credential"
         type="password"
         bind:value={credential}
         autocomplete="new-password"
-        required
+        required={!isEdit}
+        placeholder={isEdit
+          ? "Leave both fields blank to remove authentication"
+          : undefined}
       />
-      <button type="button" class="link" onclick={removeAuth}
-        >Remove authentication</button
-      >
+      <button type="button" class="link" onclick={cancelAuthEdit}>
+        {isEdit ? "Cancel authentication change" : "Remove authentication"}
+      </button>
     {/if}
 
     <RegistryOptionsFields bind:insecure bind:allowSelfSignedCerts />
@@ -159,11 +210,15 @@
         {testing ? "Testing…" : "Test connection"}
       </Button>
       <div class="actions-right">
-        <Button type="button" variant="secondary" onclick={handleClose}
-          >Cancel</Button
-        >
+        <Button type="button" variant="secondary" onclick={handleClose}>
+          Cancel
+        </Button>
         <Button type="submit" disabled={submitting}>
-          {submitting ? "Adding…" : "Add registry"}
+          {#if isEdit}
+            {submitting ? "Saving…" : "Save changes"}
+          {:else}
+            {submitting ? "Adding…" : "Add registry"}
+          {/if}
         </Button>
       </div>
     </div>
