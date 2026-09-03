@@ -26,7 +26,7 @@
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
   import { formatDate } from "../lib/utils/format";
-  import { createPoller } from "../lib/utils/poller";
+  import { createJobPoller } from "../lib/utils/jobPoller";
   import type { Image } from "../lib/api/types/images";
   import type { PullInfo } from "../lib/api/types/metrics";
 
@@ -57,30 +57,31 @@
 
   const REFRESH_POLL_INTERVAL_MS = 2000;
 
-  function mergeImage(next: Image) {
+  function applyRefreshUpdate(next: Image) {
     if (!image) {
       image = next;
       return;
     }
-    const target = image as unknown as Record<string, unknown>;
-    const source = next as unknown as Record<string, unknown>;
-    for (const key of new Set([...Object.keys(target), ...Object.keys(source)])) {
-      if (target[key] !== source[key]) target[key] = source[key];
-    }
+    image.refreshStatus = next.refreshStatus;
+    image.tag = next.tag;
+    image.lastChecked = next.lastChecked;
+    image.lastCheckError = next.lastCheckError;
+    image.updateAvailable = next.updateAvailable;
+    image.updateAvailableTag = next.updateAvailableTag;
+    image.updatedAt = next.updatedAt;
   }
 
-  const refreshPoll = createPoller(async () => {
-    let next: Image;
-    try {
-      next = await getImage(imageId);
-    } catch {
-      return true;
-    }
-    if (next.refreshStatus === "running") return true;
-    mergeImage(next);
-    activityReload++;
-    return false;
-  }, REFRESH_POLL_INTERVAL_MS);
+  const refreshPoll = createJobPoller({
+    poll: () => getImage(imageId),
+    running: (img) => img.refreshStatus === "running",
+    intervalMs: REFRESH_POLL_INTERVAL_MS,
+    maxConsecutiveErrors: Infinity,
+    onResult: (img) => {
+      if (img.refreshStatus === "running") return;
+      applyRefreshUpdate(img);
+      activityReload++;
+    },
+  });
 
   function syncRefreshPolling() {
     if (image?.refreshStatus === "running" && !refreshPoll.active) {
@@ -123,7 +124,7 @@
 
   async function refreshImageDetails() {
     try {
-      mergeImage(await getImage(imageId));
+      image = await getImage(imageId);
       syncRefreshPolling();
       activityReload++;
     } catch {}

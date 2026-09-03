@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store'
 import { inspectRepository, getDiscovery } from '../api/images'
 import { errorMessage } from '../api/client'
-import { createPoller } from '../utils/poller'
+import { createJobPoller } from '../utils/jobPoller'
 import type { DiscoveryResult } from '../api/types/images'
 
 const POLL_INTERVAL_MS = 1000
@@ -34,7 +34,6 @@ export function createTagDiscovery() {
   const resolvedListeners = new Set<(result: DiscoveryResult) => void>()
 
   let discoveryId: number | null = null
-  let consecutiveErrors = 0
   let elapsedTimer: ReturnType<typeof setInterval> | null = null
 
   function startElapsedTimer() {
@@ -71,26 +70,20 @@ export function createTagDiscovery() {
     for (const listener of resolvedListeners) listener(result)
   }
 
-  const poll = createPoller(async () => {
-    if (discoveryId === null) return false
-
-    try {
-      const result = await getDiscovery(discoveryId)
-      consecutiveErrors = 0
-
+  const poll = createJobPoller<DiscoveryResult>({
+    poll: () => getDiscovery(discoveryId as number),
+    running: (result) => result.status === 'running',
+    intervalMs: POLL_INTERVAL_MS,
+    maxConsecutiveErrors: MAX_CONSECUTIVE_POLL_ERRORS,
+    onResult: (result) => {
       if (result.status === 'running') {
         store.update((state) => ({ ...state, tagsSeen: result.tagsSeen ?? state.tagsSeen }))
-
-        return true
+      } else {
+        settle(result)
       }
-
-      settle(result)
-
-      return false
-    } catch (err) {
-      consecutiveErrors += 1
-
-      if (consecutiveErrors < MAX_CONSECUTIVE_POLL_ERRORS) return true
+    },
+    onError: (err, _consecutive, gaveUp) => {
+      if (!gaveUp) return
 
       stopElapsedTimer()
       discoveryId = null
@@ -99,15 +92,12 @@ export function createTagDiscovery() {
         phase: 'idle',
         error: errorMessage(err, 'Failed to check discovery status'),
       }))
-
-      return false
-    }
-  }, POLL_INTERVAL_MS)
+    },
+  })
 
   async function start({ registry, repository }: TagDiscoveryParams) {
     poll.stop()
     stopElapsedTimer()
-    consecutiveErrors = 0
     discoveryId = null
 
     store.set({ ...initialState, phase: 'inspecting' })

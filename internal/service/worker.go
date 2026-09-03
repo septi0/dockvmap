@@ -25,11 +25,14 @@ type workerScheduleStore interface {
 	RecordWorkerRun(ctx context.Context, job string, at time.Time, count int64, errText string) error
 }
 
+const workerTriggerArmWindow = 30 * time.Second
+
 type Worker struct {
 	store workerScheduleStore
 
 	activityMu sync.RWMutex
 	activity   map[string]bool
+	armedUntil map[string]time.Time
 
 	triggerMu sync.Mutex
 	triggers  map[string]chan struct{}
@@ -40,9 +43,10 @@ type Worker struct {
 
 func NewWorker(store workerScheduleStore) *Worker {
 	return &Worker{
-		store:    store,
-		activity: make(map[string]bool),
-		triggers: make(map[string]chan struct{}),
+		store:      store,
+		activity:   make(map[string]bool),
+		armedUntil: make(map[string]time.Time),
+		triggers:   make(map[string]chan struct{}),
 	}
 }
 
@@ -87,6 +91,10 @@ func (w *Worker) Trigger(job string) bool {
 		return false
 	}
 
+	w.activityMu.Lock()
+	w.armedUntil[job] = time.Now().Add(workerTriggerArmWindow)
+	w.activityMu.Unlock()
+
 	select {
 	case ch <- struct{}{}:
 	default:
@@ -95,22 +103,26 @@ func (w *Worker) Trigger(job string) bool {
 	return true
 }
 
-func (w *Worker) Begin(job string) { w.setActivity(job, true) }
+func (w *Worker) Begin(job string) {
+	w.activityMu.Lock()
+	defer w.activityMu.Unlock()
 
-func (w *Worker) End(job string) { w.setActivity(job, false) }
+	w.activity[job] = true
+	delete(w.armedUntil, job)
+}
+
+func (w *Worker) End(job string) {
+	w.activityMu.Lock()
+	defer w.activityMu.Unlock()
+
+	w.activity[job] = false
+}
 
 func (w *Worker) Running(job string) bool {
 	w.activityMu.RLock()
 	defer w.activityMu.RUnlock()
 
-	return w.activity[job]
-}
-
-func (w *Worker) setActivity(job string, running bool) {
-	w.activityMu.Lock()
-	defer w.activityMu.Unlock()
-
-	w.activity[job] = running
+	return w.activity[job] || time.Now().Before(w.armedUntil[job])
 }
 
 func (w *Worker) SetCatalog(jobs []WorkerJobDescriptor) {
