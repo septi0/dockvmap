@@ -850,6 +850,8 @@ func tagSetHash(tags []string) string {
 
 	h := sha256.New()
 
+	fmt.Fprintf(h, "e%d\x00", taganalyzer.AnalysisEpoch)
+
 	for _, tag := range sorted {
 		h.Write([]byte(tag))
 		h.Write([]byte{0})

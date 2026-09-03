@@ -1,5 +1,8 @@
 package taganalyzer
 
+// bump when grouping, classification or ordering output changes: it invalidates cached Analyze results
+const AnalysisEpoch = 1
+
 func Analyze(tags []string) Analysis {
 	result := Analysis{
 		Tags: make([]TagAnalysis, 0, len(tags)),
