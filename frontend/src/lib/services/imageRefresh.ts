@@ -8,8 +8,6 @@ const MAX_CONSECUTIVE_ERRORS = 15
 
 export type ImageRefreshStatus = 'idle' | 'running' | 'stale'
 
-// a tag refresh only ever changes these fields; name/registry/repository/createdAt
-// are left untouched so a poll tick doesn't churn them
 export function applyImageRefreshFields(target: Image, source: Image): void {
   target.refreshStatus = source.refreshStatus
   target.tag = source.tag
