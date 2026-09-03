@@ -24,3 +24,8 @@ export interface UpdateRegistryParams {
   credential?: string
   options: RegistryOptions
 }
+
+export interface RegistryTestResult {
+  ok: boolean
+  error?: string
+}

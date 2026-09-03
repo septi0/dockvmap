@@ -44,8 +44,12 @@ type fakeFailures struct {
 	err  error
 }
 
-func (f fakeFailures) Recent(context.Context) ([]service.Failure, error) {
+func (f fakeFailures) List(context.Context, model.BackgroundFailureListFilters) ([]service.Failure, error) {
 	return f.list, f.err
+}
+
+func (f fakeFailures) Count(context.Context, model.BackgroundFailureListFilters) (int64, error) {
+	return int64(len(f.list)), f.err
 }
 
 type fakeMetrics struct {

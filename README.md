@@ -139,6 +139,7 @@ Bind addresses are where DockVMap listens; `proxy_public_host` is only what the 
 |---|---|---|
 | `proxy_server_listen` | `:5000` | Registry proxy bind address. Serves HTTPS in place when `tls.enabled` is true. |
 | `proxy_public_host` | none | Host clients use in `docker pull`, shown in the web UI's pull instructions. May include a port (`registry.example.com:5050`) to override `proxy_server_listen`'s port too, for when the publicly reachable port differs from the bind port. Unset lets the web UI guess from the browser's request host, which can be wrong behind a reverse proxy. |
+| `proxy_access_log` | `true` | Write one structured log line per `/v2/...` request (method, path, status, bytes, duration, client address, resolved virtual image and upstream registry/repo/tag, cache hit or miss). Lines carry `component=proxy` for filtering. Set `false` to silence per-request logging without changing the global log level. |
 | `web_server_http_listen` | `:8080` | Web UI/API bind address, used when `tls.enabled` is false. |
 | `web_server_https_listen` | `:8443` | Web UI/API bind address, used when `tls.enabled` is true. |
 | `trusted_proxies` | `[]` | CIDRs/IPs of reverse proxies trusted to report the real client IP; they must append to `X-Forwarded-For`, not pass it through. Use `gateway` to resolve the container's IPv4 default gateway at startup: the address Docker SNATs a proxy's traffic to when it reaches a published port (`trusted_proxies: ["gateway", "10.20.45.23"]`). Empty logs a warning and uses the immediate TCP peer as the client. |

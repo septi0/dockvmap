@@ -38,7 +38,7 @@ func cmdResetPassword(ctx context.Context, db *store.Store, cfg *config.Config, 
 
 func cmdRefreshTags(ctx context.Context, db *store.Store, tagFilter *tagfilter.Filter) error {
 	audit := service.NewAudit(db)
-	registries := service.NewRegistries(db, audit)
+	registries := service.NewRegistries(service.RegistriesDeps{Store: db, Audit: audit})
 	ociClient := oci.NewClient(nil, registryCredentialsAdapter{registries: registries}, registryOptionsAdapter{registries: registries})
 	failureLog := service.NewFailureLog(db)
 	events := service.NewEvents(db)

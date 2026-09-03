@@ -163,6 +163,80 @@ func (w *Web) apiDeleteRegistry(rw http.ResponseWriter, r *http.Request) {
 	apiJSON(rw, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+type testRegistryRequest struct {
+	Registry   string                `json:"registry"`
+	Username   string                `json:"username"`
+	Credential string                `json:"credential"`
+	Options    model.RegistryOptions `json:"options"`
+}
+
+type testExistingRegistryRequest struct {
+	Registry   string                `json:"registry"`
+	Username   *string               `json:"username"`
+	Credential *string               `json:"credential"`
+	Options    model.RegistryOptions `json:"options"`
+}
+
+type registryTestResponse struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+func (w *Web) apiTestRegistry(rw http.ResponseWriter, r *http.Request) {
+	request, ok := decodeJSON[testRegistryRequest](rw, r)
+	if !ok {
+		return
+	}
+
+	err := w.registries.TestConnection(
+		r.Context(),
+		strings.TrimSpace(request.Registry),
+		strings.TrimSpace(request.Username),
+		request.Credential,
+		request.Options,
+	)
+
+	writeRegistryTestResult(rw, err)
+}
+
+func (w *Web) apiTestExistingRegistry(rw http.ResponseWriter, r *http.Request) {
+	registryID, err := parseRegistryID(r.PathValue("id"))
+	if err != nil {
+		apiError(rw, http.StatusBadRequest, "registry id is required")
+		return
+	}
+
+	request, ok := decodeJSON[testExistingRegistryRequest](rw, r)
+	if !ok {
+		return
+	}
+
+	err = w.registries.TestExistingConnection(r.Context(), registryID, service.RegistryConnTest{
+		Host:       strings.TrimSpace(request.Registry),
+		Username:   request.Username,
+		Credential: request.Credential,
+		Options:    request.Options,
+	})
+
+	writeRegistryTestResult(rw, err)
+}
+
+func writeRegistryTestResult(rw http.ResponseWriter, err error) {
+	switch {
+	case err == nil:
+		apiJSON(rw, http.StatusOK, registryTestResponse{OK: true})
+
+	case errors.Is(err, service.ErrInvalidRegistry):
+		apiError(rw, http.StatusBadRequest, err.Error())
+
+	case errors.Is(err, service.ErrRegistryNotFound):
+		apiError(rw, http.StatusNotFound, "registry not found")
+
+	default:
+		apiJSON(rw, http.StatusOK, registryTestResponse{OK: false, Error: err.Error()})
+	}
+}
+
 func parseRegistryID(value string) (int64, error) {
 	if value == "" {
 		return 0, errors.New("registry id is required")

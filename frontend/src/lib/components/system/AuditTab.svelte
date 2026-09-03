@@ -1,31 +1,28 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import ScrollText from "@lucide/svelte/icons/scroll-text";
-  import AppShell from "../lib/components/AppShell.svelte";
-  import PageTitle from "../lib/components/PageTitle.svelte";
-  import AsyncState from "../lib/components/AsyncState.svelte";
-  import Pagination from "../lib/components/Pagination.svelte";
-  import FilterBar from "../lib/components/FilterBar.svelte";
-  import DateRangeFilter from "../lib/components/DateRangeFilter.svelte";
-  import Modal from "../lib/components/Modal.svelte";
-  import DetailRow from "../lib/components/DetailRow.svelte";
-  import DeviceIcon from "../lib/components/DeviceIcon.svelte";
-  import { listAuditLogs, AUDIT_LOG_PAGE_SIZE } from "../lib/api/audit";
-  import { errorMessage } from "../lib/api/client";
-  import { AUDIT_TYPES } from "../lib/api/types/audit";
-  import type { AuditLog } from "../lib/api/types/audit";
+  import AsyncState from "../AsyncState.svelte";
+  import Pagination from "../Pagination.svelte";
+  import FilterBar from "../FilterBar.svelte";
+  import DateRangeFilter from "../DateRangeFilter.svelte";
+  import Modal from "../Modal.svelte";
+  import DetailRow from "../DetailRow.svelte";
+  import DeviceIcon from "../DeviceIcon.svelte";
+  import { listAuditLogs, AUDIT_LOG_PAGE_SIZE } from "../../api/audit";
+  import { errorMessage } from "../../api/client";
+  import { AUDIT_TYPES } from "../../api/types/audit";
+  import type { AuditLog } from "../../api/types/audit";
   import {
     formatDate,
     formatAuditType,
     toRfc3339DayStart,
     toRfc3339DayEnd,
-  } from "../lib/utils/format";
-  import { parseUserAgent } from "../lib/utils/userAgent";
+  } from "../../utils/format";
+  import { parseUserAgent } from "../../utils/userAgent";
   import {
     readListQuery,
     pushListQuery,
     watchListQuery,
-  } from "../lib/utils/listQuery";
+  } from "../../utils/listQuery";
 
   const FILTER_DEFAULTS = {
     type: "",
@@ -87,7 +84,7 @@
   }
 
   function syncToUrl() {
-    pushListQuery("/audit-log", {
+    pushListQuery("/system/audit", {
       type: selectedType,
       since: sinceDate,
       until: untilDate,
@@ -124,87 +121,78 @@
   }
 </script>
 
-<PageTitle title="Audit Log" />
-
-<AppShell>
-  <div class="title-row">
-    <ScrollText size={20} strokeWidth={1.75} />
-    <h1>Audit Log</h1>
+<FilterBar active={hasActiveFilters} onClear={clearFilters}>
+  <div class="filter-field">
+    <span class="filter-label">Event</span>
+    <select
+      class="input filter-control"
+      class:is-active={selectedType !== ""}
+      bind:value={selectedType}
+      onchange={handleFilterChange}
+    >
+      <option value="">All events</option>
+      {#each AUDIT_TYPES as type (type)}
+        <option value={type}>{formatAuditType(type)}</option>
+      {/each}
+    </select>
   </div>
 
-  <FilterBar active={hasActiveFilters} onClear={clearFilters}>
-    <div class="filter-field">
-      <span class="filter-label">Event</span>
-      <select
-        class="input filter-control"
-        class:is-active={selectedType !== ""}
-        bind:value={selectedType}
-        onchange={handleFilterChange}
-      >
-        <option value="">All events</option>
-        {#each AUDIT_TYPES as type (type)}
-          <option value={type}>{formatAuditType(type)}</option>
-        {/each}
-      </select>
-    </div>
-
-    <div class="filter-field">
-      <span class="filter-label">Date</span>
-      <DateRangeFilter
-        bind:since={sinceDate}
-        bind:until={untilDate}
-        onChange={handleFilterChange}
-      />
-    </div>
-  </FilterBar>
-
-  <AsyncState
-    loading={loading && !loaded}
-    busy={loading && loaded}
-    {error}
-    empty={auditLogs.length === 0}
-    emptyMessage="No audit events yet."
-    columns={4}
-  >
-    <div class="card table-wrap">
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Event</th>
-            <th>User</th>
-            <th>IP</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each auditLogs as entry (entry.id)}
-            <tr class="clickable" onclick={(event) => selectRow(event, entry)}>
-              <td>
-                <button
-                  type="button"
-                  class="row-trigger"
-                  onclick={() => (selectedEntry = entry)}
-                >
-                  {formatDate(entry.createdAt)}
-                </button>
-              </td>
-              <td>{formatAuditType(entry.type)}</td>
-              <td>{entry.username ?? "-"}</td>
-              <td>{entry.ip ?? "-"}</td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-
-    <Pagination
-      {total}
-      limit={AUDIT_LOG_PAGE_SIZE}
-      {offset}
-      onOffsetChange={handleOffsetChange}
+  <div class="filter-field">
+    <span class="filter-label">Date</span>
+    <DateRangeFilter
+      bind:since={sinceDate}
+      bind:until={untilDate}
+      onChange={handleFilterChange}
     />
-  </AsyncState>
-</AppShell>
+  </div>
+</FilterBar>
+
+<AsyncState
+  loading={loading && !loaded}
+  busy={loading && loaded}
+  {error}
+  empty={auditLogs.length === 0}
+  emptyMessage="No audit events yet."
+  columns={4}
+>
+  <div class="card table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Event</th>
+          <th>User</th>
+          <th>IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each auditLogs as entry (entry.id)}
+          <tr class="clickable" onclick={(event) => selectRow(event, entry)}>
+            <td>
+              <button
+                type="button"
+                class="row-trigger"
+                onclick={() => (selectedEntry = entry)}
+              >
+                {formatDate(entry.createdAt)}
+              </button>
+            </td>
+            <td>{formatAuditType(entry.type)}</td>
+            <td>{entry.username ?? "-"}</td>
+            <td>{entry.ip ?? "-"}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+
+  <Pagination
+    {total}
+    limit={AUDIT_LOG_PAGE_SIZE}
+    {offset}
+    onOffsetChange={handleOffsetChange}
+  />
+</AsyncState>
 
 <Modal
   open={selectedEntry !== null}
@@ -238,10 +226,6 @@
 </Modal>
 
 <style>
-  .title-row {
-    margin-bottom: var(--space-4);
-  }
-
   .clickable {
     cursor: pointer;
   }

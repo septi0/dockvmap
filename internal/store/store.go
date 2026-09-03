@@ -130,6 +130,16 @@ func (s *Store) Ping(ctx context.Context) error {
 	return nil
 }
 
+func (s *Store) SchemaVersion(ctx context.Context) (int, error) {
+	var version int
+
+	if err := s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations").Scan(&version); err != nil {
+		return 0, fmt.Errorf("reading schema version: %w", err)
+	}
+
+	return version, nil
+}
+
 func (s *Store) executor(tx DBTX) DBTX {
 	if tx != nil {
 		return tx

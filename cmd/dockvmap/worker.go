@@ -30,12 +30,15 @@ const maxWorkerStartStagger = 30 * time.Second
 const shutdownHookTimeout = 5 * time.Second
 
 type scheduledJob struct {
-	name       string
-	interval   time.Duration
-	run        func(context.Context) (int, error)
-	doneMsg    string // logged with "count" when run reports count > 0
-	onShutdown func(context.Context) error
-	trigger    <-chan struct{} // nil unless the job can be run early on demand
+	name           string
+	description    string
+	interval       time.Duration
+	enabled        bool
+	disabledReason string
+	run            func(context.Context) (int, error)
+	doneMsg        string // logged with "count" when run reports count > 0
+	onShutdown     func(context.Context) error
+	trigger        <-chan struct{} // nil unless the job can be run early on demand
 }
 
 func counted(n int64, err error) (int, error) { return int(n), err }
@@ -55,99 +58,197 @@ type workerDeps struct {
 	proxyMetricsHistory *service.ProxyMetricsHistory
 }
 
-func startWorker(ctx context.Context, deps workerDeps) {
+func scheduledJobs(deps workerDeps) []scheduledJob {
 	cfg := deps.cfg
 
 	jobs := []scheduledJob{
 		{
-			name:     "session-cleanup",
-			interval: sessionCleanupInterval,
-			doneMsg:  "removed expired sessions",
-			run:      func(ctx context.Context) (int, error) { return counted(deps.sessions.CleanupExpired(ctx)) },
+			name:        "session-cleanup",
+			description: "Delete expired login sessions.",
+			interval:    sessionCleanupInterval,
+			enabled:     true,
+			doneMsg:     "removed expired sessions",
+			run:         func(ctx context.Context) (int, error) { return counted(deps.sessions.CleanupExpired(ctx)) },
 		},
 		{
-			name:     "tag-discovery-cleanup",
-			interval: tagDiscoveryCleanupInterval,
-			doneMsg:  "removed old tag discoveries",
+			name:        "tag-discovery-cleanup",
+			description: "Drop finished tag-discovery records older than 7 days.",
+			interval:    tagDiscoveryCleanupInterval,
+			enabled:     true,
+			doneMsg:     "removed old tag discoveries",
 			run: func(ctx context.Context) (int, error) {
 				return counted(deps.discoveries.CleanupOld(ctx, tagDiscoveryRetention))
 			},
 		},
 		{
-			name:     "background-failure-cleanup",
-			interval: backgroundFailureCleanupInterval,
-			doneMsg:  "removed old background failures",
+			name:        "background-failure-cleanup",
+			description: "Drop background-failure records older than 30 days.",
+			interval:    backgroundFailureCleanupInterval,
+			enabled:     true,
+			doneMsg:     "removed old background failures",
 			run: func(ctx context.Context) (int, error) {
 				return counted(deps.failures.CleanupOld(ctx, backgroundFailureRetention))
 			},
 		},
 	}
 
+	const tagRefreshDesc = "Poll every tracked image's upstream registry for tag changes."
+
 	if interval := cfg.TagsCheckIntervalDuration(); interval > 0 {
 		jobs = append(jobs, scheduledJob{
-			name:     service.WorkerJobTagRefresh,
-			interval: interval,
-			trigger:  deps.trigger.Channel(service.WorkerJobTagRefresh),
-			run:      func(ctx context.Context) (int, error) { return runImageTagRefresh(ctx, deps.images) },
+			name:        service.WorkerJobTagRefresh,
+			description: tagRefreshDesc,
+			interval:    interval,
+			enabled:     true,
+			trigger:     deps.trigger.Register(service.WorkerJobTagRefresh),
+			run:         func(ctx context.Context) (int, error) { return runImageTagRefresh(ctx, deps.images) },
 		})
 	} else {
-		slog.Warn("image tag refresh worker disabled", "interval", cfg.TagsCheckInterval)
-	}
-
-	if deps.cache != nil {
-		if interval, err := time.ParseDuration(cfg.BlobCache.CleanupInterval); err == nil && interval > 0 {
-			jobs = append(jobs, scheduledJob{
-				name:     "blob-cache-cleanup",
-				interval: interval,
-				doneMsg:  "removed expired cached blobs",
-				run:      func(ctx context.Context) (int, error) { return deps.cache.Cleanup(ctx) },
-			})
-		} else {
-			slog.Warn("blob cache cleanup worker disabled", "interval", cfg.BlobCache.CleanupInterval)
-		}
-
 		jobs = append(jobs, scheduledJob{
-			name:     "blob-cache-orphan-scan",
-			interval: blobOrphanScanInterval,
-			doneMsg:  "removed orphaned cached blob files",
-			run:      func(ctx context.Context) (int, error) { return deps.cache.ScanOrphans(ctx) },
+			name:           service.WorkerJobTagRefresh,
+			description:    tagRefreshDesc,
+			enabled:        false,
+			disabledReason: "tags_check_interval is not a positive duration",
 		})
 	}
+
+	jobs = append(jobs, blobCacheJobs(deps)...)
+
+	const tagNotificationDesc = "Send pending email and webhook notifications for tag changes."
 
 	if cfg.SMTP.Enabled || len(cfg.Webhooks) > 0 {
 		jobs = append(jobs, scheduledJob{
-			name:     "tag-notification",
-			interval: tagNotificationInterval,
-			doneMsg:  "sent tag notifications",
-			run:      func(ctx context.Context) (int, error) { return deps.notifications.SendPendingTagNotifications(ctx) },
+			name:        "tag-notification",
+			description: tagNotificationDesc,
+			interval:    tagNotificationInterval,
+			enabled:     true,
+			doneMsg:     "sent tag notifications",
+			run:         func(ctx context.Context) (int, error) { return deps.notifications.SendPendingTagNotifications(ctx) },
+		})
+	} else {
+		jobs = append(jobs, scheduledJob{
+			name:           "tag-notification",
+			description:    tagNotificationDesc,
+			enabled:        false,
+			disabledReason: "no SMTP host and no webhooks are configured",
 		})
 	}
 
-	if deps.proxyMetrics != nil && deps.proxyMetricsHistory != nil {
-		flusher := &proxyMetricsFlusher{metrics: deps.proxyMetrics, history: deps.proxyMetricsHistory}
+	jobs = append(jobs, proxyMetricsJobs(deps)...)
 
-		jobs = append(jobs,
-			scheduledJob{
-				name:       "proxy-metrics-flush",
-				interval:   proxyMetricsFlushInterval,
-				run:        func(ctx context.Context) (int, error) { return 0, flusher.flush(ctx) },
-				onShutdown: flusher.flush,
-			},
-			scheduledJob{
-				name:     "proxy-metrics-cleanup",
-				interval: proxyMetricsCleanupInterval,
-				doneMsg:  "removed old proxy metrics",
-				run: func(ctx context.Context) (int, error) {
-					return counted(deps.proxyMetricsHistory.CleanupOld(ctx, proxyMetricsRetention))
-				},
-			},
-		)
+	return jobs
+}
+
+func blobCacheJobs(deps workerDeps) []scheduledJob {
+	const cleanupDesc = "Evict expired cached blobs and enforce the cache size limit."
+	const orphanDesc = "Delete cache files that have no database record."
+
+	if deps.cache == nil {
+		return []scheduledJob{
+			{name: "blob-cache-cleanup", description: cleanupDesc, enabled: false, disabledReason: "the blob cache is disabled"},
+			{name: "blob-cache-orphan-scan", description: orphanDesc, enabled: false, disabledReason: "the blob cache is disabled"},
+		}
 	}
 
-	var wg sync.WaitGroup
+	jobs := make([]scheduledJob, 0, 2)
+
+	if interval, err := time.ParseDuration(deps.cfg.BlobCache.CleanupInterval); err == nil && interval > 0 {
+		jobs = append(jobs, scheduledJob{
+			name:        "blob-cache-cleanup",
+			description: cleanupDesc,
+			interval:    interval,
+			enabled:     true,
+			trigger:     deps.trigger.Register("blob-cache-cleanup"),
+			doneMsg:     "removed expired cached blobs",
+			run:         func(ctx context.Context) (int, error) { return deps.cache.Cleanup(ctx) },
+		})
+	} else {
+		jobs = append(jobs, scheduledJob{
+			name:           "blob-cache-cleanup",
+			description:    cleanupDesc,
+			enabled:        false,
+			disabledReason: "blob_cache.cleanup_interval is not a positive duration",
+		})
+	}
+
+	jobs = append(jobs, scheduledJob{
+		name:        "blob-cache-orphan-scan",
+		description: orphanDesc,
+		interval:    blobOrphanScanInterval,
+		enabled:     true,
+		trigger:     deps.trigger.Register("blob-cache-orphan-scan"),
+		doneMsg:     "removed orphaned cached blob files",
+		run:         func(ctx context.Context) (int, error) { return deps.cache.ScanOrphans(ctx) },
+	})
+
+	return jobs
+}
+
+func proxyMetricsJobs(deps workerDeps) []scheduledJob {
+	const flushDesc = "Fold in-memory proxy counters into today's stored totals."
+	const cleanupDesc = "Drop stored proxy metrics older than 30 days."
+
+	if deps.proxyMetrics == nil || deps.proxyMetricsHistory == nil {
+		return []scheduledJob{
+			{name: "proxy-metrics-flush", description: flushDesc, enabled: false, disabledReason: "proxy metrics are not available"},
+			{name: "proxy-metrics-cleanup", description: cleanupDesc, enabled: false, disabledReason: "proxy metrics are not available"},
+		}
+	}
+
+	flusher := &proxyMetricsFlusher{metrics: deps.proxyMetrics, history: deps.proxyMetricsHistory}
+
+	return []scheduledJob{
+		{
+			name:        "proxy-metrics-flush",
+			description: flushDesc,
+			interval:    proxyMetricsFlushInterval,
+			enabled:     true,
+			run:         func(ctx context.Context) (int, error) { return 0, flusher.flush(ctx) },
+			onShutdown:  flusher.flush,
+		},
+		{
+			name:        "proxy-metrics-cleanup",
+			description: cleanupDesc,
+			interval:    proxyMetricsCleanupInterval,
+			enabled:     true,
+			doneMsg:     "removed old proxy metrics",
+			run: func(ctx context.Context) (int, error) {
+				return counted(deps.proxyMetricsHistory.CleanupOld(ctx, proxyMetricsRetention))
+			},
+		},
+	}
+}
+
+func jobDescriptors(jobs []scheduledJob) []service.WorkerJobDescriptor {
+	descriptors := make([]service.WorkerJobDescriptor, len(jobs))
 
 	for i, job := range jobs {
-		offset := min(time.Duration(i)*workerStartStagger, maxWorkerStartStagger)
+		descriptors[i] = service.WorkerJobDescriptor{
+			Name:           job.name,
+			Description:    job.description,
+			Interval:       job.interval,
+			Enabled:        job.enabled,
+			DisabledReason: job.disabledReason,
+			Triggerable:    job.trigger != nil,
+		}
+	}
+
+	return descriptors
+}
+
+func runScheduledJobs(ctx context.Context, jobs []scheduledJob, schedule *service.WorkerSchedule, activity *service.WorkerActivity) {
+	var wg sync.WaitGroup
+
+	staggerIndex := 0
+
+	for _, job := range jobs {
+		if !job.enabled {
+			slog.Warn("background worker disabled", "job", job.name, "reason", job.disabledReason)
+			continue
+		}
+
+		offset := min(time.Duration(staggerIndex)*workerStartStagger, maxWorkerStartStagger)
+		staggerIndex++
 
 		slog.Info("starting background worker", "job", job.name, "interval", job.interval, "start_delay", offset)
 
@@ -155,7 +256,7 @@ func startWorker(ctx context.Context, deps workerDeps) {
 
 		go func() {
 			defer wg.Done()
-			runScheduledJob(ctx, job, deps.schedule, deps.activity, offset)
+			runScheduledJob(ctx, job, schedule, activity, offset)
 		}()
 	}
 
@@ -258,6 +359,13 @@ func executeJob(ctx context.Context, job scheduledJob, schedule *service.WorkerS
 
 	if count > 0 && job.doneMsg != "" {
 		slog.Info(job.doneMsg, "count", count)
+	}
+
+	outcomeCtx, outcomeCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer outcomeCancel()
+
+	if outcomeErr := schedule.MarkOutcome(outcomeCtx, job.name, int64(count), err); outcomeErr != nil {
+		slog.Error("recording worker outcome failed", "job", job.name, "error", outcomeErr)
 	}
 }
 

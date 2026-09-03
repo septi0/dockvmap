@@ -272,6 +272,32 @@ func (c *Client) listTags(ctx context.Context, registry, repository string, onPa
 	return tags, nil
 }
 
+func (c *Client) CheckRegistry(ctx context.Context, registry string) error {
+	host := RegistryAPIHost(registry)
+
+	endpoint := fmt.Sprintf("https://%s/v2/", host)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+
+	if err != nil {
+		return fmt.Errorf("creating registry request: %w", err)
+	}
+
+	response, err := c.Do(req, registry, "")
+
+	if err != nil {
+		return err
+	}
+
+	defer drainAndClose(response)
+
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return registryStatusError(response)
+	}
+
+	return nil
+}
+
 func (c *Client) CheckRepository(ctx context.Context, registry, repository string) error {
 	host := RegistryAPIHost(registry)
 	path := RepositoryPath(registry, repository)

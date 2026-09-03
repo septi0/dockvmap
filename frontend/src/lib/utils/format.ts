@@ -50,6 +50,30 @@ export function formatAuditType(type: string): string {
   return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
+export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '-'
+
+  const units: [string, number][] = [
+    ['d', 86400],
+    ['h', 3600],
+    ['m', 60],
+    ['s', 1],
+  ]
+
+  const parts: string[] = []
+  let remaining = Math.round(seconds)
+
+  for (const [suffix, size] of units) {
+    if (remaining >= size) {
+      parts.push(`${Math.floor(remaining / size)}${suffix}`)
+      remaining %= size
+    }
+    if (parts.length === 2) break
+  }
+
+  return parts.join(' ')
+}
+
 export function toRfc3339DayStart(date: string): string | undefined {
   return date ? new Date(`${date}T00:00:00`).toISOString() : undefined
 }

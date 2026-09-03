@@ -1,6 +1,6 @@
 import type { Image } from './images'
 import type { ImageEvent } from './events'
-import type { RecentFailure } from './failures'
+import type { Failure } from './failures'
 import type { ProxyMetrics } from './metrics'
 
 export interface DashboardSection<T> {
@@ -26,10 +26,15 @@ export interface DashboardActivity {
   total: number
 }
 
+export interface DashboardIssues {
+  failures: Failure[]
+  total: number
+}
+
 export interface Dashboard {
   summary: DashboardSection<DashboardSummary>
   updates: DashboardSection<DashboardUpdates>
-  issues: DashboardSection<RecentFailure[]>
+  issues: DashboardSection<DashboardIssues>
   activity: DashboardSection<DashboardActivity>
   metrics: DashboardSection<ProxyMetrics>
 }

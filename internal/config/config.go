@@ -20,6 +20,7 @@ type Config struct {
 	TagDiscoveryTTL         string               `yaml:"tag_discovery_ttl" env:"DOCKVMAP_TAG_DISCOVERY_TTL" default:"1h"`
 	ProxyServerListen       string               `yaml:"proxy_server_listen" env:"DOCKVMAP_PROXY_SERVER_LISTEN" default:":5000"`
 	ProxyPublicHost         string               `yaml:"proxy_public_host" env:"DOCKVMAP_PROXY_PUBLIC_HOST"`
+	ProxyAccessLog          *bool                `yaml:"proxy_access_log" env:"DOCKVMAP_PROXY_ACCESS_LOG" default:"true"`
 	WebServerHTTPListen     string               `yaml:"web_server_http_listen" env:"DOCKVMAP_WEB_SERVER_HTTP_LISTEN" default:":8080"`
 	WebServerHTTPSListen    string               `yaml:"web_server_https_listen" env:"DOCKVMAP_WEB_SERVER_HTTPS_LISTEN" default:":8443"`
 	LogsPath                string               `yaml:"logs_path" env:"DOCKVMAP_LOGS_PATH"`
@@ -86,6 +87,10 @@ func (c *Config) applyDerivedDefaults() {
 	if len(c.TrustedProxies) == 0 {
 		c.warn("trusted_proxies is empty; the client IP will be the immediate TCP peer (wrong behind a reverse proxy). Set trusted_proxies, or \"gateway\" to trust the container's default gateway")
 	}
+}
+
+func (c *Config) ProxyAccessLogEnabled() bool {
+	return c.ProxyAccessLog == nil || *c.ProxyAccessLog
 }
 
 func (c *Config) WebServerListenAddr() string {

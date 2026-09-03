@@ -41,6 +41,8 @@ type registryService interface {
 	DeleteByID(ctx context.Context, registryID int64) (bool, error)
 	GetByID(ctx context.Context, registryID int64) (*model.RegistryInfo, error)
 	List(ctx context.Context) ([]model.RegistryInfo, error)
+	TestConnection(ctx context.Context, host, username, credential string, opts model.RegistryOptions) error
+	TestExistingConnection(ctx context.Context, registryID int64, test service.RegistryConnTest) error
 }
 
 type eventService interface {
@@ -72,6 +74,7 @@ type sessionService interface {
 
 type healthChecker interface {
 	Ping(ctx context.Context) error
+	SchemaVersion(ctx context.Context) (int, error)
 }
 
 type proxyTokenService interface {
@@ -89,11 +92,17 @@ type cacheUsageReader interface {
 }
 
 type failureLister interface {
-	Recent(ctx context.Context) ([]service.Failure, error)
+	List(ctx context.Context, filters model.BackgroundFailureListFilters) ([]service.Failure, error)
+	Count(ctx context.Context, filters model.BackgroundFailureListFilters) (int64, error)
 }
 
 type workerScheduleReader interface {
 	LastRun(ctx context.Context, job string) (time.Time, bool, error)
+	Ticks(ctx context.Context) ([]model.WorkerTick, error)
+}
+
+type workerCatalogReader interface {
+	Jobs() []service.WorkerJobDescriptor
 }
 
 type workerTriggerer interface {
@@ -118,12 +127,16 @@ type Web struct {
 	cacheUsage           cacheUsageReader
 	failures             failureLister
 	workerSchedule       workerScheduleReader
+	workerCatalog        workerCatalogReader
 	workerTrigger        workerTriggerer
 	workerActivity       workerActivityReader
 	cfg                  *config.Config
 	trustedProxies       ipmatch.Set
+	resolvedProxies      []string
 	loginRateLimitWindow time.Duration
 	version              string
+	dataPath             string
+	startedAt            time.Time
 }
 
 type Dependencies struct {
@@ -141,10 +154,12 @@ type Dependencies struct {
 	CacheUsage           cacheUsageReader
 	Failures             failureLister
 	WorkerSchedule       workerScheduleReader
+	WorkerCatalog        workerCatalogReader
 	WorkerTrigger        workerTriggerer
 	WorkerActivity       workerActivityReader
 	LoginRateLimitWindow time.Duration
 	Version              string
+	DataPath             string
 }
 
 func New(deps Dependencies) (http.Handler, error) {
@@ -174,12 +189,16 @@ func New(deps Dependencies) (http.Handler, error) {
 		cacheUsage:           deps.CacheUsage,
 		failures:             deps.Failures,
 		workerSchedule:       deps.WorkerSchedule,
+		workerCatalog:        deps.WorkerCatalog,
 		workerTrigger:        deps.WorkerTrigger,
 		workerActivity:       deps.WorkerActivity,
 		cfg:                  deps.Config,
 		trustedProxies:       trustedProxies,
+		resolvedProxies:      proxies,
 		version:              deps.Version,
 		loginRateLimitWindow: deps.LoginRateLimitWindow,
+		dataPath:             deps.DataPath,
+		startedAt:            time.Now().UTC(),
 	}
 
 	mux := http.NewServeMux()

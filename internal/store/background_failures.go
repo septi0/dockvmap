@@ -19,13 +19,50 @@ func (s *Store) InsertBackgroundFailure(ctx context.Context, source, detail, err
 	return nil
 }
 
-func (s *Store) ListRecentBackgroundFailures(ctx context.Context, limit int) ([]model.BackgroundFailure, error) {
-	rows, err := s.db.QueryContext(ctx, `
+func backgroundFailureListWhere(filters model.BackgroundFailureListFilters) (string, []any) {
+	b := &whereBuilder{}
+
+	if filters.Source != "" {
+		b.add("source = ?", filters.Source)
+	}
+
+	if filters.Since != nil {
+		b.add("occurred_at >= ?", sqliteDatetime(*filters.Since))
+	}
+
+	if filters.Until != nil {
+		b.add("occurred_at <= ?", sqliteDatetime(*filters.Until))
+	}
+
+	return b.clause(), b.args
+}
+
+func (s *Store) CountBackgroundFailures(ctx context.Context, filters model.BackgroundFailureListFilters) (int64, error) {
+	where, args := backgroundFailureListWhere(filters)
+
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM background_failures %s`, where)
+
+	var count int64
+
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting background failures: %w", err)
+	}
+
+	return count, nil
+}
+
+func (s *Store) ListBackgroundFailures(ctx context.Context, filters model.BackgroundFailureListFilters) ([]model.BackgroundFailure, error) {
+	where, args := backgroundFailureListWhere(filters)
+
+	query := fmt.Sprintf(`
 		SELECT id, source, detail, error, occurred_at
 		FROM background_failures
+		%s
 		ORDER BY occurred_at DESC, id DESC
-		LIMIT ?
-	`, limit)
+		LIMIT ? OFFSET ?
+	`, where)
+
+	rows, err := s.db.QueryContext(ctx, query, append(args, filters.Limit, filters.Offset)...)
 
 	if err != nil {
 		return nil, fmt.Errorf("listing background failures: %w", err)

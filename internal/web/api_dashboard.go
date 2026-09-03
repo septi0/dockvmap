@@ -12,6 +12,7 @@ import (
 const (
 	dashboardUpdatesLimit  = 5
 	dashboardActivityLimit = 5
+	dashboardIssuesLimit   = 5
 )
 
 type dashboardSection[T any] struct {
@@ -45,12 +46,17 @@ type dashboardActivityData struct {
 	Total  int64              `json:"total"`
 }
 
+type dashboardIssuesData struct {
+	Failures []failureResponse `json:"failures"`
+	Total    int64             `json:"total"`
+}
+
 type dashboardResponse struct {
-	Summary  dashboardSection[dashboardSummaryData]    `json:"summary"`
-	Updates  dashboardSection[dashboardUpdatesData]    `json:"updates"`
-	Issues   dashboardSection[[]recentFailureResponse] `json:"issues"`
-	Activity dashboardSection[dashboardActivityData]   `json:"activity"`
-	Metrics  dashboardSection[proxyMetricsResponse]    `json:"metrics"`
+	Summary  dashboardSection[dashboardSummaryData]  `json:"summary"`
+	Updates  dashboardSection[dashboardUpdatesData]  `json:"updates"`
+	Issues   dashboardSection[dashboardIssuesData]   `json:"issues"`
+	Activity dashboardSection[dashboardActivityData] `json:"activity"`
+	Metrics  dashboardSection[proxyMetricsResponse]  `json:"metrics"`
 }
 
 func (w *Web) apiDashboard(rw http.ResponseWriter, r *http.Request) {
@@ -124,20 +130,30 @@ func (w *Web) dashboardUpdates(ctx context.Context) dashboardSection[dashboardUp
 	return dashboardData(dashboardUpdatesData{Images: responses, Total: total})
 }
 
-func (w *Web) dashboardIssues(ctx context.Context) dashboardSection[[]recentFailureResponse] {
-	failures, err := w.failures.Recent(ctx)
+func (w *Web) dashboardIssues(ctx context.Context) dashboardSection[dashboardIssuesData] {
+	filters := model.BackgroundFailureListFilters{
+		Pagination: model.Pagination{Offset: 0, Limit: dashboardIssuesLimit},
+	}
+
+	failures, err := w.failures.List(ctx, filters)
 
 	if err != nil {
-		return dashboardError[[]recentFailureResponse]("failed to load recent issues")
+		return dashboardError[dashboardIssuesData]("failed to load recent issues")
 	}
 
-	responses := make([]recentFailureResponse, 0, len(failures))
+	total, err := w.failures.Count(ctx, filters)
+
+	if err != nil {
+		return dashboardError[dashboardIssuesData]("failed to load recent issues")
+	}
+
+	responses := make([]failureResponse, 0, len(failures))
 
 	for _, failure := range failures {
-		responses = append(responses, newRecentFailureResponse(failure))
+		responses = append(responses, newFailureResponse(failure))
 	}
 
-	return dashboardData(responses)
+	return dashboardData(dashboardIssuesData{Failures: responses, Total: total})
 }
 
 func (w *Web) dashboardActivity(ctx context.Context) dashboardSection[dashboardActivityData] {

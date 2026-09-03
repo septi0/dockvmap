@@ -14,6 +14,7 @@ import (
 var (
 	ErrInvalidRegistry                   = errors.New("invalid registry")
 	ErrRegistryAlreadyExists             = errors.New("registry already exists")
+	ErrRegistryNotFound                  = errors.New("registry not found")
 	ErrRegistryInUse                     = errors.New("registry is in use")
 	ErrCredentialEncryptionNotConfigured = errors.New("registry credential encryption is not configured")
 )
@@ -28,9 +29,20 @@ type registryStore interface {
 	DeleteRegistryByID(ctx context.Context, registryID int64) (bool, error)
 }
 
+type RegistryConnChecker interface {
+	CheckRegistryConnection(ctx context.Context, host string, creds *model.RegistryCredentials, opts model.RegistryOptions) error
+}
+
+type RegistriesDeps struct {
+	Store       registryStore
+	Audit       auditRecorder
+	ConnChecker RegistryConnChecker
+}
+
 type Registries struct {
-	store registryStore
-	audit auditRecorder
+	store       registryStore
+	audit       auditRecorder
+	connChecker RegistryConnChecker
 }
 
 type auditRegistryData struct {
@@ -44,8 +56,81 @@ type auditRegistryUpdateData struct {
 	CredentialChanged bool `json:"credentialChanged"`
 }
 
-func NewRegistries(store registryStore, audit auditRecorder) *Registries {
-	return &Registries{store: store, audit: audit}
+func NewRegistries(deps RegistriesDeps) *Registries {
+	return &Registries{
+		store:       deps.Store,
+		audit:       deps.Audit,
+		connChecker: deps.ConnChecker,
+	}
+}
+
+type RegistryConnTest struct {
+	Host       string
+	Username   *string
+	Credential *string
+	Options    model.RegistryOptions
+}
+
+func (r *Registries) testConnection(ctx context.Context, host string, creds *model.RegistryCredentials, opts model.RegistryOptions) error {
+	host = strings.TrimSpace(host)
+
+	if !validRegistryAddress(host) {
+		return fmt.Errorf("%w: registry must be a valid host", ErrInvalidRegistry)
+	}
+
+	if r.connChecker == nil {
+		return errors.New("registry connection testing is not available")
+	}
+
+	return r.connChecker.CheckRegistryConnection(ctx, host, creds, opts)
+}
+
+func (r *Registries) TestConnection(ctx context.Context, host, username, credential string, opts model.RegistryOptions) error {
+	var creds *model.RegistryCredentials
+
+	if strings.TrimSpace(username) != "" {
+		creds = &model.RegistryCredentials{Username: strings.TrimSpace(username), Credential: credential}
+	}
+
+	return r.testConnection(ctx, host, creds, opts)
+}
+
+func (r *Registries) TestExistingConnection(ctx context.Context, registryID int64, test RegistryConnTest) error {
+	if registryID <= 0 {
+		return fmt.Errorf("%w: registry id must be greater than zero", ErrInvalidRegistry)
+	}
+
+	info, err := r.store.GetRegistryInfoByID(ctx, registryID)
+
+	if err != nil {
+		return err
+	}
+
+	if info == nil {
+		return ErrRegistryNotFound
+	}
+
+	host := strings.TrimSpace(test.Host)
+
+	if host == "" {
+		host = info.Registry
+	}
+
+	if (test.Username == nil) != (test.Credential == nil) {
+		return fmt.Errorf("%w: username and credential must be provided together", ErrInvalidRegistry)
+	}
+
+	if test.Credential != nil {
+		return r.TestConnection(ctx, host, *test.Username, *test.Credential, test.Options)
+	}
+
+	stored, err := r.store.GetRegistryCredentials(ctx, info.Registry)
+
+	if err != nil {
+		return err
+	}
+
+	return r.testConnection(ctx, host, stored, test.Options)
 }
 
 func (r *Registries) Create(ctx context.Context, registry model.Registry) (int64, error) {

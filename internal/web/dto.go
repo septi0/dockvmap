@@ -377,14 +377,16 @@ func newTagRefreshStatusResponse(enabled bool, interval string, running bool, la
 	}
 }
 
-type recentFailureResponse struct {
+type failureResponse struct {
 	OccurredAt time.Time `json:"occurredAt"`
+	Source     string    `json:"source"`
 	Message    string    `json:"message"`
 }
 
-func newRecentFailureResponse(failure service.Failure) recentFailureResponse {
-	return recentFailureResponse{
+func newFailureResponse(failure service.Failure) failureResponse {
+	return failureResponse{
 		OccurredAt: failure.OccurredAt,
+		Source:     string(failure.Source),
 		Message:    failureMessage(failure),
 	}
 }

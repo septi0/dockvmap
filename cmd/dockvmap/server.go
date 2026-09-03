@@ -107,9 +107,15 @@ func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFun
 }
 
 func newProxyServer(cfg *config.Config, images *service.Images, ociClient *oci.Client, cache *blobcache.Cache, metrics *proxy.Metrics, proxyTokens *service.ProxyTokens, tlsConfig *tls.Config) *http.Server {
+	var handler http.Handler = proxy.New(cfg, images, ociClient, cache, metrics, proxyTokens)
+
+	if cfg.ProxyAccessLogEnabled() {
+		handler = httpmw.AccessLog("proxy", handler)
+	}
+
 	return &http.Server{
 		Addr:              cfg.ProxyServerListen,
-		Handler:           httpmw.Recover(proxy.New(cfg, images, ociClient, cache, metrics, proxyTokens)),
+		Handler:           httpmw.Recover(handler),
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       120 * time.Second,

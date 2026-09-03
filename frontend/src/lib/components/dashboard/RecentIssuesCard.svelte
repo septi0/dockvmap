@@ -1,11 +1,16 @@
 <script lang="ts">
+  import { link } from "svelte-spa-router";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import CircleCheck from "@lucide/svelte/icons/circle-check";
   import DashboardCard from "./DashboardCard.svelte";
   import CardBody from "./CardBody.svelte";
   import CardState from "./CardState.svelte";
-  import { formatDate, formatRelativeTime } from "../../utils/format";
-  import type { RecentFailure } from "../../api/types/failures";
+  import {
+    formatDate,
+    formatNumber,
+    formatRelativeTime,
+  } from "../../utils/format";
+  import type { DashboardIssues } from "../../api/types/dashboard";
   import type { DashboardCardProps } from "./types";
 
   const SHOWN = 5;
@@ -16,9 +21,10 @@
     loading,
     busy,
     onRetry,
-  }: DashboardCardProps<RecentFailure[]> = $props();
+  }: DashboardCardProps<DashboardIssues> = $props();
 
-  let failures = $derived(data ?? []);
+  let failures = $derived(data?.failures ?? []);
+  let total = $derived(data?.total ?? 0);
   let shown = $derived(failures.slice(0, SHOWN));
 </script>
 
@@ -62,10 +68,10 @@
       {/each}
     </ul>
 
-    {#if failures.length > SHOWN}
-      <p class="issue-more muted">
-        {failures.length - SHOWN} more in the last 30 days
-      </p>
+    {#if total > shown.length}
+      <a class="view-all link" href="/system/failures" use:link>
+        View all {formatNumber(total)} issues
+      </a>
     {/if}
   </CardBody>
 </DashboardCard>
@@ -102,8 +108,8 @@
     color: var(--color-danger);
   }
 
-  .issue-more {
-    margin: var(--space-4) 0 0;
-    font-size: 0.75rem;
+  .view-all {
+    display: inline-block;
+    margin-top: var(--space-4);
   }
 </style>

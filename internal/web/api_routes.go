@@ -18,7 +18,13 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/dashboard", apiMethod(http.MethodGet, w.apiDashboard))
 
-	mux.HandleFunc("/recent-failures", apiMethod(http.MethodGet, w.apiRecentFailures))
+	mux.HandleFunc("/failures", apiMethod(http.MethodGet, w.apiListFailures))
+
+	mux.HandleFunc("/system/status", apiMethod(http.MethodGet, w.apiSystemStatus))
+
+	mux.HandleFunc("/system/tasks", apiMethod(http.MethodGet, w.apiSystemTasks))
+
+	mux.HandleFunc("/system/tasks/{name}/run", apiMethod(http.MethodPost, w.apiRunSystemTask))
 
 	mux.HandleFunc("/tag-refresh-status", apiMethod(http.MethodGet, w.apiTagRefreshStatus))
 
@@ -70,6 +76,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 		}
 	})
 
+	mux.HandleFunc("/registries/test", apiMethod(http.MethodPost, w.apiTestRegistry))
+
 	mux.HandleFunc("/registries/{id}", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
@@ -82,6 +90,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 			apiError(rw, http.StatusMethodNotAllowed, "method not allowed")
 		}
 	})
+
+	mux.HandleFunc("/registries/{id}/test", apiMethod(http.MethodPost, w.apiTestExistingRegistry))
 
 	mux.HandleFunc("/proxy-tokens", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {

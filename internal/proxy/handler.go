@@ -11,9 +11,16 @@ import (
 
 	"github.com/septi0/dockvmap/internal/blobcache"
 	"github.com/septi0/dockvmap/internal/config"
+	"github.com/septi0/dockvmap/internal/httpmw"
 	"github.com/septi0/dockvmap/internal/model"
 	"github.com/septi0/dockvmap/internal/oci"
 )
+
+func setAccess(r *http.Request, mutate func(*httpmw.AccessFields)) {
+	if fields := httpmw.AccessFieldsFrom(r.Context()); fields != nil {
+		mutate(fields)
+	}
+}
 
 type imageResolver interface {
 	Resolve(ctx context.Context, name string) (*model.Image, error)
@@ -58,11 +65,20 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !p.authenticate(r) {
-		w.Header().Set("Www-Authenticate", `Basic realm="dockvmap"`)
-		writeOCIError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+	if p.cfg.ProxyAuth.Enabled {
+		authenticated := p.authenticate(r)
 
-		return
+		setAccess(r, func(f *httpmw.AccessFields) {
+			f.AuthenticateSeen = true
+			f.Authenticated = authenticated
+		})
+
+		if !authenticated {
+			w.Header().Set("Www-Authenticate", `Basic realm="dockvmap"`)
+			writeOCIError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+
+			return
+		}
 	}
 
 	path := r.URL.Path
@@ -157,6 +173,15 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 	path := oci.RepositoryPath(img.Registry, img.Repository)
 	upstreamURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", host, path, upstreamRef)
 
+	setAccess(r, func(f *httpmw.AccessFields) {
+		f.VirtualImage = name
+		f.Registry = img.Registry
+		f.Repository = path
+		f.Reference = reference
+		f.UpstreamRef = upstreamRef
+		f.Resource = "manifest"
+	})
+
 	slog.Info("manifest request", "method", r.Method, "name", name, "reference", reference, "registry", img.Registry, "repository", path, "upstream_reference", upstreamRef)
 
 	if p.cache != nil && blobcache.IsDigest(upstreamRef) {
@@ -168,11 +193,13 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 
 		if served {
 			p.metrics.cacheHits.Add(1)
+			setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "hit" })
 			slog.Info("manifest served from cache", "method", r.Method, "name", name, "reference", reference)
 			return
 		}
 
 		p.metrics.cacheMisses.Add(1)
+		setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "miss" })
 	}
 
 	slog.Info("manifest fetched from upstream", "method", r.Method, "name", name, "reference", reference)
@@ -194,6 +221,18 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest 
 		return
 	}
 
+	host := oci.RegistryAPIHost(img.Registry)
+	path := oci.RepositoryPath(img.Registry, img.Repository)
+	upstreamURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", host, path, digest)
+
+	setAccess(r, func(f *httpmw.AccessFields) {
+		f.VirtualImage = name
+		f.Registry = img.Registry
+		f.Repository = path
+		f.Reference = digest
+		f.Resource = "blob"
+	})
+
 	if p.cache != nil {
 		served, err := p.cache.Serve(r.Context(), w, r, digest)
 
@@ -203,16 +242,14 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest 
 
 		if served {
 			p.metrics.cacheHits.Add(1)
+			setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "hit" })
 			slog.Info("blob served from cache", "method", r.Method, "name", name, "digest", digest)
 			return
 		}
 
 		p.metrics.cacheMisses.Add(1)
+		setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "miss" })
 	}
-
-	host := oci.RegistryAPIHost(img.Registry)
-	path := oci.RepositoryPath(img.Registry, img.Repository)
-	upstreamURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", host, path, digest)
 
 	slog.Info("blob fetched from upstream", "method", r.Method, "name", name, "digest", digest, "registry", img.Registry, "repository", path)
 

@@ -26,7 +26,11 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 	sessions := service.NewSessions(db, cfg.SessionLifetimeDuration(), audit, loginRateLimiter)
 	users := service.NewUsers(db, audit, sessions)
 
-	registries := service.NewRegistries(db, audit)
+	registries := service.NewRegistries(service.RegistriesDeps{
+		Store:       db,
+		Audit:       audit,
+		ConnChecker: registryConnCheckerAdapter{},
+	})
 	ociClient := oci.NewClient(nil, registryCredentialsAdapter{registries: registries}, registryOptionsAdapter{registries: registries})
 
 	failureLog := service.NewFailureLog(db)
@@ -69,14 +73,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 	health := service.NewHealth(db)
 	proxyTokens := service.NewProxyTokens(db, audit)
 	workerSchedule := service.NewWorkerSchedule(db)
-
-	var triggerableJobs []string
-
-	if cfg.TagsCheckIntervalDuration() > 0 {
-		triggerableJobs = append(triggerableJobs, service.WorkerJobTagRefresh)
-	}
-
-	workerTrigger := service.NewWorkerTrigger(triggerableJobs...)
+	workerTrigger := service.NewWorkerTrigger()
 	workerActivity := service.NewWorkerActivity()
 	proxyMetricsHistory := service.NewProxyMetricsHistory(db)
 	metrics := proxy.NewMetrics()
@@ -103,6 +100,24 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 
 	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens, tlsConfig)
 
+	wDeps := workerDeps{
+		cfg:                 cfg,
+		schedule:            workerSchedule,
+		trigger:             workerTrigger,
+		activity:            workerActivity,
+		failures:            failureLog,
+		images:              images,
+		discoveries:         discoveries,
+		cache:               cache,
+		notifications:       notifications,
+		sessions:            sessions,
+		proxyMetrics:        metrics,
+		proxyMetricsHistory: proxyMetricsHistory,
+	}
+
+	jobs := scheduledJobs(wDeps)
+	workerCatalog := service.NewWorkerCatalog(jobDescriptors(jobs))
+
 	webDeps := web.Dependencies{
 		Config:               cfg,
 		Images:               images,
@@ -117,10 +132,12 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		ProxyMetricsHistory:  proxyMetricsHistory,
 		Failures:             failureLog,
 		WorkerSchedule:       workerSchedule,
+		WorkerCatalog:        workerCatalog,
 		WorkerTrigger:        workerTrigger,
 		WorkerActivity:       workerActivity,
 		LoginRateLimitWindow: loginRateLimitWindow,
 		Version:              version,
+		DataPath:             dataPath,
 	}
 
 	if cache != nil {
@@ -142,20 +159,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 
 	go func() {
 		defer close(workerDone)
-		startWorker(workerCtx, workerDeps{
-			cfg:                 cfg,
-			schedule:            workerSchedule,
-			trigger:             workerTrigger,
-			activity:            workerActivity,
-			failures:            failureLog,
-			images:              images,
-			discoveries:         discoveries,
-			cache:               cache,
-			notifications:       notifications,
-			sessions:            sessions,
-			proxyMetrics:        metrics,
-			proxyMetricsHistory: proxyMetricsHistory,
-		})
+		runScheduledJobs(workerCtx, jobs, workerSchedule, workerActivity)
 	}()
 
 	awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)

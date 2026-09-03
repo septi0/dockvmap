@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/septi0/dockvmap/internal/model"
 )
 
 func (s *Store) GetWorkerTick(ctx context.Context, job string) (time.Time, bool, error) {
@@ -26,6 +29,47 @@ func (s *Store) GetWorkerTick(ctx context.Context, job string) (time.Time, bool,
 	return lastRun, true, nil
 }
 
+func (s *Store) ListWorkerTicks(ctx context.Context) ([]model.WorkerTick, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT job, last_run_at, last_error, last_count
+		FROM worker_ticks
+	`)
+
+	if err != nil {
+		return nil, fmt.Errorf("listing worker ticks: %w", err)
+	}
+
+	defer rows.Close()
+
+	ticks := make([]model.WorkerTick, 0)
+
+	for rows.Next() {
+		var (
+			tick      model.WorkerTick
+			lastError sql.NullString
+			lastCount sql.NullInt64
+		)
+
+		if err := rows.Scan(&tick.Job, &tick.LastRunAt, &lastError, &lastCount); err != nil {
+			return nil, fmt.Errorf("scanning worker tick row: %w", err)
+		}
+
+		tick.LastError = lastError.String
+
+		if lastCount.Valid {
+			tick.LastCount = &lastCount.Int64
+		}
+
+		ticks = append(ticks, tick)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading worker tick rows: %w", err)
+	}
+
+	return ticks, nil
+}
+
 func (s *Store) RecordWorkerTick(ctx context.Context, job string, at time.Time) error {
 	if _, err := s.db.ExecContext(ctx, `
 		INSERT INTO worker_ticks (job, last_run_at)
@@ -33,6 +77,23 @@ func (s *Store) RecordWorkerTick(ctx context.Context, job string, at time.Time) 
 		ON CONFLICT(job) DO UPDATE SET last_run_at = excluded.last_run_at
 	`, job, at); err != nil {
 		return fmt.Errorf("recording worker tick %q: %w", job, err)
+	}
+
+	return nil
+}
+
+func (s *Store) RecordWorkerOutcome(ctx context.Context, job string, count int64, errText string) error {
+	var errArg any
+	if errText != "" {
+		errArg = errText
+	}
+
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE worker_ticks
+		SET last_error = ?, last_count = ?
+		WHERE job = ?
+	`, errArg, count, job); err != nil {
+		return fmt.Errorf("recording worker outcome %q: %w", job, err)
 	}
 
 	return nil

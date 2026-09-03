@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
@@ -18,6 +19,18 @@ const (
 	FailureSourceEventRegistration FailureSource = "event_registration"
 )
 
+var FailureSources = []FailureSource{
+	FailureSourceWebhook,
+	FailureSourceEmail,
+	FailureSourceRefresh,
+	FailureSourceDiscovery,
+	FailureSourceEventRegistration,
+}
+
+func IsValidFailureSource(s string) bool {
+	return slices.Contains(FailureSources, FailureSource(s))
+}
+
 type Failure struct {
 	Source     FailureSource
 	Detail     string
@@ -25,11 +38,10 @@ type Failure struct {
 	OccurredAt time.Time
 }
 
-const recentFailureLimit = 50
-
 type failureLogStore interface {
 	InsertBackgroundFailure(ctx context.Context, source, detail, errText string) error
-	ListRecentBackgroundFailures(ctx context.Context, limit int) ([]model.BackgroundFailure, error)
+	ListBackgroundFailures(ctx context.Context, filters model.BackgroundFailureListFilters) ([]model.BackgroundFailure, error)
+	CountBackgroundFailures(ctx context.Context, filters model.BackgroundFailureListFilters) (int64, error)
 	DeleteBackgroundFailuresBefore(ctx context.Context, cutoff time.Time) (int64, error)
 }
 
@@ -54,8 +66,8 @@ func (l *FailureLog) Record(ctx context.Context, source FailureSource, detail st
 	}
 }
 
-func (l *FailureLog) Recent(ctx context.Context) ([]Failure, error) {
-	rows, err := l.store.ListRecentBackgroundFailures(ctx, recentFailureLimit)
+func (l *FailureLog) List(ctx context.Context, filters model.BackgroundFailureListFilters) ([]Failure, error) {
+	rows, err := l.store.ListBackgroundFailures(ctx, filters)
 
 	if err != nil {
 		return nil, err
@@ -73,6 +85,10 @@ func (l *FailureLog) Recent(ctx context.Context) ([]Failure, error) {
 	}
 
 	return failures, nil
+}
+
+func (l *FailureLog) Count(ctx context.Context, filters model.BackgroundFailureListFilters) (int64, error) {
+	return l.store.CountBackgroundFailures(ctx, filters)
 }
 
 func (l *FailureLog) CleanupOld(ctx context.Context, retention time.Duration) (int64, error) {
