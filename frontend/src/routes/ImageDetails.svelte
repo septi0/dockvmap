@@ -216,7 +216,7 @@
         </p>
       </div>
 
-      <div class="card section-card">
+      <div class="card section-card details-card">
         <h2>Details</h2>
         <DetailRow label="Registry">{image.registry}</DetailRow>
         <DetailRow label="Repository">{image.repository}</DetailRow>
@@ -335,7 +335,7 @@
             onclick={() => (showHistoryModal = true)}
           >
             <History size={14} strokeWidth={2} />
-            History
+            Tag history
           </Button>
           <Button
             variant="secondary"
@@ -504,11 +504,17 @@
     font-size: 0.8125rem;
   }
 
+  .details-card :global(.detail-row:has(+ .record-actions)) {
+    border-bottom: none;
+  }
+
   .record-actions {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
-    padding-top: var(--space-3);
+    margin-top: var(--space-3);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--color-border);
   }
 
   .check-error-cell {
