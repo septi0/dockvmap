@@ -19,6 +19,7 @@
     imageId,
     currentTag,
     refreshStatus = "idle",
+    reloadToken = 0,
     onClose,
     onTagUpdated,
     onTagsRefreshed,
@@ -27,6 +28,7 @@
     imageId: number;
     currentTag: string;
     refreshStatus?: "idle" | "running";
+    reloadToken?: number;
     onClose: () => void;
     onTagUpdated: (tag: string) => void;
     onTagsRefreshed?: () => void;
@@ -42,7 +44,7 @@
   let updateError = $state<string | null>(null);
   let loadToken = 0;
 
-  let wasRefreshing = false;
+  let lastReloadToken: number | undefined;
 
   const currentFamilyId = $derived(
     tagGroups.find((group) => group.tags.some((t) => t.tag === currentTag))
@@ -91,13 +93,16 @@
   });
 
   $effect(() => {
-    const running = refreshStatus === "running";
+    const token = reloadToken;
 
-    if (open && wasRefreshing && !running) {
-      reloadTagsKeepingSelection();
+    if (lastReloadToken === undefined || token === lastReloadToken) {
+      lastReloadToken = token;
+      return;
     }
 
-    wasRefreshing = running;
+    lastReloadToken = token;
+
+    if (open) reloadTagsKeepingSelection();
   });
 
   async function reloadTagsKeepingSelection() {

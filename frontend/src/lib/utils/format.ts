@@ -1,5 +1,19 @@
+const dateTimeFormat = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric',
+  month: 'short',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+})
+
 export function formatDate(value: string | undefined, fallback = '-'): string {
-  return value ? new Date(value).toLocaleString() : fallback
+  if (!value) return fallback
+
+  const date = new Date(value)
+
+  return Number.isNaN(date.getTime()) ? fallback : dateTimeFormat.format(date)
 }
 
 export function formatNumber(value: number): string {

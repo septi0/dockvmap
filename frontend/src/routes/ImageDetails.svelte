@@ -26,8 +26,11 @@
   import { getPullInfo } from "../lib/api/metrics";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
+  import {
+    createImageRefresh,
+    applyImageRefreshFields,
+  } from "../lib/services/imageRefresh";
   import { formatDate } from "../lib/utils/format";
-  import { createJobPoller } from "../lib/utils/jobPoller";
   import type { Image } from "../lib/api/types/images";
   import type { PullInfo } from "../lib/api/types/metrics";
 
@@ -55,38 +58,22 @@
 
   let showRenameModal = $state(false);
 
-  const REFRESH_POLL_INTERVAL_MS = 2000;
+  let refreshStatus = $state<"idle" | "running" | "stale">("idle");
+  let modalReloadToken = $state(0);
 
-  function applyRefreshUpdate(next: Image) {
-    if (!image) {
-      image = next;
-      return;
-    }
-    image.refreshStatus = next.refreshStatus;
-    image.tag = next.tag;
-    image.lastChecked = next.lastChecked;
-    image.lastCheckError = next.lastCheckError;
-    image.updateAvailable = next.updateAvailable;
-    image.updateAvailableTag = next.updateAvailableTag;
-    image.updatedAt = next.updatedAt;
-  }
-
-  const refreshPoll = createJobPoller({
-    poll: () => getImage(imageId),
-    running: (img) => img.refreshStatus === "running",
-    intervalMs: REFRESH_POLL_INTERVAL_MS,
-    maxConsecutiveErrors: Infinity,
-    onResult: (img) => {
-      if (img.refreshStatus === "running") return;
-      applyRefreshUpdate(img);
+  const imageRefresh = createImageRefresh(() => imageId, {
+    onResult: (fresh) => {
+      if (image) applyImageRefreshFields(image, fresh);
+      else image = fresh;
     },
   });
 
-  function syncRefreshPolling() {
-    if (image?.refreshStatus === "running" && !refreshPoll.active) {
-      refreshPoll.start();
-    }
-  }
+  const stopRefreshSubscription = imageRefresh.subscribe(
+    (status) => (refreshStatus = status),
+  );
+  const stopSettledListener = imageRefresh.onSettled(
+    () => (modalReloadToken += 1),
+  );
 
   async function load() {
     const requestId = ++loadToken;
@@ -98,7 +85,7 @@
       if (requestId !== loadToken) return;
       image = img;
       pullInfo = info;
-      syncRefreshPolling();
+      imageRefresh.sync(img);
     } catch (err) {
       if (requestId !== loadToken) return;
       error = errorMessage(err, "Failed to load virtual image");
@@ -109,11 +96,15 @@
 
   $effect(() => {
     imageId;
-    refreshPoll.stop();
+    imageRefresh.reset();
     load();
   });
 
-  onDestroy(() => refreshPoll.stop());
+  onDestroy(() => {
+    stopRefreshSubscription();
+    stopSettledListener();
+    imageRefresh.destroy();
+  });
 
   const pullCommand = $derived(
     image && pullInfo
@@ -124,7 +115,7 @@
   async function refreshImageDetails() {
     try {
       image = await getImage(imageId);
-      syncRefreshPolling();
+      imageRefresh.sync(image);
     } catch {}
   }
 
@@ -239,7 +230,11 @@
           </div>
         </DetailRow>
         <DetailRow label="Last checked">
-          {#if image.refreshStatus === "running"}
+          {#if refreshStatus === "stale"}
+            <span class="check-stale">
+              Couldn't confirm the check finished. Reload to see the result.
+            </span>
+          {:else if refreshStatus === "running"}
             <RefreshingIndicator text="Checking upstream for tag changes…" />
           {:else}
             {formatDate(image.lastChecked, "Never")}
@@ -249,7 +244,7 @@
           <DetailRow label="Last check error">
             <div class="check-error-cell">
               <span class="check-error">{image.lastCheckError}</span>
-              {#if image.refreshStatus !== "running"}
+              {#if refreshStatus !== "running"}
                 <RefreshTagsButton
                   imageId={image.id}
                   onRefreshed={refreshImageDetails}
@@ -358,7 +353,8 @@
     open={showTagModal}
     imageId={image.id}
     currentTag={image.tag}
-    refreshStatus={image.refreshStatus}
+    refreshStatus={refreshStatus === "stale" ? "idle" : refreshStatus}
+    reloadToken={modalReloadToken}
     onClose={() => (showTagModal = false)}
     onTagUpdated={handleTagUpdated}
     onTagsRefreshed={refreshImageDetails}
@@ -437,6 +433,11 @@
   .check-error {
     color: var(--color-danger);
     word-break: break-word;
+  }
+
+  .check-stale {
+    font-size: 0.8125rem;
+    color: var(--color-text-muted);
   }
 
   .danger-card {

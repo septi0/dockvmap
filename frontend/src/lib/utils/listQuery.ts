@@ -1,3 +1,5 @@
+import { buildQuery } from './query'
+
 type Filters = Record<string, string | number | boolean>
 
 export function readListQuery<T extends Filters>(defaults: T): T {
@@ -23,16 +25,7 @@ export function readListQuery<T extends Filters>(defaults: T): T {
 }
 
 export function writeListQuery(filters: Filters): string {
-  const params = new URLSearchParams()
-
-  for (const [key, value] of Object.entries(filters)) {
-    if (value === '' || value === false || value === 0 || value == null) continue
-    params.set(key, String(value))
-  }
-
-  const query = params.toString()
-
-  return query ? `?${query}` : ''
+  return buildQuery(filters, { dropFalsy: true })
 }
 
 export function pushListQuery(routePath: string, filters: Filters): void {
