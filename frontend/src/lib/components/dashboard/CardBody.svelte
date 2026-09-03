@@ -1,7 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import LoaderCircle from "@lucide/svelte/icons/loader-circle";
-  import BusyOverlay from "./BusyOverlay.svelte";
   import { resolveAsyncState } from "../../utils/asyncState";
 
   let {
@@ -28,7 +27,7 @@
 <div class="card-body">
   {#if state.kind === "loading"}
     <div class="card-body-fill">
-      <span class="card-body-spinner" aria-hidden="true">
+      <span class="card-body-spinner spin" aria-hidden="true">
         <LoaderCircle size={20} strokeWidth={3} />
       </span>
     </div>
@@ -37,8 +36,7 @@
   {:else if state.kind === "empty" && emptyState}
     {@render emptyState()}
   {:else}
-    <BusyOverlay active={state.busy} />
-    <div class="card-body-content" class:is-busy={state.busy}>
+    <div class="card-body-content" class:busy-dim={state.busy}>
       {@render children()}
     </div>
   {/if}
@@ -66,15 +64,9 @@
   .card-body-spinner {
     display: inline-flex;
     color: var(--color-accent);
-    animation: spin 0.8s linear infinite;
   }
 
   .card-body-content {
     transition: opacity var(--transition-fast);
-  }
-
-  .card-body-content.is-busy {
-    opacity: 0.55;
-    pointer-events: none;
   }
 </style>

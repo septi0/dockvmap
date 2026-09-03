@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Play from "@lucide/svelte/icons/play";
-  import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import AsyncState from "../AsyncState.svelte";
   import Button from "../Button.svelte";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
@@ -17,6 +16,7 @@
 
   let tasks = $state<SystemTask[]>([]);
   let loading = $state(true);
+  let loaded = $state(false);
   let error = $state<string | null>(null);
   let actionError = $state<string | null>(null);
   let running = $state<Set<string>>(new Set());
@@ -33,6 +33,7 @@
       error = errorMessage(err, "Failed to load background tasks");
     } finally {
       loading = false;
+      loaded = true;
     }
   }
 
@@ -54,21 +55,6 @@
   }
 </script>
 
-<div class="tasks-header">
-  <button
-    type="button"
-    class="icon-button bordered"
-    onclick={load}
-    aria-label="Refresh tasks"
-    aria-busy={loading}
-    title="Refresh"
-  >
-    <span class="icon" class:spin={loading}>
-      <RefreshCw size={15} strokeWidth={2} />
-    </span>
-  </button>
-</div>
-
 {#if actionError}
   <p class="error">
     <TriangleAlert size={16} strokeWidth={2} />
@@ -76,7 +62,14 @@
   </p>
 {/if}
 
-<AsyncState {loading} {error} empty={tasks.length === 0} emptyMessage="No tasks.">
+<AsyncState
+  loading={loading && !loaded}
+  busy={loading && loaded}
+  {error}
+  empty={tasks.length === 0}
+  emptyMessage="No tasks."
+  columns={4}
+>
   <div class="card table-wrap">
     <table class="table">
       <thead>
@@ -150,16 +143,6 @@
 </AsyncState>
 
 <style>
-  .tasks-header {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: var(--space-3);
-  }
-
-  .tasks-header .icon {
-    display: inline-flex;
-  }
-
   .task-name {
     display: flex;
     align-items: center;

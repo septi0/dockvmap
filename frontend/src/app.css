@@ -679,11 +679,59 @@ select.filter-control {
 }
 
 .spin {
+  display: inline-flex;
   animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* skeleton placeholder bar (TableSkeleton, ListSkeleton, StatTile) */
+.skeleton-bar {
+  display: inline-block;
+  height: 0.75rem;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--color-border) 25%,
+    var(--color-surface-hover) 50%,
+    var(--color-border) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* dim + breathe on already-loaded content while it refetches */
+.busy-dim {
+  pointer-events: none;
+  animation: busy-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes busy-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation-duration: 0.8s !important;
+    animation-iteration-count: infinite !important;
   }
 }

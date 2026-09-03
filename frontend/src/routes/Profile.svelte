@@ -283,7 +283,27 @@
       error={sessionsError}
       empty={sessions.length === 0}
       emptyMessage="No active sessions."
+      emptyVariant="text"
     >
+      {#snippet loadingState()}
+        <ul class="item-list">
+          {#each Array.from({ length: 3 }) as _, i (i)}
+            <li>
+              <div class="session-row">
+                <div class="item-main">
+                  <span class="item-title session-ident">
+                    <span class="skeleton-bar ph-icon"></span>
+                    <span class="skeleton-bar ph-ident"></span>
+                  </span>
+                  <span class="skeleton-bar ph-sub"></span>
+                </div>
+                <span class="skeleton-bar ph-action"></span>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/snippet}
+
       <ul class="item-list">
         {#each sessions as session (session.id)}
           {@const ua = parseUserAgent(session.userAgent)}
@@ -419,5 +439,26 @@
 
   li:last-child .session-row {
     border-bottom: none;
+  }
+
+  .ph-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .ph-ident {
+    width: 190px;
+    height: 0.875rem;
+  }
+
+  .ph-sub {
+    width: 250px;
+    height: 0.8125rem;
+  }
+
+  .ph-action {
+    width: 64px;
+    height: 1.625rem;
+    border-radius: var(--radius-md);
   }
 </style>

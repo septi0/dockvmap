@@ -3,6 +3,7 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Modal from "./Modal.svelte";
   import Button from "./Button.svelte";
+  import AsyncState from "./AsyncState.svelte";
   import TagFamilyPicker from "./TagFamilyPicker.svelte";
   import RefreshTagsButton from "./RefreshTagsButton.svelte";
   import RefreshingIndicator from "./RefreshingIndicator.svelte";
@@ -35,7 +36,7 @@
   } = $props();
 
   let tagGroups = $state<TagGroup[]>([]);
-  let loadingTags = $state(false);
+  let loadingTags = $state(true);
   let tagsError = $state<string | null>(null);
 
   let selectedTag = $state<string | null>(null);
@@ -165,14 +166,7 @@
     <span>Currently tracking <strong>{currentTag}</strong></span>
   </div>
 
-  {#if tagsError}
-    <p class="error">
-      <TriangleAlert size={16} strokeWidth={2} />
-      {tagsError}
-    </p>
-  {:else if loadingTags}
-    <p class="muted">Loading tags…</p>
-  {:else}
+  <AsyncState loading={loadingTags} error={tagsError}>
     <div class="tags-scroll">
       <TagFamilyPicker
         {tagGroups}
@@ -182,7 +176,7 @@
         emptyMessage="No tags discovered yet. Try refreshing."
       />
     </div>
-  {/if}
+  </AsyncState>
 
   {#if isFamilyMismatch}
     <p class="family-warning">

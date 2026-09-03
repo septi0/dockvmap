@@ -4,6 +4,7 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Inbox from "@lucide/svelte/icons/inbox";
   import TableSkeleton from "./TableSkeleton.svelte";
+  import ListSkeleton from "./ListSkeleton.svelte";
   import { resolveAsyncState } from "../utils/asyncState";
 
   let {
@@ -13,8 +14,11 @@
     busy = false,
     loadingMessage = "Loading…",
     emptyMessage = "Nothing here yet.",
+    emptyVariant = "card",
     columns,
     rows,
+    listSkeleton = false,
+    loadingState,
     emptyAction,
     children,
   }: {
@@ -24,8 +28,11 @@
     busy?: boolean;
     loadingMessage?: string;
     emptyMessage?: string;
+    emptyVariant?: "card" | "text";
     columns?: number;
     rows?: number;
+    listSkeleton?: boolean;
+    loadingState?: Snippet;
     emptyAction?: Snippet;
     children: Snippet;
   } = $props();
@@ -34,11 +41,15 @@
 </script>
 
 {#if state.kind === "loading"}
-  {#if columns}
+  {#if loadingState}
+    {@render loadingState()}
+  {:else if columns}
     <TableSkeleton {columns} {rows} />
+  {:else if listSkeleton}
+    <ListSkeleton {rows} />
   {:else}
     <div class="loading">
-      <span class="spinner"><LoaderCircle size={20} strokeWidth={3} /></span>
+      <span class="spinner spin"><LoaderCircle size={20} strokeWidth={3} /></span>
       <span class="muted">{loadingMessage}</span>
     </div>
   {/if}
@@ -48,23 +59,20 @@
     {error}
   </p>
 {:else if state.kind === "empty"}
-  <div class="empty card">
-    <span class="empty-icon"><Inbox size={28} strokeWidth={1.5} /></span>
-    <p>{emptyMessage}</p>
-    {#if emptyAction}
-      <div class="empty-action">{@render emptyAction()}</div>
-    {/if}
-  </div>
-{:else}
-  <div class="result-wrap">
-    {#if state.busy}
-      <span class="result-spinner" aria-hidden="true">
-        <LoaderCircle size={18} strokeWidth={3} />
-      </span>
-    {/if}
-    <div class="result" class:result-busy={state.busy}>
-      {@render children()}
+  {#if emptyVariant === "text"}
+    <p class="empty-text muted">{emptyMessage}</p>
+  {:else}
+    <div class="empty card">
+      <span class="empty-icon"><Inbox size={28} strokeWidth={1.5} /></span>
+      <p>{emptyMessage}</p>
+      {#if emptyAction}
+        <div class="empty-action">{@render emptyAction()}</div>
+      {/if}
     </div>
+  {/if}
+{:else}
+  <div class="result" class:busy-dim={state.busy}>
+    {@render children()}
   </div>
 {/if}
 
@@ -79,14 +87,7 @@
   .spinner {
     display: inline-flex;
     color: var(--color-accent);
-    animation: spin 0.8s linear infinite;
     flex-shrink: 0;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 
   .empty {
@@ -117,26 +118,12 @@
     margin-top: var(--space-2);
   }
 
-  .result-wrap {
-    position: relative;
+  .empty-text {
+    margin: 0;
+    padding: var(--space-2) 0;
   }
 
   .result {
     transition: opacity var(--transition-fast);
-  }
-
-  .result-busy {
-    opacity: 0.55;
-    pointer-events: none;
-  }
-
-  .result-spinner {
-    position: absolute;
-    top: var(--space-3);
-    right: var(--space-3);
-    z-index: 2;
-    display: inline-flex;
-    color: var(--color-accent);
-    animation: spin 0.8s linear infinite;
   }
 </style>
