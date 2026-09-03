@@ -33,7 +33,7 @@
     {label}
   </span>
   {#if loading}
-    <span class="tile-value skeleton">&nbsp;</span>
+    <span class="tile-skeleton skeleton-bar"></span>
   {:else if valueStyle === "badge"}
     <span class="tile-badge tone-{tone}">{value}</span>
   {:else}
@@ -152,16 +152,9 @@
     color: var(--color-warning);
   }
 
-  .skeleton {
+  .tile-skeleton {
     width: 3ch;
-    border-radius: var(--radius-sm);
-    background: var(--color-surface-hover);
-    animation: pulse 1.4s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    50% {
-      opacity: 0.45;
-    }
+    height: 1.75rem;
+    align-self: flex-start;
   }
 </style>

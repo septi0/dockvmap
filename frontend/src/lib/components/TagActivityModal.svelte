@@ -1,7 +1,7 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
-  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Modal from "./Modal.svelte";
+  import AsyncState from "./AsyncState.svelte";
   import { listTagEvents } from "../api/events";
   import { errorMessage } from "../api/client";
   import { formatAuditType, formatDate, formatNumber } from "../utils/format";
@@ -52,16 +52,14 @@
     removed, and upgrades becoming available. Most recent first.
   </p>
 
-  {#if error}
-    <p class="error">
-      <TriangleAlert size={16} strokeWidth={2} />
-      {error}
-    </p>
-  {:else if loading}
-    <p class="muted">Loading…</p>
-  {:else if events.length === 0}
-    <p class="muted">No upstream tag changes recorded for this image yet.</p>
-  {:else}
+  <AsyncState
+    {loading}
+    {error}
+    empty={events.length === 0}
+    emptyVariant="text"
+    emptyMessage="No upstream tag changes recorded for this image yet."
+    listSkeleton
+  >
     <ul class="activity-list">
       {#each events as event (event.id)}
         <li class="activity-entry">
@@ -86,7 +84,7 @@
         View all {formatNumber(total)} events
       </a>
     {/if}
-  {/if}
+  </AsyncState>
 </Modal>
 
 <style>

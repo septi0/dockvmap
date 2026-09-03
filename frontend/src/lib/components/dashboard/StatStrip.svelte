@@ -5,7 +5,6 @@
   import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import StatTile from "./StatTile.svelte";
-  import BusyOverlay from "./BusyOverlay.svelte";
   import {
     formatDate,
     formatNumber,
@@ -100,79 +99,66 @@
   let week = $derived(metrics.data?.windows.last7d ?? null);
 </script>
 
-<div class="stat-strip-wrap">
-  <BusyOverlay active={busy} />
+<div class="stat-strip" class:busy-dim={busy}>
+  <StatTile
+    label="Tracked images"
+    value={counts ? formatNumber(counts.images.total) : "-"}
+    href="/images"
+    {loading}
+  >
+    {#snippet icon()}<Boxes size={13} strokeWidth={1.75} />{/snippet}
+  </StatTile>
 
-  <div class="stat-strip" class:is-busy={busy}>
-    <StatTile
-      label="Tracked images"
-      value={counts ? formatNumber(counts.images.total) : "-"}
-      href="/images"
-      {loading}
-    >
-      {#snippet icon()}<Boxes size={13} strokeWidth={1.75} />{/snippet}
-    </StatTile>
+  <StatTile
+    label="Updates available"
+    value={counts ? formatNumber(counts.images.updateAvailable) : "-"}
+    tone={counts && counts.images.updateAvailable > 0 ? "accent" : "neutral"}
+    href="/images?status=updateAvailable"
+    {loading}
+  >
+    {#snippet icon()}<CircleArrowUp size={13} strokeWidth={1.75} />{/snippet}
+  </StatTile>
 
-    <StatTile
-      label="Updates available"
-      value={counts ? formatNumber(counts.images.updateAvailable) : "-"}
-      tone={counts && counts.images.updateAvailable > 0 ? "accent" : "neutral"}
-      href="/images?status=updateAvailable"
-      {loading}
-    >
-      {#snippet icon()}<CircleArrowUp size={13} strokeWidth={1.75} />{/snippet}
-    </StatTile>
+  <StatTile
+    label="Failed checks"
+    value={counts ? formatNumber(counts.images.failedCheck) : "-"}
+    tone={counts && counts.images.failedCheck > 0 ? "danger" : "neutral"}
+    href="/images?status=failedCheck"
+    {loading}
+  >
+    {#snippet icon()}<CircleX size={13} strokeWidth={1.75} />{/snippet}
+  </StatTile>
 
-    <StatTile
-      label="Failed checks"
-      value={counts ? formatNumber(counts.images.failedCheck) : "-"}
-      tone={counts && counts.images.failedCheck > 0 ? "danger" : "neutral"}
-      href="/images?status=failedCheck"
-      {loading}
-    >
-      {#snippet icon()}<CircleX size={13} strokeWidth={1.75} />{/snippet}
-    </StatTile>
+  <StatTile
+    label="Image pulls · 7d"
+    value={week ? formatNumber(week.manifestRequests) : "-"}
+    caption={week && week.upstreamFailures > 0
+      ? `${formatNumber(week.upstreamFailures)} upstream failures`
+      : undefined}
+    captionTone={week && week.upstreamFailures > 0 ? "danger" : "muted"}
+    {loading}
+  >
+    {#snippet icon()}<ArrowLeftRight size={13} strokeWidth={1.75} />{/snippet}
+  </StatTile>
 
-    <StatTile
-      label="Image pulls · 7d"
-      value={week ? formatNumber(week.manifestRequests) : "-"}
-      caption={week && week.upstreamFailures > 0
-        ? `${formatNumber(week.upstreamFailures)} upstream failures`
-        : undefined}
-      captionTone={week && week.upstreamFailures > 0 ? "danger" : "muted"}
-      {loading}
-    >
-      {#snippet icon()}<ArrowLeftRight size={13} strokeWidth={1.75} />{/snippet}
-    </StatTile>
-
-    <StatTile
-      label="Tag checks"
-      value={lastCheck.value}
-      tone={lastCheck.tone}
-      valueStyle="badge"
-      caption={lastCheck.caption}
-      title={checkTimes}
-      {loading}
-    >
-      {#snippet icon()}<RefreshCw size={13} strokeWidth={1.75} />{/snippet}
-    </StatTile>
-  </div>
+  <StatTile
+    label="Tag checks"
+    value={lastCheck.value}
+    tone={lastCheck.tone}
+    valueStyle="badge"
+    caption={lastCheck.caption}
+    title={checkTimes}
+    {loading}
+  >
+    {#snippet icon()}<RefreshCw size={13} strokeWidth={1.75} />{/snippet}
+  </StatTile>
 </div>
 
 <style>
-  .stat-strip-wrap {
-    position: relative;
-  }
-
   .stat-strip {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
     gap: var(--space-4);
     transition: opacity var(--transition-fast);
-  }
-
-  .stat-strip.is-busy {
-    opacity: 0.55;
-    pointer-events: none;
   }
 </style>

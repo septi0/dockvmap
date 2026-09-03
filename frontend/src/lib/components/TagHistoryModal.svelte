@@ -4,6 +4,7 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Modal from "./Modal.svelte";
   import Button from "./Button.svelte";
+  import AsyncState from "./AsyncState.svelte";
   import { getTagHistory, getImageTags, updateImageTag } from "../api/images";
   import { errorMessage } from "../api/client";
   import { formatDate } from "../utils/format";
@@ -23,7 +24,7 @@
 
   let history = $state<TagHistoryEntry[]>([]);
   let availableTags = $state<Set<string>>(new Set());
-  let loading = $state(false);
+  let loading = $state(true);
   let loadError = $state<string | null>(null);
 
   let restoring = $state<number | null>(null);
@@ -89,16 +90,14 @@
     Every tag this virtual image has pointed to, most recent first.
   </p>
 
-  {#if loadError}
-    <p class="error">
-      <TriangleAlert size={16} strokeWidth={2} />
-      {loadError}
-    </p>
-  {:else if loading}
-    <p class="muted">Loading…</p>
-  {:else if history.length === 0}
-    <p class="muted">No history yet.</p>
-  {:else}
+  <AsyncState
+    {loading}
+    error={loadError}
+    empty={history.length === 0}
+    emptyVariant="text"
+    emptyMessage="No history yet."
+    listSkeleton
+  >
     <ul class="history-list">
       {#each history as entry, index (entry.id)}
         {@const isCurrent = index === 0}
@@ -137,7 +136,7 @@
         </li>
       {/each}
     </ul>
-  {/if}
+  </AsyncState>
 
   {#if restoreError}
     <p class="error">
