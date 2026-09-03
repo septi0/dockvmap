@@ -6,6 +6,7 @@
   import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import History from "@lucide/svelte/icons/history";
+  import Activity from "@lucide/svelte/icons/activity";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Copy from "@lucide/svelte/icons/copy";
   import Trash2 from "@lucide/svelte/icons/trash-2";
@@ -16,7 +17,7 @@
   import Button from "../lib/components/Button.svelte";
   import ChangeTagModal from "../lib/components/ChangeTagModal.svelte";
   import TagHistoryModal from "../lib/components/TagHistoryModal.svelte";
-  import TagActivitySection from "../lib/components/TagActivitySection.svelte";
+  import TagActivityModal from "../lib/components/TagActivityModal.svelte";
   import RefreshTagsButton from "../lib/components/RefreshTagsButton.svelte";
   import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
   import RenameImageModal from "../lib/components/RenameImageModal.svelte";
@@ -44,8 +45,7 @@
 
   let showTagModal = $state(false);
   let showHistoryModal = $state(false);
-
-  let activityReload = $state(0);
+  let showActivityModal = $state(false);
 
   let copyError = $state<string | null>(null);
 
@@ -79,7 +79,6 @@
     onResult: (img) => {
       if (img.refreshStatus === "running") return;
       applyRefreshUpdate(img);
-      activityReload++;
     },
   });
 
@@ -126,7 +125,6 @@
     try {
       image = await getImage(imageId);
       syncRefreshPolling();
-      activityReload++;
     } catch {}
   }
 
@@ -227,14 +225,6 @@
                   Change tag
                 </Button>
               {/if}
-              <Button
-                variant="secondary"
-                size="sm"
-                onclick={() => (showHistoryModal = true)}
-              >
-                <History size={14} strokeWidth={2} />
-                History
-              </Button>
             </span>
             {#if image.updateAvailable}
               <p class="warning-text">
@@ -271,9 +261,26 @@
         {/if}
         <DetailRow label="Created">{formatDate(image.createdAt)}</DetailRow>
         <DetailRow label="Updated">{formatDate(image.updatedAt)}</DetailRow>
-      </div>
 
-      <TagActivitySection imageId={image.id} reloadSignal={activityReload} />
+        <div class="record-actions">
+          <Button
+            variant="secondary"
+            size="sm"
+            onclick={() => (showHistoryModal = true)}
+          >
+            <History size={14} strokeWidth={2} />
+            History
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onclick={() => (showActivityModal = true)}
+          >
+            <Activity size={14} strokeWidth={2} />
+            Upstream tag activity
+          </Button>
+        </div>
+      </div>
 
       <div class="card section-card">
         <h2>Pull command</h2>
@@ -364,6 +371,12 @@
     onRestored={handleTagRestored}
   />
 
+  <TagActivityModal
+    open={showActivityModal}
+    imageId={image.id}
+    onClose={() => (showActivityModal = false)}
+  />
+
   <RenameImageModal
     open={showRenameModal}
     imageId={image.id}
@@ -405,6 +418,13 @@
   .field-hint {
     margin: var(--space-1) 0 var(--space-4);
     font-size: 0.8125rem;
+  }
+
+  .record-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding-top: var(--space-3);
   }
 
   .check-error-cell {

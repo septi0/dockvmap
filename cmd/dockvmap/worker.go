@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"runtime/debug"
 	"sync"
@@ -346,9 +347,19 @@ func rescheduleDelay(interval, elapsed time.Duration) time.Duration {
 }
 
 func executeJob(ctx context.Context, job scheduledJob, worker *service.Worker) {
+	recordRun := func(count int64, runErr error) {
+		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+
+		if writeErr := worker.RecordRun(writeCtx, job.name, count, runErr); writeErr != nil {
+			slog.Error("recording worker run failed", "job", job.name, "error", writeErr)
+		}
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error(job.name+" worker panicked", "panic", r, "stack", string(debug.Stack()))
+			recordRun(0, fmt.Errorf("panicked: %v", r))
 		}
 	}()
 
@@ -369,12 +380,7 @@ func executeJob(ctx context.Context, job scheduledJob, worker *service.Worker) {
 		slog.Info(job.doneMsg, "count", count)
 	}
 
-	runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-
-	if writeErr := worker.RecordRun(runCtx, job.name, int64(count), err); writeErr != nil {
-		slog.Error("recording worker run failed", "job", job.name, "error", writeErr)
-	}
+	recordRun(int64(count), err)
 }
 
 func runImageTagRefresh(ctx context.Context, images *service.Images) (int, error) {

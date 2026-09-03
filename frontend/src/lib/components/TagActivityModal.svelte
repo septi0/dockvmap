@@ -1,20 +1,17 @@
 <script lang="ts">
   import { link } from "svelte-spa-router";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+  import Modal from "./Modal.svelte";
   import { listTagEvents } from "../api/events";
   import { errorMessage } from "../api/client";
-  import {
-    formatAuditType,
-    formatDate,
-    formatNumber,
-    formatRelativeTime,
-  } from "../utils/format";
+  import { formatAuditType, formatDate, formatNumber } from "../utils/format";
   import type { ImageEvent } from "../api/types/events";
 
   let {
+    open,
     imageId,
-    reloadSignal = 0,
-  }: { imageId: number; reloadSignal?: number } = $props();
+    onClose,
+  }: { open: boolean; imageId: number; onClose: () => void } = $props();
 
   const SHOWN = 10;
 
@@ -43,17 +40,16 @@
   }
 
   $effect(() => {
+    if (!open) return;
     imageId;
-    reloadSignal;
     load();
   });
 </script>
 
-<div class="card section-card">
-  <h2>Upstream tag activity</h2>
-  <p class="section-hint muted">
-    Upstream tag changes DockVMap has detected for this image: tags added, tags
-    removed, and upgrades becoming available.
+<Modal {open} {onClose} title="Upstream tag activity" size="lg">
+  <p class="hint muted">
+    Upstream tag changes DockVMap has detected for this image: tags added,
+    removed, and upgrades becoming available. Most recent first.
   </p>
 
   {#if error}
@@ -68,14 +64,14 @@
   {:else}
     <ul class="activity-list">
       {#each events as event (event.id)}
-        <li>
-          <span class="activity-main">
+        <li class="activity-entry">
+          <div class="activity-main">
             <span class="activity-type">{formatAuditType(event.type)}</span>
+          </div>
+          <div class="activity-meta">
             <span class="activity-tags">{event.data.tags.join(", ")}</span>
-          </span>
-          <span class="activity-time muted" title={formatDate(event.createdAt)}>
-            {formatRelativeTime(event.createdAt)}
-          </span>
+            <span class="activity-date">{formatDate(event.createdAt)}</span>
+          </div>
         </li>
       {/each}
     </ul>
@@ -85,58 +81,73 @@
         class="view-all link"
         href={`/tag-activity?imageId=${imageId}`}
         use:link
+        onclick={onClose}
       >
         View all {formatNumber(total)} events
       </a>
     {/if}
   {/if}
-</div>
+</Modal>
 
 <style>
+  .hint {
+    margin: 0 0 var(--space-4);
+    font-size: 0.875rem;
+  }
+
   .activity-list {
-    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
     margin: 0;
     padding: 0;
+    list-style: none;
   }
 
-  .activity-list li {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--space-3);
-    padding: var(--space-2) 0;
-    border-bottom: 1px solid var(--color-border);
-  }
-
-  .activity-list li:last-child {
-    border-bottom: none;
+  .activity-entry {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
   }
 
   .activity-main {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: var(--space-2);
-    min-width: 0;
+    flex-wrap: wrap;
   }
 
   .activity-type {
-    font-size: 0.875rem;
-    font-weight: 500;
-    white-space: nowrap;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .activity-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
   }
 
   .activity-tags {
-    font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
-    color: var(--color-text-muted);
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: monospace;
   }
 
-  .activity-time {
+  .activity-date {
     flex-shrink: 0;
-    font-size: 0.8125rem;
+    white-space: nowrap;
   }
 
+  .activity-date::before {
+    content: "\2022";
+    margin-right: var(--space-2);
+    color: var(--color-text-faint);
+  }
 </style>
