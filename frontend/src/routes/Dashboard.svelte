@@ -9,8 +9,7 @@
   import UpdatesAvailableCard from "../lib/components/dashboard/UpdatesAvailableCard.svelte";
   import RecentTagActivityCard from "../lib/components/dashboard/RecentTagActivityCard.svelte";
   import ProxyActivityCard from "../lib/components/dashboard/ProxyActivityCard.svelte";
-  import { dashboard } from "../lib/services/dashboard";
-  import { dashboardSections } from "../lib/stores/dashboard";
+  import { dashboard, dashboardSections } from "../lib/services/dashboard";
   import { tagRefreshStatus } from "../lib/services/tagRefreshStatus";
   import { formatRelativeTime } from "../lib/utils/format";
 
@@ -34,7 +33,10 @@
 
   let sections = $derived($dashboardSections);
   let settledAt = $derived($dashboard.settledAt);
-  let onRetry = () => void dashboard.refresh();
+  let onRetry = () => {
+    void dashboard.refresh();
+    void tagRefreshStatus.refresh();
+  };
 
   let hasErrors = $derived(
     Object.values(sections).some((section) => section.error !== null),

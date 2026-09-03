@@ -93,3 +93,5 @@ export const tagRefreshStatus = {
   notifyTriggered,
   onCompleted,
 }
+
+export type { TagRefreshStatusState } from '../stores/tagRefreshStatus'

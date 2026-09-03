@@ -1,9 +1,8 @@
 import { get } from 'svelte/store'
-import { dashboardStore, initialDashboardState } from '../stores/dashboard'
+import { dashboardStore, dashboardSections, initialDashboardState } from '../stores/dashboard'
 import { getDashboard } from '../api/dashboard'
 import { errorMessage } from '../api/client'
 import { createVisibilityPoller } from '../utils/visibilityPoller'
-import { tagRefreshStatus } from './tagRefreshStatus'
 
 const POLL_INTERVAL_MS = 60_000
 
@@ -35,11 +34,9 @@ function load(): Promise<void> {
 
   dashboardStore.update((state) => ({ ...state, loading: true }))
 
-  inflight = Promise.all([loadSections(), tagRefreshStatus.refresh()])
-    .then(() => undefined)
-    .finally(() => {
-      inflight = null
-    })
+  inflight = loadSections().finally(() => {
+    inflight = null
+  })
 
   return inflight
 }
@@ -72,3 +69,6 @@ export const dashboard = {
   refresh,
   start,
 }
+
+export { dashboardSections }
+export type { DashboardSectionView } from '../stores/dashboard'

@@ -74,8 +74,13 @@
     {#if view}
       <div class="stat-grid">
         <div class="stat-tile">
-          <span class="stat-value">{formatNumber(view.totalRequests)}</span>
-          <span class="stat-label muted">Total requests</span>
+          <span class="stat-value">{formatNumber(view.manifestRequests)}</span>
+          <span class="stat-label muted">Image pulls</span>
+        </div>
+
+        <div class="stat-tile">
+          <span class="stat-value">{formatNumber(view.blobRequests)}</span>
+          <span class="stat-label muted">Layer downloads</span>
         </div>
 
         <div class="stat-tile">

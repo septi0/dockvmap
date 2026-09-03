@@ -13,8 +13,8 @@
   } from "../../utils/format";
   import type { DashboardSummary } from "../../api/types/dashboard";
   import type { ProxyMetrics } from "../../api/types/metrics";
-  import type { DashboardSectionView } from "../../stores/dashboard";
-  import type { TagRefreshStatusState } from "../../stores/tagRefreshStatus";
+  import type { DashboardSectionView } from "../../services/dashboard";
+  import type { TagRefreshStatusState } from "../../services/tagRefreshStatus";
 
   let {
     summary,
@@ -49,7 +49,7 @@
     }
 
     if (!check)
-      return { value: "—", tone: "neutral" as const, caption: undefined };
+      return { value: "-", tone: "neutral" as const, caption: undefined };
 
     if (!check.enabled) {
       return {
@@ -106,7 +106,7 @@
   <div class="stat-strip" class:is-busy={busy}>
     <StatTile
       label="Tracked images"
-      value={counts ? formatNumber(counts.images.total) : "—"}
+      value={counts ? formatNumber(counts.images.total) : "-"}
       href="/images"
       {loading}
     >
@@ -115,7 +115,7 @@
 
     <StatTile
       label="Updates available"
-      value={counts ? formatNumber(counts.images.updateAvailable) : "—"}
+      value={counts ? formatNumber(counts.images.updateAvailable) : "-"}
       tone={counts && counts.images.updateAvailable > 0 ? "accent" : "neutral"}
       href="/images?status=updateAvailable"
       {loading}
@@ -125,7 +125,7 @@
 
     <StatTile
       label="Failed checks"
-      value={counts ? formatNumber(counts.images.failedCheck) : "—"}
+      value={counts ? formatNumber(counts.images.failedCheck) : "-"}
       tone={counts && counts.images.failedCheck > 0 ? "danger" : "neutral"}
       href="/images?status=failedCheck"
       {loading}
@@ -134,8 +134,8 @@
     </StatTile>
 
     <StatTile
-      label="Proxy requests · 7d"
-      value={week ? formatNumber(week.totalRequests) : "—"}
+      label="Image pulls · 7d"
+      value={week ? formatNumber(week.manifestRequests) : "-"}
       caption={week && week.upstreamFailures > 0
         ? `${formatNumber(week.upstreamFailures)} upstream failures`
         : undefined}
