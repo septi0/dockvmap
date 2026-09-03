@@ -98,10 +98,6 @@ func (s *Sessions) Login(ctx context.Context, username, password string) (string
 		return "", time.Time{}, err
 	}
 
-	if _, err := s.store.DeleteExpiredSessions(ctx); err != nil {
-		slog.Warn("failed to clean up expired sessions", "error", err)
-	}
-
 	recordAudit(WithCurrentUser(ctx, model.CurrentUser{ID: user.ID, Username: user.Username}), s.audit, AuditTypeUserLoggedIn, nil)
 
 	return token, expiresAt, nil

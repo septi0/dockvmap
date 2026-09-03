@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"regexp"
 	"time"
@@ -24,6 +25,7 @@ type Config struct {
 	WebServerHTTPListen     string               `yaml:"web_server_http_listen" env:"DOCKVMAP_WEB_SERVER_HTTP_LISTEN" default:":8080"`
 	WebServerHTTPSListen    string               `yaml:"web_server_https_listen" env:"DOCKVMAP_WEB_SERVER_HTTPS_LISTEN" default:":8443"`
 	LogsPath                string               `yaml:"logs_path" env:"DOCKVMAP_LOGS_PATH"`
+	LogLevel                string               `yaml:"log_level" env:"DOCKVMAP_LOG_LEVEL" default:"info"`
 	TagFiltersPath          string               `yaml:"tag_filters_path" env:"DOCKVMAP_TAG_FILTERS_PATH"`
 	CredentialEncryptionKey string               `yaml:"credential_encryption_key" env:"DOCKVMAP_CREDENTIAL_ENCRYPTION_KEY"`
 	SessionLifetime         string               `yaml:"session_lifetime" env:"DOCKVMAP_SESSION_LIFETIME" default:"168h"`
@@ -93,6 +95,17 @@ func (c *Config) ProxyAccessLogEnabled() bool {
 	return c.ProxyAccessLog == nil || *c.ProxyAccessLog
 }
 
+func (c *Config) SlogLevel() slog.Level {
+	switch c.LogLevel {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func (c *Config) WebServerListenAddr() string {
 	if c.TLS.Enabled {
 		return c.WebServerHTTPSListen
@@ -145,6 +158,12 @@ func (c *Config) validate() error {
 
 	if !virtualTagRE.MatchString(c.VirtualTag) {
 		return fmt.Errorf("invalid virtual_tag %q: must be a valid image tag", c.VirtualTag)
+	}
+
+	switch c.LogLevel {
+	case "debug", "info", "warn":
+	default:
+		return fmt.Errorf("invalid log_level %q: must be one of debug, info, warn", c.LogLevel)
 	}
 
 	if c.TLS.Enabled && (c.TLS.CertFile == "" || c.TLS.KeyFile == "") {

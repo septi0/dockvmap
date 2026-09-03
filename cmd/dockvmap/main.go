@@ -50,7 +50,7 @@ func run() error {
 		return fmt.Errorf("failed to load tag filters: %w", err)
 	}
 
-	logFile, err := setupLogging(cfg.LogsPath)
+	logFile, err := setupLogging(cfg.LogsPath, cfg.SlogLevel())
 
 	if err != nil {
 		return fmt.Errorf("failed to setup logging: %w", err)
@@ -102,8 +102,11 @@ func run() error {
 	}
 }
 
-func setupLogging(logsPath string) (*os.File, error) {
+func setupLogging(logsPath string, level slog.Level) (*os.File, error) {
+	opts := &slog.HandlerOptions{Level: level}
+
 	if logsPath == "" {
+		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, opts)))
 		return nil, nil
 	}
 
@@ -116,8 +119,7 @@ func setupLogging(logsPath string) (*os.File, error) {
 		return nil, fmt.Errorf("opening log file: %w", err)
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, logFile), nil))
-	slog.SetDefault(logger)
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.MultiWriter(os.Stdout, logFile), opts)))
 
 	return logFile, nil
 }

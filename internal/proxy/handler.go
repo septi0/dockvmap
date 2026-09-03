@@ -182,7 +182,7 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 		f.Resource = "manifest"
 	})
 
-	slog.Info("manifest request", "method", r.Method, "name", name, "reference", reference, "registry", img.Registry, "repository", path, "upstream_reference", upstreamRef)
+	slog.Debug("manifest request", "method", r.Method, "name", name, "reference", reference, "registry", img.Registry, "repository", path, "upstream_reference", upstreamRef)
 
 	if p.cache != nil && blobcache.IsDigest(upstreamRef) {
 		served, err := p.cache.Serve(r.Context(), w, r, upstreamRef)
@@ -194,7 +194,7 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 		if served {
 			p.metrics.cacheHits.Add(1)
 			setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "hit" })
-			slog.Info("manifest served from cache", "method", r.Method, "name", name, "reference", reference)
+			slog.Debug("manifest served from cache", "method", r.Method, "name", name, "reference", reference)
 			return
 		}
 
@@ -202,7 +202,7 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 		setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "miss" })
 	}
 
-	slog.Info("manifest fetched from upstream", "method", r.Method, "name", name, "reference", reference)
+	slog.Debug("manifest fetched from upstream", "method", r.Method, "name", name, "reference", reference)
 	p.proxyRequest(w, r, upstreamURL, upstreamRef, "manifest", img.Registry, path)
 }
 
@@ -243,7 +243,7 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest 
 		if served {
 			p.metrics.cacheHits.Add(1)
 			setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "hit" })
-			slog.Info("blob served from cache", "method", r.Method, "name", name, "digest", digest)
+			slog.Debug("blob served from cache", "method", r.Method, "name", name, "digest", digest)
 			return
 		}
 
@@ -251,7 +251,7 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest 
 		setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "miss" })
 	}
 
-	slog.Info("blob fetched from upstream", "method", r.Method, "name", name, "digest", digest, "registry", img.Registry, "repository", path)
+	slog.Debug("blob fetched from upstream", "method", r.Method, "name", name, "digest", digest, "registry", img.Registry, "repository", path)
 
 	p.proxyRequest(w, r, upstreamURL, digest, "blob", img.Registry, path)
 }
@@ -284,7 +284,10 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL
 	defer resp.Body.Close()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		p.metrics.upstreamFailures.Add(1)
+		if resp.StatusCode != http.StatusNotFound {
+			p.metrics.upstreamFailures.Add(1)
+		}
+
 		writeUpstreamOCIError(w, resp, resource)
 		return
 	}

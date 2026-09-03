@@ -128,6 +128,7 @@ Every setting is optional. The Default column gives the built-in value; `none` m
 | `tag_discovery_ttl` | `1h` | How long a repository's discovered tag list (shown when adding a virtual image) is cached before a "Check repository" click refreshes it in the background. |
 | `session_lifetime` | `168h` | Web UI session duration. |
 | `logs_path` | none | Directory for log files. Unset logs to stdout only. |
+| `log_level` | `info` | Minimum log level: `debug`, `info`, or `warn`. `debug` adds per-request proxy tracing; `warn` drops routine informational lines. |
 | `tag_filters_path` | none | Path to a `filters.yaml` policy file (see [Tag filtering](#tag-filtering)). If set, the file must exist; an invalid path is a startup error, not a silent fallback. Unset uses the built-in default filters. |
 | `credential_encryption_key` | none | Base64, 32-byte AES-GCM key encrypting stored registry credentials. Unset generates one and persists it at `<data-path>/credential_encryption.key` on first run. |
 

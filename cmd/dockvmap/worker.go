@@ -298,10 +298,7 @@ func runAndReschedule(ctx context.Context, job scheduledJob, schedule *service.W
 
 	executeJob(ctx, job, schedule, activity)
 
-	next := job.interval - time.Since(start)
-	if next < 0 {
-		next = 0
-	}
+	next := rescheduleDelay(job.interval, time.Since(start))
 
 	// via job.trigger the timer is still armed; stop and drain before Reset so a stale fire can't leak through
 	if !timer.Stop() {
@@ -323,15 +320,31 @@ func firstRunDelay(ctx context.Context, job scheduledJob, schedule *service.Work
 	}
 
 	if !ok {
+		return firstRunDelayFor(job.interval, 0, offset, false)
+	}
+
+	return firstRunDelayFor(job.interval, time.Since(lastRun), offset, true)
+}
+
+func firstRunDelayFor(interval, sinceLastRun, offset time.Duration, hasLastRun bool) time.Duration {
+	if !hasLastRun {
 		return offset
 	}
 
-	remaining := job.interval - time.Since(lastRun)
+	remaining := interval - sinceLastRun
 	if remaining < 0 {
 		remaining = 0
 	}
 
 	return remaining + offset
+}
+
+func rescheduleDelay(interval, elapsed time.Duration) time.Duration {
+	if next := interval - elapsed; next > 0 {
+		return next
+	}
+
+	return 0
 }
 
 func executeJob(ctx context.Context, job scheduledJob, schedule *service.WorkerSchedule, activity *service.WorkerActivity) {
@@ -353,18 +366,22 @@ func executeJob(ctx context.Context, job scheduledJob, schedule *service.WorkerS
 
 	count, err := job.run(ctx)
 
-	if err != nil {
+	recordedCount, recordedErr := int64(count), err
+
+	if ctx.Err() != nil {
+		recordedCount, recordedErr = 0, nil
+	} else if err != nil {
 		slog.Error(job.name+" tick failed", "error", err)
 	}
 
-	if count > 0 && job.doneMsg != "" {
-		slog.Info(job.doneMsg, "count", count)
+	if recordedCount > 0 && job.doneMsg != "" {
+		slog.Info(job.doneMsg, "count", recordedCount)
 	}
 
 	outcomeCtx, outcomeCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer outcomeCancel()
 
-	if outcomeErr := schedule.MarkOutcome(outcomeCtx, job.name, int64(count), err); outcomeErr != nil {
+	if outcomeErr := schedule.MarkOutcome(outcomeCtx, job.name, recordedCount, recordedErr); outcomeErr != nil {
 		slog.Error("recording worker outcome failed", "job", job.name, "error", outcomeErr)
 	}
 }
@@ -377,14 +394,14 @@ func runImageTagRefresh(ctx context.Context, images *service.Images) (int, error
 	refreshed, err := images.RefreshAll(ctx)
 
 	if err != nil {
-		return 0, err
+		return refreshed, err
 	}
 
 	if refreshed > 0 {
 		slog.Info("image tag refresh completed", "refreshed", refreshed, "elapsed", time.Since(start))
 	}
 
-	return 0, nil
+	return refreshed, nil
 }
 
 type proxyMetricsFlusher struct {
