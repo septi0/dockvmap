@@ -28,7 +28,7 @@
 
     try {
       await auth.bootstrap(username.trim(), email.trim(), password);
-      push("/");
+      push("/images/new");
     } catch (err) {
       error = errorMessage(err, "Failed to create account");
     } finally {

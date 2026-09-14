@@ -10,6 +10,7 @@
   import Button from "../lib/components/Button.svelte";
   import SourceStep from "../lib/components/createImage/SourceStep.svelte";
   import TagSelectionStep from "../lib/components/createImage/TagSelectionStep.svelte";
+  import RegistryModal from "../lib/components/RegistryModal.svelte";
   import { listRegistries } from "../lib/api/registries";
   import { createImage } from "../lib/api/images";
   import { errorMessage } from "../lib/api/client";
@@ -28,12 +29,14 @@
   let registries = $state<Registry[]>([]);
   let loadingRegistries = $state(true);
   let registriesError = $state<string | null>(null);
+  let showRegistryModal = $state(false);
 
   let step = $state<1 | 2>(1);
 
   let name = $state("");
   let registryId = $state("");
   let repository = $state("");
+  let lastAutoName = $state("");
 
   let tagGroups = $state<TagGroup[]>([]);
   let tagCount = $state(0);
@@ -55,6 +58,13 @@
     }
   }
 
+  async function handleRegistryCreated(registry: Registry) {
+    showRegistryModal = false;
+    toast.success(`Registry "${registry.registry}" created.`);
+    await loadRegistries();
+    registryId = String(registry.id);
+  }
+
   onMount(loadRegistries);
   onMount(() => discovery.onResolved(applyDiscovery));
   onDestroy(discovery.destroy);
@@ -68,6 +78,20 @@
   const selectedRegistry = $derived(
     registries.find((r) => r.id === Number(registryId)),
   );
+
+  function deriveNameFromRepository(value: string): string {
+    const segments = value.trim().split("/").filter(Boolean);
+    return segments.length > 0 ? segments[segments.length - 1] : "";
+  }
+
+  $effect(() => {
+    const derived = deriveNameFromRepository(repository);
+
+    if (name === lastAutoName) {
+      name = derived;
+      lastAutoName = derived;
+    }
+  });
 
   function applyDiscovery(result: DiscoveryResult) {
     tagGroups = result.tagGroups ?? [];
@@ -139,7 +163,7 @@
       emptyMessage="No registries yet. Add one before creating a virtual image."
     >
       {#snippet emptyAction()}
-        <Button onclick={() => push("/registries")}>
+        <Button onclick={() => (showRegistryModal = true)}>
           <Plus size={16} strokeWidth={2} />
           Add registry
         </Button>
@@ -201,6 +225,13 @@
     </AsyncState>
   </div>
 </AppShell>
+
+<RegistryModal
+  mode="create"
+  open={showRegistryModal}
+  onClose={() => (showRegistryModal = false)}
+  onSaved={handleRegistryCreated}
+/>
 
 <style>
   .page {
