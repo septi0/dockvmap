@@ -1,6 +1,7 @@
 package service
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/septi0/dockvmap/internal/model"
@@ -166,6 +167,76 @@ func TestUpdateAvailableFor(t *testing.T) {
 			if gotAvail != tc.wantAvail || gotTag != tc.wantTag {
 				t.Errorf("updateAvailableFor(%q) = (%v, %q); want (%v, %q)",
 					tc.current, gotAvail, gotTag, tc.wantAvail, tc.wantTag)
+			}
+		})
+	}
+}
+
+func TestCurrentAndNewerFamilyTags(t *testing.T) {
+	tags := []model.ImageTag{
+		mt("34.0.4", 1, 0, false, true, []int64{34, 0, 4}),
+		mt("34.0.4-rc1", 1, 1, true, true, []int64{34, 0, 4}),
+		mt("34", 1, 2, false, true, []int64{34}),
+		mt("33.0.9", 1, 3, false, true, []int64{33, 0, 9}),
+		mt("33.0.8", 1, 4, false, true, []int64{33, 0, 8}),
+		mt("33.0.7", 1, 5, false, true, []int64{33, 0, 7}),
+		mt("99-alpine", 2, 6, false, true, []int64{99}),
+		mt("1-alpine", 2, 7, false, true, []int64{1}),
+	}
+
+	cases := []struct {
+		name    string
+		tags    []model.ImageTag
+		current string
+		want    []string
+	}{
+		{
+			name:    "keeps every newer tag of the family in order, prereleases included",
+			tags:    tags,
+			current: "33.0.8",
+			want:    []string{"34.0.4", "34.0.4-rc1", "34", "33.0.9", "33.0.8"},
+		},
+		{
+			name:    "stops at the current tag, other families excluded",
+			tags:    tags,
+			current: "1-alpine",
+			want:    []string{"99-alpine", "1-alpine"},
+		},
+		{
+			name:    "newest tag returns only itself",
+			tags:    tags,
+			current: "34.0.4",
+			want:    []string{"34.0.4"},
+		},
+		{
+			name:    "current tag not in the set",
+			tags:    tags,
+			current: "absent",
+			want:    []string{},
+		},
+		{
+			name:    "no tags",
+			current: "33.0.8",
+			want:    []string{},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CurrentAndNewerFamilyTags(tc.tags, tc.current)
+
+			if got == nil {
+				t.Fatal("got nil, want an empty slice")
+			}
+
+			names := make([]string, 0, len(got))
+
+			for _, tag := range got {
+				names = append(names, tag.Tag)
+			}
+
+			if !slices.Equal(names, tc.want) {
+				t.Fatalf("got %v, want %v", names, tc.want)
 			}
 		})
 	}

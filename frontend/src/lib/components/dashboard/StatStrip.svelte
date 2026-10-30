@@ -113,7 +113,7 @@
     label="Updates available"
     value={counts ? formatNumber(counts.images.updateAvailable) : "-"}
     tone={counts && counts.images.updateAvailable > 0 ? "accent" : "neutral"}
-    href="/images?status=updateAvailable"
+    href="/updates"
     {loading}
   >
     {#snippet icon()}<CircleArrowUp size={13} strokeWidth={1.75} />{/snippet}

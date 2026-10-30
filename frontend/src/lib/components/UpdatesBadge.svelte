@@ -11,7 +11,7 @@
 </script>
 
 <a
-  href="/images?status=updateAvailable"
+  href="/updates"
   use:link
   class="updates"
   class:updates-warning={count !== null && count > 0}

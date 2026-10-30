@@ -25,4 +25,5 @@ const poller = createVisibilityPoller({ tick: refresh, intervalMs: POLL_INTERVAL
 export const updatesCount = {
   subscribe: updatesCountStore.subscribe,
   start: poller.start,
+  refresh,
 }

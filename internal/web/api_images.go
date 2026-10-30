@@ -15,6 +15,8 @@ import (
 
 const maxImagesLimit = 200
 
+const imageTagsScopeNewer = "newer"
+
 const (
 	refreshInlineWaitBudget   = 2 * time.Second
 	refreshInlineWaitInterval = 150 * time.Millisecond
@@ -395,6 +397,14 @@ func (w *Web) apiGetImageTags(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	scope := r.URL.Query().Get("scope")
+
+	if scope != "" && scope != imageTagsScopeNewer {
+		apiError(rw, http.StatusBadRequest, "scope must be: newer")
+
+		return
+	}
+
 	image, err := w.images.GetByID(r.Context(), id)
 
 	if err != nil {
@@ -415,6 +425,10 @@ func (w *Web) apiGetImageTags(rw http.ResponseWriter, r *http.Request) {
 		apiError(rw, http.StatusInternalServerError, "internal server error")
 
 		return
+	}
+
+	if scope == imageTagsScopeNewer {
+		tags = service.CurrentAndNewerFamilyTags(tags, image.Tag)
 	}
 
 	response := newImageTagsResponse(tags, image.Tag)

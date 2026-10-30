@@ -9,6 +9,7 @@
     visiblePerFamily = 10,
     layout = "stack",
     emptyMessage = "No tags were found.",
+    dimPrereleases = false,
   }: {
     tagGroups: TagGroup[];
     selectedTag?: string | null;
@@ -16,6 +17,7 @@
     visiblePerFamily?: number;
     layout?: "stack" | "grid";
     emptyMessage?: string;
+    dimPrereleases?: boolean;
   } = $props();
 
   let expandedFamilies = $state<Set<number>>(new Set());
@@ -62,6 +64,7 @@
               type="button"
               class="tag-chip"
               class:selected={selectedTag === tagInfo.tag}
+              class:dimmed={dimPrereleases && tagInfo.prerelease}
               onclick={() => (selectedTag = tagInfo.tag)}
             >
               {#if tagInfo.tag === currentTag}
@@ -144,6 +147,10 @@
     border-color: var(--color-accent);
     background: var(--color-accent-muted-bg);
     color: var(--color-accent);
+  }
+
+  .tag-chip.dimmed:not(.selected) {
+    opacity: 0.55;
   }
 
   .new-dot {

@@ -622,6 +622,32 @@ func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string)
 	return true, target.Tag
 }
 
+func CurrentAndNewerFamilyTags(tags []model.ImageTag, currentTag string) []model.ImageTag {
+	family := make([]model.ImageTag, 0)
+
+	var current *model.ImageTag
+
+	for i := range tags {
+		if tags[i].Tag == currentTag {
+			current = &tags[i]
+
+			break
+		}
+	}
+
+	if current == nil {
+		return family
+	}
+
+	for _, tag := range tags {
+		if tag.FamilyID == current.FamilyID && tag.TagOrder <= current.TagOrder {
+			family = append(family, tag)
+		}
+	}
+
+	return family
+}
+
 func versionContains(outer, inner [][]int64) bool {
 	if len(outer) == 0 || len(outer) > len(inner) {
 		return false

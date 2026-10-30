@@ -38,6 +38,10 @@ export function getImageTags(id: number) {
   return api.get<ImageTagsResult>(`/images/${id}/tags`)
 }
 
+export function getNewerImageTags(id: number) {
+  return api.get<ImageTagsResult>(`/images/${id}/tags?scope=newer`)
+}
+
 export function updateImageTag(id: number, tag: string, source?: TagHistorySource) {
   return api.put<{ status: string }>(`/images/${id}/tag`, { tag, source })
 }

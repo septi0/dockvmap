@@ -40,7 +40,13 @@
   const imageId = $derived(Number(params.id));
 
   const carriedQuery = window.location.hash.split("?")[1] ?? "";
-  const backHref = carriedQuery ? `/images?${carriedQuery}` : "/images";
+  const carriedParams = new URLSearchParams(carriedQuery);
+  const fromUpdates = carriedParams.get("from") === "updates";
+  carriedParams.delete("from");
+  const updatesQuery = carriedParams.toString();
+  const updatesHref = updatesQuery ? `/updates?${updatesQuery}` : "/updates";
+  const imagesHref = carriedQuery ? `/images?${carriedQuery}` : "/images";
+  const backHref = fromUpdates ? updatesHref : imagesHref;
 
   let image = $state<Image | null>(null);
   let pullInfo = $state<PullInfo | null>(null);
@@ -201,7 +207,7 @@
 <AppShell>
   <a class="back-link" href={backHref} use:link>
     <ArrowLeft size={14} strokeWidth={2} />
-    Virtual Images
+    {fromUpdates ? "Updates" : "Virtual Images"}
   </a>
 
   <AsyncState {loading} {error}>

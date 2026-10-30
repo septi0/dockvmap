@@ -92,7 +92,7 @@
     </ul>
 
     {#if total > images.length}
-      <a class="view-all link" href="/images?status=updateAvailable" use:link>
+      <a class="view-all link" href="/updates" use:link>
         View all {formatNumber(total)} images with updates available
       </a>
     {/if}
