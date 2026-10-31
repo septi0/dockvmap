@@ -6,7 +6,6 @@
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
-  import Check from "@lucide/svelte/icons/check";
   import Pin from "@lucide/svelte/icons/pin";
   import Layers from "@lucide/svelte/icons/layers";
   import AppShell from "../lib/components/AppShell.svelte";
@@ -255,11 +254,9 @@
         <thead>
           <tr>
             <th>Name</th>
-            <th class="phone-hidden">Registry</th>
-            <th class="phone-hidden">Repository</th>
             <th>Tag</th>
-            <th class="phone-hidden">Last checked</th>
-            <th class="phone-hidden pulled-cell">Last pulled</th>
+            <th class="phone-hidden time-cell">Last checked</th>
+            <th class="phone-hidden time-cell">Last pulled</th>
             <th>Update</th>
             {#if pullInfo}<th class="phone-hidden" aria-label="Copy pull command"></th>{/if}
           </tr>
@@ -294,14 +291,20 @@
                     </button>
                   {/if}
                 </span>
+                <div class="source muted phone-hidden">
+                  {image.registry}/{image.repository}
+                </div>
               </td>
-              <td class="phone-hidden">{image.registry}</td>
-              <td class="phone-hidden">{image.repository}</td>
               <td>{image.tag}</td>
-              <td class="phone-hidden">
-                {formatDate(image.lastChecked, "Never")}
+              <td class="phone-hidden time-cell">
+                <span
+                  title={image.lastChecked
+                    ? formatDate(image.lastChecked)
+                    : undefined}
+                  >{formatRelativeTime(image.lastChecked, "Never")}</span
+                >
               </td>
-              <td class="phone-hidden pulled-cell">
+              <td class="phone-hidden time-cell">
                 {#if image.lastPulledAt}
                   <span title={`${formatDate(image.lastPulledAt)} (${image.lastPulledTag})`}
                     >{formatRelativeTime(image.lastPulledAt)}</span
@@ -332,14 +335,11 @@
                       : "Update available"}
                   </span>
                 {:else}
-                  <span class="badge">
-                    <Check size={12} strokeWidth={2} />
-                    Up to date
-                  </span>
+                  <span class="muted">Up to date</span>
                 {/if}
               </td>
               {#if pullInfo}
-                <td class="phone-hidden copy-cell">
+                <td class="phone-hidden copy-cell row-reveal">
                   <CopyButton
                     text={pullCommand(pullInfo, image.name)}
                     label={`Copy pull command for ${image.name}`}
@@ -424,7 +424,13 @@
     white-space: nowrap;
   }
 
-  .pulled-cell {
+  .source {
+    margin-top: 2px;
+    font-size: 0.8125rem;
+    overflow-wrap: anywhere;
+  }
+
+  .time-cell {
     white-space: nowrap;
   }
 

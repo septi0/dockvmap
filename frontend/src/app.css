@@ -396,6 +396,17 @@ select.filter-control {
   color: var(--color-text);
 }
 
+@media (hover: hover) {
+  .table .row-reveal {
+    opacity: 0.4;
+  }
+
+  .table tr:hover .row-reveal,
+  .table tr:focus-within .row-reveal {
+    opacity: 1;
+  }
+}
+
 .icon-button.danger:hover {
   color: var(--color-danger);
 }

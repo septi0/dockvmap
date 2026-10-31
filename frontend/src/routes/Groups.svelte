@@ -2,7 +2,6 @@
   import { onMount } from "svelte";
   import { link } from "svelte-spa-router";
   import ArrowUpRight from "@lucide/svelte/icons/arrow-up-right";
-  import Check from "@lucide/svelte/icons/check";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Layers from "@lucide/svelte/icons/layers";
   import Pin from "@lucide/svelte/icons/pin";
@@ -322,10 +321,7 @@
                       Update blocked
                     </span>
                   {:else}
-                    <span class="badge">
-                      <Check size={12} strokeWidth={2} />
-                      Up to date
-                    </span>
+                    <span class="muted">Up to date</span>
                   {/if}
                   {#if failed > 0}
                     <span
@@ -342,11 +338,11 @@
                 <span class="row-tools">
                   {#if pullInfo}
                     {@const info = pullInfo}
-                    <CopyButton
+                    <span class="row-reveal"><CopyButton
                       text={group.images.map((image) => imageReference(info, image.name)).join("\n")}
                       label={`Copy image references for ${group.name}`}
                       copiedMessage="Image references copied to clipboard."
-                    />
+                    /></span>
                   {/if}
                   {#if group.updateAvailable && !group.pinned}
                     <a class="review-link" href={updatesHref(group)} use:link>

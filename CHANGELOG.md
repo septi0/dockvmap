@@ -2,6 +2,12 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.6.1 (2026-10-31)
+
+- **Tidier Virtual Images list**: the registry and repository now show as one line under the image name instead of two columns, and Last checked shows a relative time like Last pulled, with the exact date on hover.
+- **Up to date is plain text**: on Virtual Images and Groups, only states that need attention (an update, Pinned, a blocked group) keep a colored label, so they stand out.
+- **Quieter copy buttons**: on Virtual Images and Groups, the copy button is dimmed until you hover or focus its row. Touch screens always show it in full.
+
 ## v1.6.0 (2026-10-31)
 
 - **Last pulled**: Image details and the Virtual Images list show when each image was last pulled through the proxy, and which real tag clients got. After a tag change, Image details warns until a client pulls the new one, and notes when a client last checked without downloading.
