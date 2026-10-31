@@ -103,6 +103,10 @@ func (w *Web) apiListImageGroups(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	for i := range groups {
+		w.proxyUsage.ApplyToImages(groups[i].Images)
+	}
+
 	apiJSON(rw, http.StatusOK, listImageGroupsResponse{
 		Groups: newImageGroupResponses(groups),
 		Total:  total,
@@ -143,6 +147,8 @@ func (w *Web) apiGetImageGroup(rw http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	w.proxyUsage.ApplyToImages(group.Images)
 
 	apiJSON(rw, http.StatusOK, newImageGroupResponse(*group))
 }

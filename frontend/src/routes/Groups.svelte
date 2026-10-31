@@ -13,6 +13,7 @@
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
   import CopyButton from "../lib/components/CopyButton.svelte";
+  import GroupPullNotice from "../lib/components/GroupPullNotice.svelte";
   import FilterBar from "../lib/components/FilterBar.svelte";
   import ImageGroupModal from "../lib/components/ImageGroupModal.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
@@ -333,6 +334,7 @@
                     </span>
                   {/if}
                 </span>
+                <GroupPullNotice {group} />
               </td>
               <td class="actions">
                 <span class="row-tools">

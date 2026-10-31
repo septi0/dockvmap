@@ -19,6 +19,22 @@ const imageSelect = `
 	LEFT JOIN image_groups g ON g.id = i.group_id
 `
 
+var imageSort = sortSpec{
+	columns: map[string]sortColumn{
+		model.ImageSortName:        {expr: "i.name"},
+		model.ImageSortLastChecked: {expr: "i.last_checked", nullable: true},
+		model.ImageSortLastPulled:  {expr: "i.last_pulled_at", nullable: true},
+		model.ImageSortStatus: {expr: `CASE
+			WHEN i.update_available = 1 THEN 0
+			WHEN i.last_check_error IS NOT NULL THEN 1
+			WHEN i.pinned = 1 THEN 2
+			ELSE 3
+		END`},
+	},
+	fallback: "i.id DESC",
+	tieBreak: "i.name ASC, i.id DESC",
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -68,9 +84,9 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 
 	query := fmt.Sprintf(`%s
 		%s
-		ORDER BY i.id DESC
+		%s
 		LIMIT ? OFFSET ?
-	`, imageSelect, where)
+	`, imageSelect, where, imageSort.orderBy(filters.Sort))
 
 	rows, err := s.db.QueryContext(ctx, query, append(args, filters.Limit, filters.Offset)...)
 

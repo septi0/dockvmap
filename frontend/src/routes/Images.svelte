@@ -32,12 +32,18 @@
   import {
     IMAGE_STATUS_FILTERS,
     type Image,
+    type ImageSortField,
     type ImageStatusFilter,
   } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
   import { formatDate, formatRelativeTime } from "../lib/utils/format";
   import { writeListQuery } from "../lib/utils/listQuery";
-  import { createListView } from "../lib/utils/listView.svelte";
+  import {
+    createListView,
+    NO_SORT,
+    sortParams,
+  } from "../lib/utils/listView.svelte";
+  import SortableHeader from "../lib/components/SortableHeader.svelte";
 
   const STATUS_OPTIONS: { value: ImageStatusFilter | ""; label: string }[] = [
     { value: "", label: "All images" },
@@ -60,14 +66,28 @@
   let groupError = $state<string | null>(null);
 
   const view = createListView<
-    { search: string; status: string; group: string; offset: number },
+    {
+      search: string;
+      status: string;
+      group: string;
+      sort: string;
+      order: string;
+      offset: number;
+    },
     Image
   >({
     routePath: "/images",
-    defaults: { search: "", status: "", group: "", offset: 0 },
+    defaults: { search: "", status: "", group: "", ...NO_SORT, offset: 0 },
     errorFallback: "Failed to load images",
+    sortFields: {
+      name: "asc",
+      lastChecked: "desc",
+      lastPulled: "desc",
+      status: "asc",
+    },
     fetch: (q) =>
       listImages({
+        ...sortParams<ImageSortField>(q),
         offset: q.offset,
         limit: IMAGES_PAGE_SIZE,
         search: q.search || undefined,
@@ -253,11 +273,29 @@
       <table class="table">
         <thead>
           <tr>
-            <th>Name</th>
+            <SortableHeader
+              label="Name"
+              direction={view.sortDirection("name")}
+              onSort={() => view.toggleSort("name")}
+            />
             <th>Tag</th>
-            <th class="phone-hidden time-cell">Last checked</th>
-            <th class="phone-hidden time-cell">Last pulled</th>
-            <th>Update</th>
+            <SortableHeader
+              label="Last checked"
+              class="phone-hidden time-cell"
+              direction={view.sortDirection("lastChecked")}
+              onSort={() => view.toggleSort("lastChecked")}
+            />
+            <SortableHeader
+              label="Last pulled"
+              class="phone-hidden time-cell"
+              direction={view.sortDirection("lastPulled")}
+              onSort={() => view.toggleSort("lastPulled")}
+            />
+            <SortableHeader
+              label="Update"
+              direction={view.sortDirection("status")}
+              onSort={() => view.toggleSort("status")}
+            />
             {#if pullInfo}<th class="phone-hidden" aria-label="Copy pull command"></th>{/if}
           </tr>
         </thead>

@@ -47,12 +47,22 @@ var ImageStatusFilters = []ImageStatusFilter{
 	ImageStatusPinned,
 }
 
+const (
+	ImageSortName        = "name"
+	ImageSortLastChecked = "lastChecked"
+	ImageSortLastPulled  = "lastPulled"
+	ImageSortStatus      = "status"
+)
+
+var ImageSortFields = []string{ImageSortName, ImageSortLastChecked, ImageSortLastPulled, ImageSortStatus}
+
 func (f ImageStatusFilter) Valid() bool {
 	return slices.Contains(ImageStatusFilters, f)
 }
 
 type ImageListFilters struct {
 	Pagination
+	Sort
 	Search    string
 	Status    ImageStatusFilter
 	Ungrouped bool

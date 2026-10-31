@@ -1,3 +1,5 @@
+import type { SortParams } from './sort'
+
 export interface Image {
   id: number
   name: string
@@ -28,7 +30,9 @@ export const IMAGE_STATUS_FILTERS = ['updateAvailable', 'failedCheck', 'pinned']
 
 export type ImageStatusFilter = (typeof IMAGE_STATUS_FILTERS)[number]
 
-export interface ImageListParams {
+export type ImageSortField = 'name' | 'lastChecked' | 'lastPulled' | 'status'
+
+export interface ImageListParams extends SortParams<ImageSortField> {
   offset: number
   limit?: number
   search?: string

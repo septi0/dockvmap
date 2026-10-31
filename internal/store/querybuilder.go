@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/septi0/dockvmap/internal/model"
 )
 
 type whereBuilder struct {
@@ -33,6 +35,41 @@ func (b *whereBuilder) clause() string {
 	}
 
 	return "WHERE " + strings.Join(b.conditions, " AND ")
+}
+
+type sortColumn struct {
+	expr     string
+	nullable bool
+}
+
+type sortSpec struct {
+	columns  map[string]sortColumn
+	fallback string
+	tieBreak string
+}
+
+func (s sortSpec) orderBy(sort model.Sort) string {
+	column, ok := s.columns[sort.Field]
+
+	if !ok {
+		return "ORDER BY " + s.fallback
+	}
+
+	direction := "ASC"
+
+	if sort.Direction == model.SortDescending {
+		direction = "DESC"
+	}
+
+	var terms []string
+
+	if column.nullable {
+		terms = append(terms, column.expr+" IS NULL")
+	}
+
+	terms = append(terms, column.expr+" "+direction, s.tieBreak)
+
+	return "ORDER BY " + strings.Join(terms, ", ")
 }
 
 func (s *Store) countWhere(ctx context.Context, from, where string, args []any) (int64, error) {

@@ -34,6 +34,12 @@ func parseImageListFilters(r *http.Request) (model.ImageListFilters, error) {
 		return model.ImageListFilters{}, err
 	}
 
+	sort, err := parseSort(r, model.ImageSortFields...)
+
+	if err != nil {
+		return model.ImageListFilters{}, err
+	}
+
 	status := model.ImageStatusFilter(r.URL.Query().Get("status"))
 
 	if status != "" && !status.Valid() {
@@ -52,6 +58,7 @@ func parseImageListFilters(r *http.Request) (model.ImageListFilters, error) {
 
 	return model.ImageListFilters{
 		Pagination: pagination,
+		Sort:       sort,
 		Search:     strings.TrimSpace(r.URL.Query().Get("search")),
 		Status:     status,
 		Ungrouped:  r.URL.Query().Get("ungrouped") == "true",

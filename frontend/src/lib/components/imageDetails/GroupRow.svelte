@@ -5,6 +5,7 @@
   import Settings2 from "@lucide/svelte/icons/settings-2";
   import DetailRow from "../DetailRow.svelte";
   import Button from "../Button.svelte";
+  import GroupPullNotice from "../GroupPullNotice.svelte";
   import type { ImageGroup } from "../../api/types/imageGroups";
 
   let {
@@ -19,29 +20,34 @@
 </script>
 
 <DetailRow label="Group">
-  <span class="detail-cell-row">
+  <div class="detail-cell">
+    <span class="detail-cell-row">
+      {#if group}
+        <span class="group-name">
+          <Layers size={14} strokeWidth={2} />
+          {group.name}
+        </span>
+        <a
+          class="group-size"
+          href={`/images?group=${group.id}`}
+          use:link>{groupSize} images</a
+        >
+        <Button variant="secondary" size="sm" onclick={onManage}>
+          <Settings2 size={14} strokeWidth={2} />
+          Manage group
+        </Button>
+      {:else}
+        <span class="muted">Not in a group</span>
+        <Button variant="secondary" size="sm" onclick={onManage}>
+          <Plus size={14} strokeWidth={2} />
+          Add to group
+        </Button>
+      {/if}
+    </span>
     {#if group}
-      <span class="group-name">
-        <Layers size={14} strokeWidth={2} />
-        {group.name}
-      </span>
-      <a
-        class="group-size"
-        href={`/images?group=${group.id}`}
-        use:link>{groupSize} images</a
-      >
-      <Button variant="secondary" size="sm" onclick={onManage}>
-        <Settings2 size={14} strokeWidth={2} />
-        Manage group
-      </Button>
-    {:else}
-      <span class="muted">Not in a group</span>
-      <Button variant="secondary" size="sm" onclick={onManage}>
-        <Plus size={14} strokeWidth={2} />
-        Add to group
-      </Button>
+      <GroupPullNotice {group} showNames />
     {/if}
-  </span>
+  </div>
 </DetailRow>
 
 <style>

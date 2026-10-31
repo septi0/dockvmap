@@ -2,6 +2,11 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.7.0 (2026-10-31)
+
+- **Sorting on Virtual Images**: click the Name, Last checked, Last pulled or Update column header to sort; click again to reverse, and a third time to go back to the usual order. The sort is kept when you open an image and come back, and in shared links. Without a chosen sort, the list keeps its usual order.
+- **Group pull status**: the Groups page and an image's Group row warn when some members haven't been pulled on the group's current tag yet, for example "4 of 6 pulled on v2.7", and name the missing images.
+
 ## v1.6.1 (2026-10-31)
 
 - **Tidier Virtual Images list**: the registry and repository now show as one line under the image name instead of two columns, and Last checked shows a relative time like Last pulled, with the exact date on hover.
