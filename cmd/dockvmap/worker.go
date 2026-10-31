@@ -122,7 +122,7 @@ func scheduledJobs(deps workerDeps) []scheduledJob {
 			interval:    tagNotificationInterval,
 			enabled:     true,
 			doneMsg:     "sent tag notifications",
-			run:         func(ctx context.Context) (int, error) { return deps.notifications.SendPendingTagNotifications(ctx) },
+			run:         func(ctx context.Context) (int, error) { return runTagNotifications(ctx, deps) },
 		})
 	} else {
 		jobs = append(jobs, scheduledJob{
@@ -381,6 +381,14 @@ func executeJob(ctx context.Context, job scheduledJob, worker *service.Worker) {
 	}
 
 	recordRun(int64(count), err)
+}
+
+func runTagNotifications(ctx context.Context, deps workerDeps) (int, error) {
+	if deps.worker.Running(service.WorkerJobTagRefresh) {
+		return 0, nil
+	}
+
+	return deps.notifications.SendPendingTagNotifications(ctx)
 }
 
 func runImageTagRefresh(ctx context.Context, images *service.Images) (int, error) {

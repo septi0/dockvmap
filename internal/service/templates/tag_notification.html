@@ -20,25 +20,27 @@
                 <p style="margin:0 0 10px;font-size:11px;line-height:1;letter-spacing:0.09em;text-transform:uppercase;color:#2563eb;font-weight:700;">
                   Tag update
                 </p>
-                <h1 style="margin:0 0 14px;font-size:20px;line-height:1.3;color:#18181b;font-weight:700;">
-                  {{.Action}}
+                <h1 style="margin:0 0 22px;font-size:20px;line-height:1.3;color:#18181b;font-weight:700;">
+                  {{.Heading}}
                 </h1>
-                <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#3f3f46;">
-                  for virtual image <strong style="color:#18181b;">{{.ImageName}}</strong>
+                {{range .Sections}}{{if .Title}}<p style="margin:0 0 10px;font-size:14px;line-height:1.4;color:#18181b;font-weight:600;">
+                  {{.Title}}
                 </p>
-                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #e4e4e7;border-radius:8px;background-color:#fafafa;">
-                  {{range .Tags}}<tr>
-                    <td style="padding:11px 16px;border-bottom:1px solid #ececef;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;line-height:1.4;color:#18181b;word-break:break-all;">
-                      {{.}}
+                {{end}}<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;border:1px solid #e4e4e7;border-radius:8px;background-color:#fafafa;">
+                  {{range .Lines}}<tr>
+                    <td style="padding:11px 16px;border-bottom:1px solid #ececef;font-size:13px;line-height:1.5;color:#18181b;word-break:break-word;">
+                      <strong>{{.Name}}</strong><br />
+                      <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#3f3f46;">{{.Tags}}</span>
                     </td>
                   </tr>{{end}}
                 </table>
+                {{end}}
               </td>
             </tr>
             <tr>
               <td style="padding:20px 32px;border-top:1px solid #ececef;background-color:#fafafa;">
                 <p style="margin:0;font-size:12px;line-height:1.5;color:#a1a1aa;">
-                  Sent automatically by DockVMap when a scheduled tag refresh detected this change.
+                  Sent automatically by DockVMap when a scheduled tag refresh detected these changes.
                 </p>
               </td>
             </tr>

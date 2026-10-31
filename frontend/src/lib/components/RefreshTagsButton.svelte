@@ -1,10 +1,8 @@
 <script lang="ts">
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import Button from "./Button.svelte";
-  import ConfirmDialog from "./ConfirmDialog.svelte";
   import { refreshImageTags } from "../api/images";
   import { errorMessage } from "../api/client";
-  import { allImages } from "../utils/format";
   import { toast } from "../services/toast";
 
   let {
@@ -12,7 +10,6 @@
     onRefreshed,
     label = "Refresh tags",
     variant = "link",
-    groupSize = 0,
   }: {
     imageId: number;
     onRefreshed?: (
@@ -20,19 +17,12 @@
     ) => void | Promise<void>;
     label?: string;
     variant?: "link" | "button";
-    groupSize?: number;
   } = $props();
 
-  let showConfirm = $state(false);
   let refreshing = $state(false);
   let error = $state<string | null>(null);
 
-  function cancel() {
-    showConfirm = false;
-    error = null;
-  }
-
-  async function confirm() {
+  async function refresh() {
     error = null;
     refreshing = true;
 
@@ -44,7 +34,6 @@
         return;
       }
 
-      showConfirm = false;
       await onRefreshed?.(res.status);
 
       toast.success(
@@ -61,33 +50,20 @@
 </script>
 
 {#if variant === "button"}
-  <Button variant="secondary" size="sm" onclick={() => (showConfirm = true)}>
-    <RefreshCw size={14} strokeWidth={2} />
+  <Button variant="secondary" size="sm" disabled={refreshing} onclick={refresh}>
+    <span class="icon" class:spin={refreshing}><RefreshCw size={14} strokeWidth={2} /></span>
     {label}
   </Button>
 {:else}
-  <button
-    type="button"
-    class="text-button"
-    onclick={() => (showConfirm = true)}
-  >
-    <span class="icon"><RefreshCw size={14} strokeWidth={2} /></span>
+  <button type="button" class="text-button" disabled={refreshing} onclick={refresh}>
+    <span class="icon" class:spin={refreshing}><RefreshCw size={14} strokeWidth={2} /></span>
     {label}
   </button>
 {/if}
 
-<ConfirmDialog
-  open={showConfirm}
-  title="Refresh tags"
-  message={groupSize > 0
-    ? `Check the upstream registry for new or updated tags on ${allImages(groupSize)} now?`
-    : "Check the upstream registry for new or updated tags now?"}
-  confirmLabel="Refresh"
-  {error}
-  submitting={refreshing}
-  onConfirm={confirm}
-  onCancel={cancel}
-/>
+{#if error}
+  <span class="refresh-error">{error}</span>
+{/if}
 
 <style>
   .text-button {
@@ -103,7 +79,17 @@
     cursor: pointer;
   }
 
+  .text-button:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+
   .icon {
     display: inline-flex;
+  }
+
+  .refresh-error {
+    font-size: 0.8125rem;
+    color: var(--color-danger);
   }
 </style>

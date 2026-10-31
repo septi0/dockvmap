@@ -3,6 +3,7 @@
   import Copy from '@lucide/svelte/icons/copy'
   import Modal from './Modal.svelte'
   import Button from './Button.svelte'
+  import { copyText } from '../services/clipboard'
   import { toast } from '../services/toast'
   import type { CreateProxyTokenResult } from '../api/types/proxyTokens'
 
@@ -21,10 +22,9 @@
 
     copyError = null
 
-    try {
-      await navigator.clipboard.writeText(result.token)
+    if (await copyText(result.token)) {
       toast.success('Token copied to clipboard.')
-    } catch {
+    } else {
       copyError = 'Could not copy automatically - select and copy the token manually.'
     }
   }

@@ -125,3 +125,68 @@ func TestExecuteJobInterruptedRunSkipsWrite(t *testing.T) {
 		t.Fatalf("interrupted run recorded %+v, want no write", runs)
 	}
 }
+
+type recordingMailer struct{ sent int }
+
+func (m *recordingMailer) Send(context.Context, []string, string, string, string) error {
+	m.sent++
+
+	return nil
+}
+
+type stubWebhook struct{}
+
+func (stubWebhook) Send(context.Context, string, []byte) error { return nil }
+
+type stubFailures struct{}
+
+func (stubFailures) Record(context.Context, service.FailureSource, string, error) {}
+
+type pendingEventStore struct{ events []model.TagNotificationEvent }
+
+func (s *pendingEventStore) ListPendingTagNotificationEvents(context.Context) ([]model.TagNotificationEvent, error) {
+	return s.events, nil
+}
+
+func (s *pendingEventStore) MarkTagsEventNotified(context.Context, int64) error {
+	s.events = nil
+
+	return nil
+}
+
+type singleUserStore struct{}
+
+func (singleUserStore) ListUsers(context.Context) ([]model.User, error) {
+	user := model.User{Email: "all@example.com"}
+	user.Preferences.NotifyLevel = model.NotifyLevelAll
+
+	return []model.User{user}, nil
+}
+
+func TestTagNotificationsWaitForTheSweep(t *testing.T) {
+	events := &pendingEventStore{events: []model.TagNotificationEvent{{
+		ImageEvent: model.ImageEvent{ID: 1, ImageID: 1, ImageName: "nginx", Type: service.EventTypeUpgradeAvailable, Data: model.TagsEventData{Tags: []string{"1.27.4"}}},
+	}}}
+	mail := &recordingMailer{}
+
+	notifications, err := service.NewNotifications(events, singleUserStore{}, mail, true, stubWebhook{}, nil, stubFailures{})
+
+	if err != nil {
+		t.Fatalf("NewNotifications: %v", err)
+	}
+
+	worker := service.NewWorker(nil)
+	deps := workerDeps{worker: worker, notifications: notifications}
+
+	worker.Begin(service.WorkerJobTagRefresh)
+
+	if sent, err := runTagNotifications(context.Background(), deps); err != nil || sent != 0 || mail.sent != 0 {
+		t.Fatalf("during sweep: sent = %d, emails = %d, err = %v", sent, mail.sent, err)
+	}
+
+	worker.End(service.WorkerJobTagRefresh)
+
+	if sent, err := runTagNotifications(context.Background(), deps); err != nil || sent != 1 || mail.sent != 1 {
+		t.Fatalf("after sweep: sent = %d, emails = %d, err = %v", sent, mail.sent, err)
+	}
+}

@@ -13,12 +13,16 @@
   import AppShell from "../lib/components/AppShell.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
+  import CopyButton from "../lib/components/CopyButton.svelte";
   import FilterBar from "../lib/components/FilterBar.svelte";
   import ImageGroupModal from "../lib/components/ImageGroupModal.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import Pagination from "../lib/components/Pagination.svelte";
   import SearchInput from "../lib/components/SearchInput.svelte";
   import { listImageGroups } from "../lib/api/imageGroups";
+  import { getPullInfo } from "../lib/api/metrics";
+  import type { PullInfo } from "../lib/api/types/metrics";
+  import { imageReference } from "../lib/utils/pullInfo";
   import { IMAGES_MAX_LIMIT, IMAGES_PAGE_SIZE, listImages } from "../lib/api/images";
   import type { Image } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
@@ -57,6 +61,7 @@
   });
 
   let ungroupedImages = $state<Image[]>([]);
+  let pullInfo = $state<PullInfo | null>(null);
   let dismissed = $state<string[]>(readDismissed());
 
   let modalOpen = $state(false);
@@ -102,6 +107,11 @@
 
   onMount(view.init);
   onMount(loadSuggestions);
+  onMount(() => {
+    getPullInfo()
+      .then((info) => (pullInfo = info))
+      .catch(() => {});
+  });
   onMount(() => tagRefreshStatus.watch());
   onMount(() =>
     tagRefreshStatus.onCompleted(() => {
@@ -329,12 +339,22 @@
                 </span>
               </td>
               <td class="actions">
-                {#if group.updateAvailable && !group.pinned}
-                  <a class="review-link" href={updatesHref(group)} use:link>
-                    Review
-                    <ArrowUpRight size={14} strokeWidth={2} />
-                  </a>
-                {/if}
+                <span class="row-tools">
+                  {#if pullInfo}
+                    {@const info = pullInfo}
+                    <CopyButton
+                      text={group.images.map((image) => imageReference(info, image.name)).join("\n")}
+                      label={`Copy image references for ${group.name}`}
+                      copiedMessage="Image references copied to clipboard."
+                    />
+                  {/if}
+                  {#if group.updateAvailable && !group.pinned}
+                    <a class="review-link" href={updatesHref(group)} use:link>
+                      Review
+                      <ArrowUpRight size={14} strokeWidth={2} />
+                    </a>
+                  {/if}
+                </span>
               </td>
             </tr>
           {/each}
@@ -447,6 +467,12 @@
   .actions {
     text-align: right;
     white-space: nowrap;
+  }
+
+  .row-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
   }
 
   .review-link {

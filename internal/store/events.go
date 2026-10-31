@@ -94,15 +94,17 @@ func (s *Store) ListTagsEvents(ctx context.Context, filters model.ImageEventList
 	return events, nil
 }
 
-func (s *Store) ListPendingTagNotificationEvents(ctx context.Context, limit int) ([]model.ImageEvent, error) {
+func (s *Store) ListPendingTagNotificationEvents(ctx context.Context) ([]model.TagNotificationEvent, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT ie.id, ie.image_id, i.name, ie.type, ie.data, ie.created_at, ie.notify, ie.notif_sent_at
+		SELECT ie.id, ie.image_id, i.name, ie.type, ie.data, ie.created_at, ie.notify, ie.notif_sent_at,
+			i.group_id, COALESCE(g.name, ''),
+			(SELECT COUNT(*) FROM images m WHERE m.group_id = i.group_id)
 		FROM tags_events ie
 		LEFT JOIN images i ON ie.image_id = i.id
+		LEFT JOIN image_groups g ON i.group_id = g.id
 		WHERE ie.notify = 1 AND ie.notif_sent_at IS NULL
 		ORDER BY ie.created_at, ie.id
-		LIMIT ?
-	`, limit)
+	`)
 
 	if err != nil {
 		return nil, fmt.Errorf("querying pending tag notification events: %w", err)
@@ -110,16 +112,17 @@ func (s *Store) ListPendingTagNotificationEvents(ctx context.Context, limit int)
 
 	defer rows.Close()
 
-	events := make([]model.ImageEvent, 0, limit)
+	events := []model.TagNotificationEvent{}
 
 	for rows.Next() {
-		var event model.ImageEvent
+		var event model.TagNotificationEvent
 		var data string
 
 		if err := rows.Scan(&event.ID, &event.ImageID,
 			&event.ImageName, &event.Type, &data,
 			&event.CreatedAt, &event.Notify,
-			&event.NotifSentAt); err != nil {
+			&event.NotifSentAt, &event.GroupID,
+			&event.GroupName, &event.GroupSize); err != nil {
 			return nil, fmt.Errorf("scanning pending tag notification event: %w", err)
 		}
 

@@ -2,22 +2,17 @@ package service
 
 import (
 	"context"
-	"embed"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
 )
 
-const notificationBatchSize = 50
-
 type notificationEventStore interface {
-	ListPendingTagNotificationEvents(ctx context.Context, limit int) ([]model.ImageEvent, error)
+	ListPendingTagNotificationEvents(ctx context.Context) ([]model.TagNotificationEvent, error)
 	MarkTagsEventNotified(ctx context.Context, eventID int64) error
 }
 
@@ -86,26 +81,20 @@ func (n *Notifications) SendPendingTagNotifications(ctx context.Context) (int, e
 		return 0, nil
 	}
 
-	events, err := n.events.ListPendingTagNotificationEvents(ctx, notificationBatchSize)
+	events, err := n.events.ListPendingTagNotificationEvents(ctx)
 
 	if err != nil {
 		return 0, err
 	}
 
+	n.sendDigest(ctx, mailTargets(recipients, EventTypeUpgradeAvailable), updatesDigest(events))
+	n.sendDigest(ctx, mailTargets(recipients, EventTypeTagAdded), tagChangesDigest(events))
+
 	sent := 0
 
 	for _, event := range events {
-		if to := mailTargets(recipients, event.Type); len(to) > 0 {
-			subject, textBody, htmlBody := tagNotificationContent(event)
-
-			if err := n.mailer.Send(ctx, to, subject, textBody, htmlBody); err != nil {
-				slog.Error("failed to send tag notification email", "eventId", event.ID, "error", err)
-				n.failures.Record(ctx, FailureSourceEmail, "", err)
-			}
-		}
-
 		if hasWebhooks {
-			n.sendWebhooks(ctx, event)
+			n.sendWebhooks(ctx, event.ImageEvent)
 		}
 
 		if err := n.events.MarkTagsEventNotified(ctx, event.ID); err != nil {
@@ -118,6 +107,19 @@ func (n *Notifications) SendPendingTagNotifications(ctx context.Context) (int, e
 	}
 
 	return sent, nil
+}
+
+func (n *Notifications) sendDigest(ctx context.Context, to []string, digest tagDigest) {
+	if len(to) == 0 || len(digest.Sections) == 0 {
+		return
+	}
+
+	textBody, htmlBody := digest.render()
+
+	if err := n.mailer.Send(ctx, to, digest.Subject, textBody, htmlBody); err != nil {
+		slog.Error("failed to send tag notification email", "subject", digest.Subject, "error", err)
+		n.failures.Record(ctx, FailureSourceEmail, "", err)
+	}
 }
 
 func (n *Notifications) sendWebhooks(ctx context.Context, event model.ImageEvent) {
@@ -190,41 +192,4 @@ func mailTargets(recipients []mailRecipient, eventType string) []string {
 	}
 
 	return to
-}
-
-type tagEmailData struct {
-	Action    string
-	ImageName string
-	Tags      []string
-}
-
-//go:embed templates/tag_notification.html
-var tagEmailTemplateFS embed.FS
-
-var tagEmailTemplate = template.Must(template.ParseFS(tagEmailTemplateFS, "templates/tag_notification.html"))
-
-func tagNotificationContent(event model.ImageEvent) (subject, textBody, htmlBody string) {
-	action := "New tag(s) discovered"
-
-	switch event.Type {
-	case EventTypeTagRemoved:
-		action = "Tag(s) removed"
-	case EventTypeUpgradeAvailable:
-		action = "Upgrade available"
-	}
-
-	subject = fmt.Sprintf("dockvmap: %s for %s", action, event.ImageName)
-
-	textBody = fmt.Sprintf(
-		"%s for virtual image %q:\n\n  %s\n\nThis was detected automatically by dockvmap's tag refresh.",
-		action, event.ImageName, strings.Join(event.Data.Tags, ", "),
-	)
-
-	var buf strings.Builder
-
-	if err := tagEmailTemplate.Execute(&buf, tagEmailData{Action: action, ImageName: event.ImageName, Tags: event.Data.Tags}); err == nil {
-		htmlBody = buf.String()
-	}
-
-	return subject, textBody, htmlBody
 }

@@ -449,6 +449,30 @@ select.filter-control {
   font-size: 0.8125rem;
 }
 
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-muted-bg);
+  color: var(--color-accent);
+  font-size: 0.875rem;
+}
+
+.notice.warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+
+.notice-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
 .warning-box {
   display: flex;
   align-items: flex-start;

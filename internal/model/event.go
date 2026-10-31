@@ -13,6 +13,13 @@ type ImageEvent struct {
 	NotifSentAt *time.Time    `json:"notifSentAt,omitempty"`
 }
 
+type TagNotificationEvent struct {
+	ImageEvent
+	GroupID   *int64
+	GroupName string
+	GroupSize int
+}
+
 type TagsEventData struct {
 	Tags []string `json:"tags"`
 }

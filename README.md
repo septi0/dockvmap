@@ -52,7 +52,7 @@ docker pull dockvmap.local/myapp:current
 - **Tag discovery**: when adding a virtual image, scans the upstream repository in the background (result cached) so you pick from its real tags instead of typing one blind.
 - **Tag history**: per-image record of every real tag the virtual tag has resolved to, and when each change happened.
 - **Web UI**: Svelte SPA for managing registries, virtual images, and reviewing what changed and when.
-- **Notifications**: email (SMTP) and/or generic webhooks when a tracked image's tags change. Email volume is selectable per account (every tag change / only when an upgrade becomes available / off); webhooks always fire and carry an `updateAvailable` flag.
+- **Notifications**: digest emails (SMTP) and/or generic webhooks when a tracked image's tags change. Email volume is selectable per account (every tag change / only when an upgrade becomes available / off); webhooks always fire and carry an `updateAvailable` flag.
 - **Optional blob cache**: on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.
 - **Proxy authentication**: optional HTTP Basic Auth (via issued tokens) in front of the registry proxy itself.
 - **Audit log**: every state-changing action recorded, with resolved client IP and actor.
@@ -183,7 +183,7 @@ Per-IP lockout on the web UI login, keyed off the `trusted_proxies`-resolved cli
 
 ### Notifications (`smtp`, `webhooks`)
 
-Fire when a tracked image's tags change. Email volume is per-account (every change / only when an upgrade is available / off); webhooks always fire and carry an `updateAvailable` flag.
+Fire after a scheduled tag check, once it has finished. Email is a digest per check: one email listing available updates, with a group as one line, and a separate email listing new and removed tags. The volume is per-account: every change gets both, only when an upgrade is available gets the first, off gets neither. Webhooks always fire, once per image, and carry an `updateAvailable` flag.
 
 | Key | Default | Description |
 |---|---|---|

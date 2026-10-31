@@ -167,7 +167,6 @@
       {:else}
         <RefreshTagsButton
           {imageId}
-          {groupSize}
           onRefreshed={handleTagsRefreshed}
           label="Refresh"
         />

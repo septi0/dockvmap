@@ -2,8 +2,6 @@
   import { onDestroy, onMount, untrack } from "svelte";
   import Pin from "@lucide/svelte/icons/pin";
   import PinOff from "@lucide/svelte/icons/pin-off";
-  import Undo2 from "@lucide/svelte/icons/undo-2";
-  import Check from "@lucide/svelte/icons/check";
   import Layers from "@lucide/svelte/icons/layers";
   import Settings2 from "@lucide/svelte/icons/settings-2";
   import Tags from "@lucide/svelte/icons/tags";
@@ -14,7 +12,9 @@
   import ChangeTagModal from "./ChangeTagModal.svelte";
   import ImageGroupModal from "./ImageGroupModal.svelte";
   import RefreshingIndicator from "./RefreshingIndicator.svelte";
+  import TagChangeNotice from "./TagChangeNotice.svelte";
   import TagFamilyPicker from "./TagFamilyPicker.svelte";
+  import UpstreamLink from "./UpstreamLink.svelte";
   import {
     getImage,
     getNewerImageTags,
@@ -226,11 +226,13 @@
           onclick={() => (showGroupModal = true)}>{group.name}</button
         >
         <span class="badge">Group · {groupSize} images</span>
+        <UpstreamLink registry={image.registry} repository={image.repository} />
       {:else}
         <a class="row-link" href={`#/images/${image.id}${detailsQuery}`}
           >{image.name}</a
         >
         <span class="muted source">{image.registry}/{image.repository}</span>
+        <UpstreamLink registry={image.registry} repository={image.repository} />
       {/if}
     </div>
     <span class="versions muted">
@@ -263,23 +265,13 @@
   {/if}
 
   {#if lastChange}
-    <p class="notice">
-      <Check size={14} strokeWidth={2.5} />
-      <span class="notice-text">
-        {group ? `${groupSize === 2 ? "Both" : `All ${groupSize}`} images updated` : "Updated"} from
-        <strong>{lastChange.from}</strong> to
-        <strong>{lastChange.to}</strong>
-      </span>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={working || locked}
-        onclick={revert}
-      >
-        <Undo2 size={14} strokeWidth={2} />
-        {group ? `Revert ${allCount(groupSize)}` : "Revert"}
-      </Button>
-    </p>
+    <TagChangeNotice
+      from={lastChange.from}
+      to={lastChange.to}
+      groupSize={group ? groupSize : 0}
+      disabled={working || locked}
+      onRevert={revert}
+    />
   {/if}
 
   {#if pinned}
@@ -560,30 +552,6 @@
   .versions strong {
     font-family: monospace;
     color: var(--color-text);
-  }
-
-  .notice {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    margin: 0;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    background: var(--color-accent-muted-bg);
-    color: var(--color-accent);
-    font-size: 0.875rem;
-  }
-
-  .notice.warning {
-    background: var(--color-warning-bg);
-    color: var(--color-warning);
-  }
-
-  .notice-text {
-    flex: 1;
-    min-width: 0;
-    overflow-wrap: break-word;
   }
 
   .row-actions {

@@ -28,10 +28,13 @@
   import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
   import RenameImageModal from "../lib/components/RenameImageModal.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
-  import { getImage, deleteImage, setImagePin } from "../lib/api/images";
+  import TagChangeNotice from "../lib/components/TagChangeNotice.svelte";
+  import UpstreamLink from "../lib/components/UpstreamLink.svelte";
+  import { getImage, deleteImage, setImagePin, updateImageTag } from "../lib/api/images";
   import { getImageGroup } from "../lib/api/imageGroups";
   import { getPullInfo } from "../lib/api/metrics";
   import { errorMessage } from "../lib/api/client";
+  import { copyText } from "../lib/services/clipboard";
   import { toast } from "../lib/services/toast";
   import { updatesCount } from "../lib/services/updatesCount";
   import {
@@ -39,6 +42,7 @@
     applyImageRefreshFields,
   } from "../lib/services/imageRefresh";
   import { allImages, formatDate } from "../lib/utils/format";
+  import { pullCommand as buildPullCommand } from "../lib/utils/pullInfo";
   import type { Image } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
   import type { PullInfo } from "../lib/api/types/metrics";
@@ -68,6 +72,9 @@
   let showActivityModal = $state(false);
 
   let copyError = $state<string | null>(null);
+  let lastChange = $state<{ from: string; to: string } | null>(null);
+  let reverting = $state(false);
+  let revertError = $state<string | null>(null);
 
   let showDeleteConfirm = $state(false);
   let deleting = $state(false);
@@ -115,6 +122,8 @@
     const requestId = ++loadToken;
     loading = true;
     error = null;
+    lastChange = null;
+    revertError = null;
 
     try {
       const [img, info] = await Promise.all([getImage(imageId), getPullInfo()]);
@@ -145,7 +154,7 @@
 
   const pullCommand = $derived(
     image && pullInfo
-      ? `docker pull ${pullInfo.host}:${pullInfo.port}/${image.name}:${pullInfo.virtualTag}`
+      ? buildPullCommand(pullInfo, image.name)
       : "",
   );
 
@@ -158,6 +167,8 @@
   }
 
   async function handleTagUpdated(tag: string) {
+    lastChange = image ? { from: image.tag, to: tag } : null;
+    revertError = null;
     toast.success(
       group
         ? `Tag updated to "${tag}" on ${allImages(groupSize)}.`
@@ -166,7 +177,27 @@
     await refreshImageDetails();
   }
 
+  async function revertTag() {
+    if (!image || !lastChange) return;
+
+    const { from } = lastChange;
+
+    revertError = null;
+    reverting = true;
+
+    try {
+      await updateImageTag(image.id, from, "restore");
+      updatesCount.refresh();
+      await handleTagRestored(from);
+    } catch (err) {
+      revertError = errorMessage(err, "Failed to revert tag");
+    } finally {
+      reverting = false;
+    }
+  }
+
   async function handleTagRestored(tag: string) {
+    lastChange = null;
     toast.success(
       group
         ? `Restored tag to "${tag}" on ${allImages(groupSize)}.`
@@ -190,10 +221,9 @@
   async function copyPullCommand() {
     copyError = null;
 
-    try {
-      await navigator.clipboard.writeText(pullCommand);
+    if (await copyText(pullCommand)) {
       toast.success("Pull command copied to clipboard.");
-    } catch {
+    } else {
       copyError =
         "Could not copy automatically - select and copy the command manually.";
     }
@@ -272,7 +302,12 @@
       <div class="card section-card details-card">
         <h2>Details</h2>
         <DetailRow label="Registry">{image.registry}</DetailRow>
-        <DetailRow label="Repository">{image.repository}</DetailRow>
+        <DetailRow label="Repository">
+          <span class="detail-cell-row">
+            {image.repository}
+            <UpstreamLink registry={image.registry} repository={image.repository} />
+          </span>
+        </DetailRow>
         <DetailRow label="Group">
           <span class="detail-cell-row">
             {#if group}
@@ -330,6 +365,21 @@
                 </Button>
               {/if}
             </span>
+            {#if lastChange && lastChange.to === image.tag}
+              <TagChangeNotice
+                from={lastChange.from}
+                to={lastChange.to}
+                {groupSize}
+                disabled={reverting}
+                onRevert={revertTag}
+              />
+            {/if}
+            {#if revertError}
+              <p class="error">
+                <TriangleAlert size={16} strokeWidth={2} />
+                {revertError}
+              </p>
+            {/if}
             {#if updateBlocked}
               <p class="warning-text">
                 <TriangleAlert size={14} strokeWidth={2} />
