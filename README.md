@@ -54,6 +54,7 @@ docker pull dockvmap.local/myapp:current
 - **Web UI**: Svelte SPA for managing registries, virtual images, and reviewing what changed and when.
 - **Notifications**: digest emails (SMTP) and/or generic webhooks when a tracked image's tags change. Email volume is selectable per account (every tag change / only when an upgrade becomes available / off); webhooks always fire and carry an `updateAvailable` flag.
 - **Optional blob cache**: on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.
+- **Pull tracking**: when each image was last pulled through the proxy and which real tag clients got, with a warning when nobody has pulled since the last tag change. Each proxy token shows when it was last used.
 - **Proxy authentication**: optional HTTP Basic Auth (via issued tokens) in front of the registry proxy itself.
 - **Audit log**: every state-changing action recorded, with resolved client IP and actor.
 

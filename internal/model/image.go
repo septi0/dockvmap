@@ -26,6 +26,9 @@ type Image struct {
 	GroupID            *int64     `json:"groupId,omitempty"`
 	GroupName          *string    `json:"groupName,omitempty"`
 	TagSetHash         string     `json:"-"`
+	LastRequestedAt    *time.Time `json:"lastRequestedAt,omitempty"`
+	LastPulledAt       *time.Time `json:"lastPulledAt,omitempty"`
+	LastPulledTag      *string    `json:"lastPulledTag,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }

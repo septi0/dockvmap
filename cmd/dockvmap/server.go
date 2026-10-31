@@ -106,8 +106,8 @@ func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFun
 	slog.Info("stopped")
 }
 
-func newProxyServer(cfg *config.Config, images *service.Images, ociClient *oci.Client, cache *blobcache.Cache, metrics *proxy.Metrics, proxyTokens *service.ProxyTokens, tlsConfig *tls.Config) *http.Server {
-	var handler http.Handler = proxy.New(cfg, images, ociClient, cache, metrics, proxyTokens)
+func newProxyServer(cfg *config.Config, images *service.Images, ociClient *oci.Client, cache *blobcache.Cache, metrics *proxy.Metrics, proxyTokens *service.ProxyTokens, proxyUsage *service.ProxyUsage, tlsConfig *tls.Config) *http.Server {
+	var handler http.Handler = proxy.New(cfg, images, ociClient, cache, metrics, proxyTokens, proxyUsage)
 
 	if cfg.ProxyAccessLogEnabled() {
 		handler = httpmw.AccessLog("proxy", handler)

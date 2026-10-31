@@ -25,6 +25,7 @@
   import CurrentTagRow from "../lib/components/imageDetails/CurrentTagRow.svelte";
   import UpdateTrackingRow from "../lib/components/imageDetails/UpdateTrackingRow.svelte";
   import PullCommandCard from "../lib/components/imageDetails/PullCommandCard.svelte";
+  import PullActivityRow from "../lib/components/imageDetails/PullActivityRow.svelte";
   import { getImage, deleteImage, setImagePin, updateImageTag } from "../lib/api/images";
   import { getImageGroup } from "../lib/api/imageGroups";
   import { getPullInfo } from "../lib/api/metrics";
@@ -310,6 +311,7 @@
             {formatDate(image.lastChecked, "Never")}
           {/if}
         </DetailRow>
+        <PullActivityRow {image} />
         {#if image.lastCheckError}
           <DetailRow label="Last check error">
             <div class="check-error-cell">

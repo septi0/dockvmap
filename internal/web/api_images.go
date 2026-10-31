@@ -83,6 +83,8 @@ func (w *Web) apiListImages(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.proxyUsage.ApplyToImages(images)
+
 	responses := make([]imageResponse, 0, len(images))
 
 	for _, image := range images {
@@ -397,7 +399,10 @@ func (w *Web) apiGetImage(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiJSON(rw, http.StatusOK, newImageResponse(*image))
+	images := []model.Image{*image}
+	w.proxyUsage.ApplyToImages(images)
+
+	apiJSON(rw, http.StatusOK, newImageResponse(images[0]))
 }
 
 func (w *Web) apiGetImageTags(rw http.ResponseWriter, r *http.Request) {

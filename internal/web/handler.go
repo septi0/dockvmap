@@ -96,6 +96,11 @@ type proxyMetricsHistoryReader interface {
 	Summary(ctx context.Context) (model.ProxyMetricsSummary, error)
 }
 
+type proxyUsageReader interface {
+	ApplyToImages(images []model.Image)
+	ApplyToTokens(tokens []model.ProxyToken)
+}
+
 type cacheUsageReader interface {
 	Usage(ctx context.Context) (used int64, max int64, err error)
 }
@@ -124,6 +129,7 @@ type Web struct {
 	health               healthChecker
 	proxyTokens          proxyTokenService
 	proxyMetricsHistory  proxyMetricsHistoryReader
+	proxyUsage           proxyUsageReader
 	cacheUsage           cacheUsageReader
 	failures             failureLister
 	worker               workerService
@@ -148,6 +154,7 @@ type Dependencies struct {
 	Health               healthChecker
 	ProxyTokens          proxyTokenService
 	ProxyMetricsHistory  proxyMetricsHistoryReader
+	ProxyUsage           proxyUsageReader
 	CacheUsage           cacheUsageReader
 	Failures             failureLister
 	Worker               workerService
@@ -180,6 +187,7 @@ func New(deps Dependencies) (http.Handler, error) {
 		health:               deps.Health,
 		proxyTokens:          deps.ProxyTokens,
 		proxyMetricsHistory:  deps.ProxyMetricsHistory,
+		proxyUsage:           deps.ProxyUsage,
 		cacheUsage:           deps.CacheUsage,
 		failures:             deps.Failures,
 		worker:               deps.Worker,

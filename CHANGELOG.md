@@ -2,6 +2,13 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.6.0 (2026-10-31)
+
+- **Last pulled**: Image details and the Virtual Images list show when each image was last pulled through the proxy, and which real tag clients got. After a tag change, Image details warns until a client pulls the new one, and notes when a client last checked without downloading.
+- **Proxy token last used**: the Proxy Tokens page shows when each token last authenticated a pull, while proxy authentication is enabled.
+
+**Upgrade note:** this release migrates the database and can't be rolled back without a restore. Run `dockvmap -backup <path>` before upgrading. Pulls are tracked from the upgrade on, so images and tokens show nothing until their first pull after it.
+
 ## v1.5.0 (2026-10-31)
 
 - **Digest emails**: each scheduled tag check now sends at most two emails: one listing available updates, and one listing new and removed tags. A group appears as one line, and emails go out once the check has finished.

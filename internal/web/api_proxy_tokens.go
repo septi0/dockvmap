@@ -13,6 +13,8 @@ func (w *Web) apiListProxyTokens(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.proxyUsage.ApplyToTokens(tokens)
+
 	responses := make([]proxyTokenResponse, 0, len(tokens))
 
 	for _, token := range tokens {

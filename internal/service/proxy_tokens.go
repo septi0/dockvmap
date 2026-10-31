@@ -22,7 +22,7 @@ type proxyTokenStore interface {
 	CreateProxyToken(ctx context.Context, label, tokenHash string) (int64, error)
 	ListProxyTokens(ctx context.Context) ([]model.ProxyToken, error)
 	GetProxyTokenByID(ctx context.Context, id int64) (*model.ProxyToken, error)
-	ProxyTokenHashExists(ctx context.Context, tokenHash string) (bool, error)
+	ProxyTokenIDByHash(ctx context.Context, tokenHash string) (int64, bool, error)
 	DeleteProxyToken(ctx context.Context, id int64) (bool, error)
 }
 
@@ -30,13 +30,18 @@ type auditProxyTokenData struct {
 	Label string `json:"label"`
 }
 
+type tokenUsageRecorder interface {
+	RecordTokenUse(tokenID int64)
+}
+
 type ProxyTokens struct {
 	store proxyTokenStore
 	audit auditRecorder
+	usage tokenUsageRecorder
 }
 
-func NewProxyTokens(store proxyTokenStore, audit auditRecorder) *ProxyTokens {
-	return &ProxyTokens{store: store, audit: audit}
+func NewProxyTokens(store proxyTokenStore, audit auditRecorder, usage tokenUsageRecorder) *ProxyTokens {
+	return &ProxyTokens{store: store, audit: audit, usage: usage}
 }
 
 func (p *ProxyTokens) Create(ctx context.Context, label string) (int64, string, error) {
@@ -76,7 +81,15 @@ func (p *ProxyTokens) Verify(ctx context.Context, token string) (bool, error) {
 		return false, nil
 	}
 
-	return p.store.ProxyTokenHashExists(ctx, hashProxyToken(token))
+	id, found, err := p.store.ProxyTokenIDByHash(ctx, hashProxyToken(token))
+
+	if err != nil || !found {
+		return false, err
+	}
+
+	p.usage.RecordTokenUse(id)
+
+	return true, nil
 }
 
 func (p *ProxyTokens) Delete(ctx context.Context, id int64) (bool, error) {

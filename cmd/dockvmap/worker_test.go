@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
+	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
+	"github.com/septi0/dockvmap/internal/store"
 )
 
 func TestFirstRunDelayFor(t *testing.T) {
@@ -188,5 +191,37 @@ func TestTagNotificationsWaitForTheSweep(t *testing.T) {
 
 	if sent, err := runTagNotifications(context.Background(), deps); err != nil || sent != 1 || mail.sent != 1 {
 		t.Fatalf("after sweep: sent = %d, emails = %d, err = %v", sent, mail.sent, err)
+	}
+}
+
+func TestProxyMetricsFlushSavesUsageWithoutCounterChanges(t *testing.T) {
+	db, err := store.New(filepath.Join(t.TempDir(), "test.db"), "")
+
+	if err != nil {
+		t.Fatalf("opening store: %v", err)
+	}
+
+	t.Cleanup(func() { db.Close() })
+
+	ctx := context.Background()
+	tokenID, err := db.CreateProxyToken(ctx, "ci", "hash")
+
+	if err != nil {
+		t.Fatalf("creating token: %v", err)
+	}
+
+	usage := service.NewProxyUsage(db)
+	flusher := &proxyMetricsFlusher{metrics: proxy.NewMetrics(), history: service.NewProxyMetricsHistory(db), usage: usage}
+
+	usage.RecordTokenUse(tokenID)
+
+	if err := flusher.flush(ctx); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	tokens, err := db.ListProxyTokens(ctx)
+
+	if err != nil || len(tokens) != 1 || tokens[0].LastUsedAt == nil {
+		t.Fatalf("token usage not saved: %+v, err = %v", tokens, err)
 	}
 }

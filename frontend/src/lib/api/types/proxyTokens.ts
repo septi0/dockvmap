@@ -2,6 +2,7 @@ export interface ProxyToken {
   id: number
   label: string
   createdAt: string
+  lastUsedAt?: string
 }
 
 export interface CreateProxyTokenParams {

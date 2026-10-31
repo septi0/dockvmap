@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -55,6 +56,7 @@ type workerDeps struct {
 	sessions            *service.Sessions
 	proxyMetrics        *proxy.Metrics
 	proxyMetricsHistory *service.ProxyMetricsHistory
+	proxyUsage          *service.ProxyUsage
 }
 
 func scheduledJobs(deps workerDeps) []scheduledJob {
@@ -184,7 +186,7 @@ func blobCacheJobs(deps workerDeps) []scheduledJob {
 }
 
 func proxyMetricsJobs(deps workerDeps) []scheduledJob {
-	const flushDesc = "Fold in-memory proxy counters into today's stored totals."
+	const flushDesc = "Fold in-memory proxy counters into today's stored totals, and save when images were last pulled and tokens last used."
 	const cleanupDesc = "Drop stored proxy metrics older than 30 days."
 
 	if deps.proxyMetrics == nil || deps.proxyMetricsHistory == nil {
@@ -194,7 +196,7 @@ func proxyMetricsJobs(deps workerDeps) []scheduledJob {
 		}
 	}
 
-	flusher := &proxyMetricsFlusher{metrics: deps.proxyMetrics, history: deps.proxyMetricsHistory}
+	flusher := &proxyMetricsFlusher{metrics: deps.proxyMetrics, history: deps.proxyMetricsHistory, usage: deps.proxyUsage}
 
 	return []scheduledJob{
 		{
@@ -412,10 +414,15 @@ func runImageTagRefresh(ctx context.Context, images *service.Images) (int, error
 type proxyMetricsFlusher struct {
 	metrics *proxy.Metrics
 	history *service.ProxyMetricsHistory
+	usage   *service.ProxyUsage
 	prev    proxy.MetricsSnapshot
 }
 
 func (f *proxyMetricsFlusher) flush(ctx context.Context) error {
+	return errors.Join(f.flushCounters(ctx), f.usage.Flush(ctx))
+}
+
+func (f *proxyMetricsFlusher) flushCounters(ctx context.Context) error {
 	cur := f.metrics.Snapshot()
 
 	delta := model.ProxyMetricsCounters{

@@ -15,7 +15,7 @@
   import { getProxyAuthStatus } from '../lib/api/system'
   import { errorMessage } from '../lib/api/client'
   import { toast } from '../lib/services/toast'
-  import { formatDate } from '../lib/utils/format'
+  import { formatDate, formatRelativeTime } from '../lib/utils/format'
   import type { ProxyToken, CreateProxyTokenResult } from '../lib/api/types/proxyTokens'
 
   let tokens = $state<ProxyToken[]>([])
@@ -135,6 +135,7 @@
           <tr>
             <th>Label</th>
             <th>Created</th>
+            {#if proxyAuthEnabled}<th>Last used</th>{/if}
             <th></th>
           </tr>
         </thead>
@@ -143,6 +144,17 @@
             <tr>
               <td>{token.label}</td>
               <td>{formatDate(token.createdAt)}</td>
+              {#if proxyAuthEnabled}
+                <td>
+                  {#if token.lastUsedAt}
+                    <span title={formatDate(token.lastUsedAt)}
+                      >{formatRelativeTime(token.lastUsedAt)}</span
+                    >
+                  {:else}
+                    <span class="muted" title="No use recorded yet">-</span>
+                  {/if}
+                </td>
+              {/if}
               <td class="table-actions">
                 <button
                   type="button"

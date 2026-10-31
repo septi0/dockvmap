@@ -27,7 +27,7 @@ func (s *Store) CreateProxyToken(ctx context.Context, label, tokenHash string) (
 
 func (s *Store) ListProxyTokens(ctx context.Context) ([]model.ProxyToken, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, label, created_at FROM proxy_tokens ORDER BY created_at DESC
+		SELECT id, label, created_at, last_used_at FROM proxy_tokens ORDER BY created_at DESC
 	`)
 
 	if err != nil {
@@ -41,7 +41,7 @@ func (s *Store) ListProxyTokens(ctx context.Context) ([]model.ProxyToken, error)
 	for rows.Next() {
 		var token model.ProxyToken
 
-		if err := rows.Scan(&token.ID, &token.Label, &token.CreatedAt); err != nil {
+		if err := rows.Scan(&token.ID, &token.Label, &token.CreatedAt, &token.LastUsedAt); err != nil {
 			return nil, fmt.Errorf("scanning proxy token row: %w", err)
 		}
 
@@ -59,8 +59,8 @@ func (s *Store) GetProxyTokenByID(ctx context.Context, id int64) (*model.ProxyTo
 	var token model.ProxyToken
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, label, created_at FROM proxy_tokens WHERE id = ?
-	`, id).Scan(&token.ID, &token.Label, &token.CreatedAt)
+		SELECT id, label, created_at, last_used_at FROM proxy_tokens WHERE id = ?
+	`, id).Scan(&token.ID, &token.Label, &token.CreatedAt, &token.LastUsedAt)
 
 	if isNoRows(err) {
 		return nil, nil
@@ -73,18 +73,22 @@ func (s *Store) GetProxyTokenByID(ctx context.Context, id int64) (*model.ProxyTo
 	return &token, nil
 }
 
-func (s *Store) ProxyTokenHashExists(ctx context.Context, tokenHash string) (bool, error) {
-	var exists bool
+func (s *Store) ProxyTokenIDByHash(ctx context.Context, tokenHash string) (int64, bool, error) {
+	var id int64
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT EXISTS(SELECT 1 FROM proxy_tokens WHERE token_hash = ?)
-	`, tokenHash).Scan(&exists)
+		SELECT id FROM proxy_tokens WHERE token_hash = ?
+	`, tokenHash).Scan(&id)
 
-	if err != nil {
-		return false, fmt.Errorf("checking proxy token: %w", err)
+	if isNoRows(err) {
+		return 0, false, nil
 	}
 
-	return exists, nil
+	if err != nil {
+		return 0, false, fmt.Errorf("checking proxy token: %w", err)
+	}
+
+	return id, true, nil
 }
 
 func (s *Store) DeleteProxyToken(ctx context.Context, id int64) (bool, error) {

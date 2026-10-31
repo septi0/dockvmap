@@ -3,7 +3,8 @@ package model
 import "time"
 
 type ProxyToken struct {
-	ID        int64
-	Label     string
-	CreatedAt time.Time
+	ID         int64
+	Label      string
+	CreatedAt  time.Time
+	LastUsedAt *time.Time
 }

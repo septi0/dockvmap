@@ -71,7 +71,8 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 	}
 
 	health := service.NewHealth(db)
-	proxyTokens := service.NewProxyTokens(db, audit)
+	proxyUsage := service.NewProxyUsage(db)
+	proxyTokens := service.NewProxyTokens(db, audit, proxyUsage)
 	worker := service.NewWorker(db)
 	proxyMetricsHistory := service.NewProxyMetricsHistory(db)
 	metrics := proxy.NewMetrics()
@@ -96,7 +97,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		return err
 	}
 
-	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens, tlsConfig)
+	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens, proxyUsage, tlsConfig)
 
 	wDeps := workerDeps{
 		cfg:                 cfg,
@@ -109,6 +110,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		sessions:            sessions,
 		proxyMetrics:        metrics,
 		proxyMetricsHistory: proxyMetricsHistory,
+		proxyUsage:          proxyUsage,
 	}
 
 	jobs := scheduledJobs(wDeps)
@@ -126,6 +128,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Health:               health,
 		ProxyTokens:          proxyTokens,
 		ProxyMetricsHistory:  proxyMetricsHistory,
+		ProxyUsage:           proxyUsage,
 		Failures:             failureLog,
 		Worker:               worker,
 		LoginRateLimitWindow: loginRateLimitWindow,

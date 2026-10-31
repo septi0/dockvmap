@@ -36,7 +36,7 @@
     type ImageStatusFilter,
   } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
-  import { formatDate } from "../lib/utils/format";
+  import { formatDate, formatRelativeTime } from "../lib/utils/format";
   import { writeListQuery } from "../lib/utils/listQuery";
   import { createListView } from "../lib/utils/listView.svelte";
 
@@ -259,6 +259,7 @@
             <th class="phone-hidden">Repository</th>
             <th>Tag</th>
             <th class="phone-hidden">Last checked</th>
+            <th class="phone-hidden pulled-cell">Last pulled</th>
             <th>Update</th>
             {#if pullInfo}<th class="phone-hidden" aria-label="Copy pull command"></th>{/if}
           </tr>
@@ -299,6 +300,15 @@
               <td>{image.tag}</td>
               <td class="phone-hidden">
                 {formatDate(image.lastChecked, "Never")}
+              </td>
+              <td class="phone-hidden pulled-cell">
+                {#if image.lastPulledAt}
+                  <span title={`${formatDate(image.lastPulledAt)} (${image.lastPulledTag})`}
+                    >{formatRelativeTime(image.lastPulledAt)}</span
+                  >
+                {:else}
+                  <span class="muted" title="No pull recorded yet">-</span>
+                {/if}
               </td>
               <td>
                 {#if image.pinned}
@@ -411,6 +421,10 @@
   .group-label-name {
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pulled-cell {
     white-space: nowrap;
   }
 

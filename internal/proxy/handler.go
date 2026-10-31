@@ -31,6 +31,10 @@ type tokenVerifier interface {
 	Verify(ctx context.Context, token string) (bool, error)
 }
 
+type usageRecorder interface {
+	RecordImageRequest(imageID int64, tag string, pulled bool)
+}
+
 type Proxy struct {
 	cfg          *config.Config
 	images       imageResolver
@@ -39,9 +43,10 @@ type Proxy struct {
 	cache        *blobcache.Cache
 	metrics      *Metrics
 	tokens       tokenVerifier
+	usage        usageRecorder
 }
 
-func New(cfg *config.Config, images imageResolver, client *oci.Client, cache *blobcache.Cache, metrics *Metrics, tokens tokenVerifier) *Proxy {
+func New(cfg *config.Config, images imageResolver, client *oci.Client, cache *blobcache.Cache, metrics *Metrics, tokens tokenVerifier, usage usageRecorder) *Proxy {
 	if metrics == nil {
 		metrics = NewMetrics()
 	}
@@ -58,6 +63,7 @@ func New(cfg *config.Config, images imageResolver, client *oci.Client, cache *bl
 		cache:        cache,
 		metrics:      metrics,
 		tokens:       tokens,
+		usage:        usage,
 	}
 }
 
@@ -202,6 +208,7 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 			p.metrics.cacheHits.Add(1)
 			setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "hit" })
 			slog.Debug("manifest served from cache", "method", r.Method, "name", name, "reference", reference)
+			p.recordManifestRequest(r, img, upstreamRef)
 			return
 		}
 
@@ -210,7 +217,20 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 	}
 
 	slog.Debug("manifest fetched from upstream", "method", r.Method, "name", name, "reference", reference)
-	p.proxyRequest(w, r, upstreamURL, upstreamRef, "manifest", img.Registry, path)
+
+	if p.proxyRequest(w, r, upstreamURL, upstreamRef, "manifest", img.Registry, path) {
+		p.recordManifestRequest(r, img, upstreamRef)
+	}
+}
+
+func (p *Proxy) recordManifestRequest(r *http.Request, img *model.Image, upstreamRef string) {
+	tag := upstreamRef
+
+	if blobcache.IsDigest(upstreamRef) {
+		tag = img.Tag
+	}
+
+	p.usage.RecordImageRequest(img.ID, tag, r.Method == http.MethodGet)
 }
 
 func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest string) {
@@ -263,13 +283,13 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest 
 	p.proxyRequest(w, r, upstreamURL, digest, "blob", img.Registry, path)
 }
 
-func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL, digest, resource, registryName, repository string) {
+func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL, digest, resource, registryName, repository string) bool {
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, nil)
 
 	if err != nil {
 		slog.Error("creating upstream request failed", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
+		return false
 	}
 
 	for _, h := range []string{"Accept", "Accept-Encoding", "Range"} {
@@ -285,7 +305,7 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL
 		p.metrics.upstreamFailures.Add(1)
 		slog.Error("upstream request failed", "error", err)
 		http.Error(w, "bad gateway", http.StatusBadGateway)
-		return
+		return false
 	}
 
 	defer resp.Body.Close()
@@ -296,14 +316,14 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL
 		}
 
 		writeUpstreamOCIError(w, resp, resource)
-		return
+		return false
 	}
 
 	p.copyResponseHeaders(w, resp)
 	w.WriteHeader(resp.StatusCode)
 
 	if r.Method == http.MethodHead {
-		return
+		return true
 	}
 
 	if p.cache != nil && resp.StatusCode == http.StatusOK && r.Header.Get("Range") == "" && resp.Header.Get("Content-Encoding") == "" {
@@ -324,12 +344,16 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL
 			slog.Warn("upstream response stream failed", "error", outcome.CopyErr)
 		}
 
-		return
+		return outcome.CopyErr == nil
 	}
 
 	if _, err := io.Copy(w, resp.Body); err != nil {
 		slog.Warn("upstream response stream failed", "error", err)
+
+		return false
 	}
+
+	return true
 }
 
 func (p *Proxy) copyResponseHeaders(w http.ResponseWriter, resp *http.Response) {

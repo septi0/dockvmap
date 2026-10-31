@@ -61,6 +61,9 @@ type imageResponse struct {
 	Pinned             bool       `json:"pinned"`
 	RefreshStatus      string     `json:"refreshStatus"`
 	Group              *imageRef  `json:"group,omitempty"`
+	LastRequestedAt    *time.Time `json:"lastRequestedAt,omitempty"`
+	LastPulledAt       *time.Time `json:"lastPulledAt,omitempty"`
+	LastPulledTag      *string    `json:"lastPulledTag,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
@@ -91,6 +94,9 @@ func newImageResponse(image model.Image) imageResponse {
 		Pinned:             image.Pinned,
 		RefreshStatus:      image.RefreshStatus,
 		Group:              group,
+		LastRequestedAt:    image.LastRequestedAt,
+		LastPulledAt:       image.LastPulledAt,
+		LastPulledTag:      image.LastPulledTag,
 		CreatedAt:          image.CreatedAt,
 		UpdatedAt:          image.UpdatedAt,
 	}
@@ -409,16 +415,18 @@ type createProxyTokenRequest struct {
 }
 
 type proxyTokenResponse struct {
-	ID        int64     `json:"id"`
-	Label     string    `json:"label"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID         int64      `json:"id"`
+	Label      string     `json:"label"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
 }
 
 func newProxyTokenResponse(token model.ProxyToken) proxyTokenResponse {
 	return proxyTokenResponse{
-		ID:        token.ID,
-		Label:     token.Label,
-		CreatedAt: token.CreatedAt,
+		ID:         token.ID,
+		Label:      token.Label,
+		CreatedAt:  token.CreatedAt,
+		LastUsedAt: token.LastUsedAt,
 	}
 }
 
