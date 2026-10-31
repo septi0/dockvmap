@@ -4,16 +4,8 @@
   import Package from "@lucide/svelte/icons/package";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
-  import ArrowUp from "@lucide/svelte/icons/arrow-up";
-  import Layers from "@lucide/svelte/icons/layers";
-  import Plus from "@lucide/svelte/icons/plus";
-  import Settings2 from "@lucide/svelte/icons/settings-2";
-  import Pin from "@lucide/svelte/icons/pin";
-  import PinOff from "@lucide/svelte/icons/pin-off";
   import History from "@lucide/svelte/icons/history";
   import Activity from "@lucide/svelte/icons/activity";
-  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-  import Copy from "@lucide/svelte/icons/copy";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
@@ -28,13 +20,15 @@
   import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
   import RenameImageModal from "../lib/components/RenameImageModal.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
-  import TagChangeNotice from "../lib/components/TagChangeNotice.svelte";
   import UpstreamLink from "../lib/components/UpstreamLink.svelte";
+  import GroupRow from "../lib/components/imageDetails/GroupRow.svelte";
+  import CurrentTagRow from "../lib/components/imageDetails/CurrentTagRow.svelte";
+  import UpdateTrackingRow from "../lib/components/imageDetails/UpdateTrackingRow.svelte";
+  import PullCommandCard from "../lib/components/imageDetails/PullCommandCard.svelte";
   import { getImage, deleteImage, setImagePin, updateImageTag } from "../lib/api/images";
   import { getImageGroup } from "../lib/api/imageGroups";
   import { getPullInfo } from "../lib/api/metrics";
   import { errorMessage } from "../lib/api/client";
-  import { copyText } from "../lib/services/clipboard";
   import { toast } from "../lib/services/toast";
   import { updatesCount } from "../lib/services/updatesCount";
   import {
@@ -42,7 +36,6 @@
     applyImageRefreshFields,
   } from "../lib/services/imageRefresh";
   import { allImages, formatDate } from "../lib/utils/format";
-  import { pullCommand as buildPullCommand } from "../lib/utils/pullInfo";
   import type { Image } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
   import type { PullInfo } from "../lib/api/types/metrics";
@@ -71,7 +64,6 @@
   let showHistoryModal = $state(false);
   let showActivityModal = $state(false);
 
-  let copyError = $state<string | null>(null);
   let lastChange = $state<{ from: string; to: string } | null>(null);
   let reverting = $state(false);
   let revertError = $state<string | null>(null);
@@ -89,15 +81,7 @@
   let modalReloadToken = $state(0);
 
   let groupSize = $derived(group?.images.length ?? 0);
-  let updateAvailable = $derived(
-    group ? group.updateAvailable : (image?.updateAvailable ?? false),
-  );
-  let updateAvailableTag = $derived(
-    group ? group.updateAvailableTag : image?.updateAvailableTag,
-  );
-  let updateBlocked = $derived(!!group && updateAvailable && !updateAvailableTag);
   let pinned = $derived(group ? group.pinned : (image?.pinned ?? false));
-  let scopeLabel = $derived(group ? "group" : "image");
 
   const imageRefresh = createImageRefresh(() => imageId, {
     onResult: (fresh) => {
@@ -151,12 +135,6 @@
     stopSettledListener();
     imageRefresh.destroy();
   });
-
-  const pullCommand = $derived(
-    image && pullInfo
-      ? buildPullCommand(pullInfo, image.name)
-      : "",
-  );
 
   async function refreshImageDetails() {
     try {
@@ -216,17 +194,6 @@
     toast.success(`Group "${name}" deleted.`);
     await refreshImageDetails();
     updatesCount.refresh();
-  }
-
-  async function copyPullCommand() {
-    copyError = null;
-
-    if (await copyText(pullCommand)) {
-      toast.success("Pull command copied to clipboard.");
-    } else {
-      copyError =
-        "Could not copy automatically - select and copy the command manually.";
-    }
   }
 
   function cancelDelete() {
@@ -308,151 +275,30 @@
             <UpstreamLink registry={image.registry} repository={image.repository} />
           </span>
         </DetailRow>
-        <DetailRow label="Group">
-          <span class="detail-cell-row">
-            {#if group}
-              <span class="group-name">
-                <Layers size={14} strokeWidth={2} />
-                {group.name}
-              </span>
-              <a
-                class="group-size"
-                href={`/images?group=${group.id}`}
-                use:link>{groupSize} images</a
-              >
-              <Button
-                variant="secondary"
-                size="sm"
-                onclick={() => (showGroupModal = true)}
-              >
-                <Settings2 size={14} strokeWidth={2} />
-                Manage group
-              </Button>
-            {:else}
-              <span class="muted">Not in a group</span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onclick={() => (showGroupModal = true)}
-              >
-                <Plus size={14} strokeWidth={2} />
-                Add to group
-              </Button>
-            {/if}
-          </span>
-        </DetailRow>
-        <DetailRow label="Current tag">
-          <div class="detail-cell">
-            <span class="detail-cell-row">
-              <span class="tag-value">{image.tag}</span>
-              {#if updateAvailable && !updateBlocked}
-                <Button
-                  variant="warning"
-                  size="sm"
-                  onclick={() => (showTagModal = true)}
-                >
-                  <ArrowUp size={14} strokeWidth={2.5} />
-                  {group ? "Update group" : "Update"}
-                </Button>
-              {:else}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onclick={() => (showTagModal = true)}
-                >
-                  <ArrowLeftRight size={14} strokeWidth={2} />
-                  {group ? "Change group tag" : "Change tag"}
-                </Button>
-              {/if}
-            </span>
-            {#if lastChange && lastChange.to === image.tag}
-              <TagChangeNotice
-                from={lastChange.from}
-                to={lastChange.to}
-                {groupSize}
-                disabled={reverting}
-                onRevert={revertTag}
-              />
-            {/if}
-            {#if revertError}
-              <p class="error">
-                <TriangleAlert size={16} strokeWidth={2} />
-                {revertError}
-              </p>
-            {/if}
-            {#if updateBlocked}
-              <p class="warning-text">
-                <TriangleAlert size={14} strokeWidth={2} />
-                {#if group?.partialTag}
-                  Update blocked: {group.partialTag.tag} is missing from
-                  {group.partialTag.missing.join(", ")}.
-                {:else}
-                  Update blocked: no newer tag is available on {allImages(groupSize)}.
-                {/if}
-              </p>
-            {:else if updateAvailable}
-              <p class="warning-text">
-                <TriangleAlert size={14} strokeWidth={2} />
-                {#if updateAvailableTag}
-                  Update available: {image.tag} &rarr; {updateAvailableTag}
-                {:else}
-                  A newer tag is available in this tag's family.
-                {/if}
-              </p>
-            {/if}
-            {#if group}
-              <p class="tracking-hint muted">
-                Shared by {allImages(groupSize)} in this group.
-              </p>
-            {/if}
-          </div>
-        </DetailRow>
-        <DetailRow label="Update tracking">
-          <div class="detail-cell">
-            <span class="detail-cell-row">
-              <span class="tracking-state" class:is-pinned={pinned}>
-                {#if pinned}
-                  <Pin size={14} strokeWidth={2} />
-                  Pinned to the current tag
-                {:else}
-                  Tracking new versions
-                {/if}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={pinning}
-                onclick={togglePin}
-              >
-                {#if pinned}
-                  <PinOff size={14} strokeWidth={2} />
-                  Unpin {scopeLabel}
-                {:else}
-                  <Pin size={14} strokeWidth={2} />
-                  Pin {scopeLabel}
-                {/if}
-              </Button>
-            </span>
-            <p class="tracking-hint muted">
-              {#if group}
-                Pinning applies to {allImages(groupSize)} in this group.
-              {:else if image.pinned}
-                Upstream tags are still fetched, but newer versions aren't
-                flagged as an available update or sent in tag notification
-                emails.
-              {:else}
-                Newer tags in this tag's family are flagged as an available
-                update and included in tag notification emails.
-              {/if}
-            </p>
-            {#if pinError}
-              <p class="error">
-                <TriangleAlert size={16} strokeWidth={2} />
-                {pinError}
-              </p>
-            {/if}
-          </div>
-        </DetailRow>
+        <GroupRow
+          {group}
+          {groupSize}
+          onManage={() => (showGroupModal = true)}
+        />
+        <CurrentTagRow
+          {image}
+          {group}
+          {groupSize}
+          {lastChange}
+          {reverting}
+          {revertError}
+          onChangeTag={() => (showTagModal = true)}
+          onRevert={revertTag}
+        />
+        <UpdateTrackingRow
+          {image}
+          {group}
+          {groupSize}
+          {pinned}
+          {pinning}
+          {pinError}
+          onTogglePin={togglePin}
+        />
         <DetailRow label="Last checked">
           {#if refreshStatus === "stale"}
             <span class="check-stale">
@@ -501,44 +347,7 @@
         </div>
       </div>
 
-      <div class="card section-card">
-        <h2>Pull command</h2>
-        <p class="section-hint muted">
-          Clients pull this virtual image using a stable tag that always
-          resolves to the version you choose above.
-        </p>
-
-        <p class="field-hint muted">
-          {#if pullInfo?.hostConfigured}
-            Host pinned via the <code class="inline-code"
-              >proxy_public_host</code
-            > config option.
-          {:else}
-            Host based on the address used to reach this page. Set <code
-              class="inline-code">proxy_public_host</code
-            > in config if clients reach the registry through a different hostname.
-          {/if}
-        </p>
-
-        <div class="command-row">
-          <code class="command">{pullCommand}</code>
-          <button
-            type="button"
-            class="icon-button bordered"
-            onclick={copyPullCommand}
-            aria-label="Copy pull command"
-          >
-            <Copy size={16} strokeWidth={1.75} />
-          </button>
-        </div>
-
-        {#if copyError}
-          <p class="error">
-            <TriangleAlert size={16} strokeWidth={2} />
-            {copyError}
-          </p>
-        {/if}
-      </div>
+      <PullCommandCard {pullInfo} imageName={image.name} />
 
       <div class="card section-card danger-card">
         <h2>Danger zone</h2>
@@ -647,44 +456,6 @@
 
   .back-link:hover {
     color: var(--color-text);
-  }
-
-  .field-hint {
-    margin: var(--space-1) 0 var(--space-4);
-    font-size: 0.8125rem;
-  }
-
-  .group-name {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    font-weight: 500;
-  }
-
-  .group-size {
-    color: var(--color-text-muted);
-    font-size: 0.8125rem;
-  }
-
-  .group-size:hover {
-    color: var(--color-text);
-  }
-
-  .tracking-state {
-    font-weight: 500;
-  }
-
-  .tracking-state.is-pinned {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    font-weight: 600;
-    color: var(--color-success);
-  }
-
-  .tracking-hint {
-    margin: 0;
-    font-size: 0.8125rem;
   }
 
   .details-card :global(.detail-row:has(+ .record-actions)) {

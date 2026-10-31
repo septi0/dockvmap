@@ -2,8 +2,6 @@
   import { onDestroy, onMount, untrack } from "svelte";
   import Pin from "@lucide/svelte/icons/pin";
   import PinOff from "@lucide/svelte/icons/pin-off";
-  import Layers from "@lucide/svelte/icons/layers";
-  import Settings2 from "@lucide/svelte/icons/settings-2";
   import Tags from "@lucide/svelte/icons/tags";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
@@ -15,6 +13,9 @@
   import TagChangeNotice from "./TagChangeNotice.svelte";
   import TagFamilyPicker from "./TagFamilyPicker.svelte";
   import UpstreamLink from "./UpstreamLink.svelte";
+  import GroupBlockedNotice from "./updates/GroupBlockedNotice.svelte";
+  import GroupIdentity from "./updates/GroupIdentity.svelte";
+  import GroupMembers from "./updates/GroupMembers.svelte";
   import {
     getImage,
     getNewerImageTags,
@@ -219,14 +220,12 @@
   <header class="row-head">
     <div class="identity">
       {#if group}
-        <span class="group-icon"><Layers size={16} strokeWidth={2} /></span>
-        <button
-          type="button"
-          class="row-link group-link"
-          onclick={() => (showGroupModal = true)}>{group.name}</button
-        >
-        <span class="badge">Group · {groupSize} images</span>
-        <UpstreamLink registry={image.registry} repository={image.repository} />
+        <GroupIdentity
+          {group}
+          {image}
+          {groupSize}
+          onOpenGroup={() => (showGroupModal = true)}
+        />
       {:else}
         <a class="row-link" href={`#/images/${image.id}${detailsQuery}`}
           >{image.name}</a
@@ -246,22 +245,7 @@
   </header>
 
   {#if group}
-    <div class="members">
-      {#each group.images as member (member.id)}
-        {@const missing =
-          blocked && group.partialTag?.missing.includes(member.name)}
-        <a
-          class="member"
-          class:missing
-          href={`#/images/${member.id}${detailsQuery}`}
-        >
-          {#if missing}
-            <TriangleAlert size={12} strokeWidth={2} />
-          {/if}
-          {member.name}
-        </a>
-      {/each}
-    </div>
+    <GroupMembers {group} {blocked} {detailsQuery} />
   {/if}
 
   {#if lastChange}
@@ -292,32 +276,12 @@
       </Button>
     </p>
   {:else if blocked}
-    <p class="notice warning">
-      <TriangleAlert size={14} strokeWidth={2} />
-      <span class="notice-text">
-        <strong>Update blocked.</strong>
-        {#if group?.partialTag}
-          <span class="tag-name">{group.partialTag.tag}</span> is on
-          {groupSize - group.partialTag.missing.length} of {groupSize} images.
-          <strong>{group.partialTag.missing.join(", ")}</strong>
-          {group.partialTag.missing.length === 1 ? "doesn't" : "don't"} have it.
-          Remove {group.partialTag.missing.length === 1 ? "that image" : "those images"}
-          from the group to continue, or wait for the release to reach
-          {group.partialTag.missing.length === 1 ? "it" : "them"}.
-        {:else}
-          No newer tag is available on {allImages(groupSize)}.
-        {/if}
-      </span>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={working || locked}
-        onclick={() => (showGroupModal = true)}
-      >
-        <Settings2 size={14} strokeWidth={2} />
-        Manage group
-      </Button>
-    </p>
+    <GroupBlockedNotice
+      {group}
+      {groupSize}
+      disabled={working || locked}
+      onManage={() => (showGroupModal = true)}
+    />
 
     <div class="row-actions">
       {#if locked}
@@ -471,53 +435,6 @@
 
   .row-link {
     font-weight: 500;
-  }
-
-  .group-link {
-    padding: 0;
-    border: none;
-    background: none;
-    font: inherit;
-    font-weight: 500;
-    cursor: pointer;
-  }
-
-  .group-icon {
-    display: inline-flex;
-    align-self: center;
-    color: var(--color-text-muted);
-  }
-
-  .members {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-
-  .member {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    max-width: 100%;
-    overflow-wrap: break-word;
-    padding: 1px var(--space-2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-bg);
-    color: var(--color-text-muted);
-    font-size: 0.8125rem;
-    text-decoration: none;
-  }
-
-  .member:hover {
-    border-color: var(--color-border-strong);
-    color: var(--color-text);
-  }
-
-  .member.missing {
-    border-color: var(--color-warning);
-    background: var(--color-warning-bg);
-    color: var(--color-warning);
   }
 
   .tag-name {
