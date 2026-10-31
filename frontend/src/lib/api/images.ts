@@ -13,6 +13,7 @@ import type {
 } from './types/images'
 
 export const IMAGES_PAGE_SIZE = 25
+export const IMAGES_MAX_LIMIT = 200
 
 export function listImages(params: ImageListParams) {
   return api.get<ListImagesResponse>(`/images${buildQuery(params)}`)

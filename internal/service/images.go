@@ -53,6 +53,15 @@ type imageStore interface {
 	TryStartImageRefresh(ctx context.Context, imageId int64) (bool, error)
 	SetImageRefreshStatus(ctx context.Context, imageId int64, status string) error
 	ResetRunningImageRefreshes(ctx context.Context) (int64, error)
+	ListImageGroups(ctx context.Context, filters model.ImageGroupListFilters) ([]model.ImageGroup, error)
+	CountImageGroups(ctx context.Context, filters model.ImageGroupListFilters) (int64, error)
+	GetImageGroupByID(ctx context.Context, groupId int64) (*model.ImageGroup, error)
+	ListImageGroupMembers(ctx context.Context, groupId int64) ([]model.Image, error)
+	CreateImageGroup(ctx context.Context, tx store.DBTX, name string) (int64, error)
+	UpdateImageGroupName(ctx context.Context, tx store.DBTX, groupId int64, name string) (bool, error)
+	DeleteImageGroup(ctx context.Context, groupId int64) (bool, error)
+	DeleteImageGroupIfEmpty(ctx context.Context, groupId int64) error
+	UpdateImageGroupMembership(ctx context.Context, tx store.DBTX, imageId int64, groupId *int64) (bool, error)
 	UpdateImageTag(ctx context.Context, tx store.DBTX, imageId int64, tag string) (bool, error)
 	UpdateImageName(ctx context.Context, imageId int64, name string) (bool, error)
 	UpdateImagePinned(ctx context.Context, tx store.DBTX, imageId int64, pinned bool) (bool, error)
@@ -94,8 +103,9 @@ func newImageRefreshLocker() *imageRefreshLocker {
 	}
 }
 
-func (l *imageRefreshLocker) lock(imageID int64) func() {
+func (l *imageRefreshLocker) acquire(imageID int64) *imageRefreshLock {
 	l.mu.Lock()
+	defer l.mu.Unlock()
 
 	lock, ok := l.locks[imageID]
 
@@ -106,22 +116,79 @@ func (l *imageRefreshLocker) lock(imageID int64) func() {
 
 	lock.refs++
 
-	l.mu.Unlock()
+	return lock
+}
+
+func (l *imageRefreshLocker) release(imageID int64, lock *imageRefreshLock) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	lock.refs--
+
+	if lock.refs == 0 {
+		delete(l.locks, imageID)
+	}
+}
+
+func (l *imageRefreshLocker) lock(imageID int64) func() {
+	lock := l.acquire(imageID)
 
 	lock.mu.Lock()
 
 	return func() {
 		lock.mu.Unlock()
 
-		l.mu.Lock()
+		l.release(imageID, lock)
+	}
+}
 
-		lock.refs--
+func (l *imageRefreshLocker) tryLockAll(imageIDs []int64) (func(), bool) {
+	unlocks := make([]func(), 0, len(imageIDs))
 
-		if lock.refs == 0 {
-			delete(l.locks, imageID)
+	unlockAll := func() {
+		for _, unlock := range unlocks {
+			unlock()
+		}
+	}
+
+	for _, imageID := range imageIDs {
+		lock := l.acquire(imageID)
+
+		if !lock.mu.TryLock() {
+			l.release(imageID, lock)
+			unlockAll()
+
+			return nil, false
 		}
 
-		l.mu.Unlock()
+		unlocks = append(unlocks, func() {
+			lock.mu.Unlock()
+
+			l.release(imageID, lock)
+		})
+	}
+
+	return unlockAll, true
+}
+
+func (l *imageRefreshLocker) lockAll(ctx context.Context, imageIDs []int64) (func(), error) {
+	ctx, cancel := context.WithTimeout(ctx, imageGroupLockWait)
+	defer cancel()
+
+	ticker := time.NewTicker(imageGroupLockRetryInterval)
+	defer ticker.Stop()
+
+	for {
+		if unlock, ok := l.tryLockAll(imageIDs); ok {
+			return unlock, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ErrImageGroupBusy
+
+		case <-ticker.C:
+		}
 	}
 }
 
@@ -133,7 +200,14 @@ type Images struct {
 	failures      failureRecorder
 	tagFilter     tagFilterer
 	refreshLocker *imageRefreshLocker
+	tagChanged    func(names ...string)
 	bgCtx         context.Context
+}
+
+type imageChange struct {
+	image              model.Image
+	updateAvailable    bool
+	updateAvailableTag string
 }
 
 type RefreshTagsOpts struct {
@@ -153,6 +227,7 @@ type auditImageTagChangedData struct {
 	Name   string `json:"name"`
 	OldTag string `json:"oldTag"`
 	NewTag string `json:"newTag"`
+	Group  string `json:"group,omitempty"`
 }
 
 type auditImageRenamedData struct {
@@ -163,6 +238,7 @@ type auditImageRenamedData struct {
 type auditImagePinChangedData struct {
 	Name   string `json:"name"`
 	Pinned bool   `json:"pinned"`
+	Group  string `json:"group,omitempty"`
 }
 
 type ImagesDeps struct {
@@ -186,6 +262,10 @@ func NewImages(deps ImagesDeps) *Images {
 		refreshLocker: newImageRefreshLocker(),
 		bgCtx:         deps.BgCtx,
 	}
+}
+
+func (i *Images) OnTagChanged(fn func(names ...string)) {
+	i.tagChanged = fn
 }
 
 func (i *Images) Create(ctx context.Context, img model.Image, availableTags []string) error {
@@ -338,6 +418,12 @@ func (i *Images) Delete(ctx context.Context, imageId int64) (bool, error) {
 		return deleted, err
 	}
 
+	if image.GroupID != nil {
+		if err := i.store.DeleteImageGroupIfEmpty(ctx, *image.GroupID); err != nil {
+			slog.Error("removing empty image group failed", "group", *image.GroupID, "error", err)
+		}
+	}
+
 	recordAudit(ctx, i.audit, AuditTypeImageDeleted, auditImageData{
 		Name:       image.Name,
 		Registry:   image.Registry,
@@ -353,9 +439,6 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string, sourc
 		return fmt.Errorf("%w: id must be positive", ErrInvalidImage)
 	}
 
-	unlock := i.refreshLocker.lock(imageId)
-	defer unlock()
-
 	tag = strings.TrimSpace(tag)
 
 	if tag == "" {
@@ -366,33 +449,54 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string, sourc
 		return fmt.Errorf("%w: tag must be a valid tag", ErrInvalidImage)
 	}
 
-	image, err := i.store.GetImageByID(ctx, imageId)
+	images, unlock, err := i.lockImageScope(ctx, imageId)
 
 	if err != nil {
 		return err
 	}
 
-	if image == nil {
-		return fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
+	defer unlock()
+
+	return i.applyTag(ctx, images, tag, source)
+}
+
+func (i *Images) applyTag(ctx context.Context, images []model.Image, tag string, source model.TagHistorySource) error {
+	changes := make([]imageChange, 0, len(images))
+	missing := make([]string, 0)
+
+	for _, image := range images {
+		if image.Tag == tag {
+			continue
+		}
+
+		allTags, err := i.store.GetImageTags(ctx, image.ID)
+
+		if err != nil {
+			return fmt.Errorf("checking available tags for %q: %w", image.Name, err)
+		}
+
+		if !hasImageTag(allTags, tag) {
+			missing = append(missing, image.Name)
+
+			continue
+		}
+
+		updateAvailable, updateAvailableTag := effectiveUpdateAvailable(image.Pinned, allTags, tag)
+
+		changes = append(changes, imageChange{image, updateAvailable, updateAvailableTag})
 	}
 
-	if tag == image.Tag {
+	if len(missing) > 0 {
+		if images[0].GroupID == nil {
+			return fmt.Errorf("%w: %q", ErrTagUnavailable, tag)
+		}
+
+		return &GroupTagUnavailableError{Tag: tag, Images: missing}
+	}
+
+	if len(changes) == 0 {
 		return nil
 	}
-
-	if image_tag, err := i.store.GetImageTag(ctx, imageId, tag); err != nil {
-		return fmt.Errorf("checking available tags for %q: %w", image.Name, err)
-	} else if image_tag == nil {
-		return fmt.Errorf("%w: %q", ErrTagUnavailable, tag)
-	}
-
-	allTags, err := i.store.GetImageTags(ctx, imageId)
-
-	if err != nil {
-		return fmt.Errorf("checking available tags for %q: %w", image.Name, err)
-	}
-
-	updateAvailable, updateAvailableTag := effectiveUpdateAvailable(image.Pinned, allTags, tag)
 
 	tx, err := i.store.BeginTx(ctx)
 
@@ -402,33 +506,66 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string, sourc
 
 	defer tx.Rollback()
 
-	updated, err := i.store.UpdateImageTag(ctx, tx, imageId, tag)
+	for _, change := range changes {
+		if err := i.writeTag(ctx, tx, change.image, tag, source); err != nil {
+			return err
+		}
+
+		if err := i.writeUpdateAvailable(ctx, tx, &change.image, change.updateAvailable, change.updateAvailableTag); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	names := make([]string, 0, len(changes))
+
+	for _, change := range changes {
+		names = append(names, change.image.Name)
+
+		i.auditTagChange(ctx, change.image, tag)
+	}
+
+	i.notifyTagChanged(names...)
+
+	return nil
+}
+
+func (i *Images) writeTag(ctx context.Context, tx store.Transaction, image model.Image, tag string, source model.TagHistorySource) error {
+	updated, err := i.store.UpdateImageTag(ctx, tx, image.ID, tag)
 
 	if err != nil {
 		return err
 	}
 
 	if !updated {
-		return fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
+		return fmt.Errorf("%w: %d", ErrImageNotFound, image.ID)
 	}
 
 	previousTag := image.Tag
 
-	if err := i.store.InsertImageTagHistory(ctx, tx, imageId, tag, &previousTag, source); err != nil {
+	if err := i.store.InsertImageTagHistory(ctx, tx, image.ID, tag, &previousTag, source); err != nil {
 		return fmt.Errorf("recording tag history for %q: %w", image.Name, err)
 	}
 
-	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
-		return err
-	}
+	return nil
+}
 
+func (i *Images) auditTagChange(ctx context.Context, image model.Image, tag string) {
 	recordAudit(ctx, i.audit, AuditTypeImageTagChanged, auditImageTagChangedData{
 		Name:   image.Name,
 		OldTag: image.Tag,
 		NewTag: tag,
+		Group:  groupName(image),
 	})
+}
 
-	return nil
+func (i *Images) notifyTagChanged(names ...string) {
+	if i.tagChanged != nil && len(names) > 0 {
+		i.tagChanged(names...)
+	}
 }
 
 func (i *Images) GetTagHistory(ctx context.Context, imageId int64) ([]model.ImageTagHistory, error) {
@@ -508,30 +645,35 @@ func (i *Images) SetPinned(ctx context.Context, imageId int64, pinned bool) erro
 		return fmt.Errorf("%w: id must be positive", ErrInvalidImage)
 	}
 
-	unlock := i.refreshLocker.lock(imageId)
-	defer unlock()
-
-	image, err := i.store.GetImageByID(ctx, imageId)
+	images, unlock, err := i.lockImageScope(ctx, imageId)
 
 	if err != nil {
 		return err
 	}
 
-	if image == nil {
-		return fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
+	defer unlock()
+
+	changes := make([]imageChange, 0, len(images))
+
+	for _, image := range images {
+		if image.Pinned == pinned {
+			continue
+		}
+
+		tags, err := i.store.GetImageTags(ctx, image.ID)
+
+		if err != nil {
+			return fmt.Errorf("getting tags for %q: %w", image.Name, err)
+		}
+
+		updateAvailable, updateAvailableTag := effectiveUpdateAvailable(pinned, tags, image.Tag)
+
+		changes = append(changes, imageChange{image, updateAvailable, updateAvailableTag})
 	}
 
-	if image.Pinned == pinned {
+	if len(changes) == 0 {
 		return nil
 	}
-
-	tags, err := i.store.GetImageTags(ctx, imageId)
-
-	if err != nil {
-		return fmt.Errorf("getting tags for %q: %w", image.Name, err)
-	}
-
-	updateAvailable, updateAvailableTag := effectiveUpdateAvailable(pinned, tags, image.Tag)
 
 	tx, err := i.store.BeginTx(ctx)
 
@@ -541,23 +683,44 @@ func (i *Images) SetPinned(ctx context.Context, imageId int64, pinned bool) erro
 
 	defer tx.Rollback()
 
-	if _, err := i.store.UpdateImagePinned(ctx, tx, imageId, pinned); err != nil {
-		return fmt.Errorf("updating pinned state for %q: %w", image.Name, err)
+	for _, change := range changes {
+		if _, err := i.store.UpdateImagePinned(ctx, tx, change.image.ID, pinned); err != nil {
+			return fmt.Errorf("updating pinned state for %q: %w", change.image.Name, err)
+		}
+
+		if err := i.writeUpdateAvailable(ctx, tx, &change.image, change.updateAvailable, change.updateAvailableTag); err != nil {
+			return err
+		}
 	}
 
-	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 
-	recordAudit(ctx, i.audit, AuditTypeImagePinChanged, auditImagePinChangedData{
-		Name:   image.Name,
-		Pinned: pinned,
-	})
+	for _, change := range changes {
+		i.auditPinChange(ctx, change.image, pinned)
+	}
 
 	return nil
 }
 
+func (i *Images) auditPinChange(ctx context.Context, image model.Image, pinned bool) {
+	recordAudit(ctx, i.audit, AuditTypeImagePinChanged, auditImagePinChangedData{
+		Name:   image.Name,
+		Pinned: pinned,
+		Group:  groupName(image),
+	})
+}
+
 func (i *Images) commitUpdateAvailable(ctx context.Context, tx store.Transaction, image *model.Image, updateAvailable bool, updateAvailableTag string) error {
+	if err := i.writeUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (i *Images) writeUpdateAvailable(ctx context.Context, tx store.DBTX, image *model.Image, updateAvailable bool, updateAvailableTag string) error {
 	var targetTag *string
 	if updateAvailableTag != "" {
 		targetTag = &updateAvailableTag
@@ -567,7 +730,7 @@ func (i *Images) commitUpdateAvailable(ctx context.Context, tx store.Transaction
 		return fmt.Errorf("updating update-available flag for %q: %w", image.Name, err)
 	}
 
-	return tx.Commit()
+	return nil
 }
 
 func effectiveUpdateAvailable(pinned bool, tags []model.ImageTag, currentTag string) (bool, string) {
@@ -579,6 +742,16 @@ func effectiveUpdateAvailable(pinned bool, tags []model.ImageTag, currentTag str
 }
 
 func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string) {
+	candidates := upgradeCandidates(tags, currentTag)
+
+	if len(candidates) == 0 {
+		return false, ""
+	}
+
+	return true, candidates[0].Tag
+}
+
+func upgradeCandidates(tags []model.ImageTag, currentTag string) []model.ImageTag {
 	var current *model.ImageTag
 
 	for i := range tags {
@@ -590,14 +763,12 @@ func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string)
 	}
 
 	if current == nil || !current.FamilyHasOrder {
-		return false, ""
+		return nil
 	}
 
-	var target *model.ImageTag
+	var candidates []model.ImageTag
 
-	for i := range tags {
-		t := &tags[i]
-
+	for _, t := range tags {
 		if t.FamilyID != current.FamilyID || t.TagOrder >= current.TagOrder {
 			continue
 		}
@@ -610,16 +781,14 @@ func updateAvailableFor(tags []model.ImageTag, currentTag string) (bool, string)
 			continue
 		}
 
-		if target == nil || t.TagOrder < target.TagOrder {
-			target = t
-		}
+		candidates = append(candidates, t)
 	}
 
-	if target == nil {
-		return false, ""
-	}
+	slices.SortFunc(candidates, func(a, b model.ImageTag) int {
+		return a.TagOrder - b.TagOrder
+	})
 
-	return true, target.Tag
+	return candidates
 }
 
 func CurrentAndNewerFamilyTags(tags []model.ImageTag, currentTag string) []model.ImageTag {
@@ -816,14 +985,28 @@ func (i *Images) StartBackgroundRefresh(imageId int64) (bool, error) {
 		return false, nil
 	}
 
+	imageIDs := []int64{imageId}
+
+	if image.GroupID != nil {
+		members, err := i.store.ListImageGroupMembers(i.bgCtx, *image.GroupID)
+
+		if err != nil {
+			slog.Error("listing group members for refresh failed", "group", *image.GroupID, "error", err)
+		}
+
+		imageIDs = groupRefreshOrder(members, imageId)
+	}
+
 	go func() {
 		opts := RefreshTagsOpts{
 			FlagAsNew:     true,
 			RegisterEvent: EventSilent,
 		}
 
-		if err := i.RefreshAvailableTags(i.bgCtx, imageId, opts); err != nil {
-			slog.Error("background tag refresh failed", "imageId", imageId, "error", err)
+		for _, id := range imageIDs {
+			if err := i.RefreshAvailableTags(i.bgCtx, id, opts); err != nil {
+				slog.Error("background tag refresh failed", "imageId", id, "error", err)
+			}
 		}
 	}()
 
@@ -913,6 +1096,10 @@ func (i *Images) GetTags(ctx context.Context, imageId int64) ([]model.ImageTag, 
 		return nil, fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
 	}
 
+	if image.GroupID != nil {
+		return i.groupSelectableTags(ctx, *image.GroupID)
+	}
+
 	return i.store.GetImageTags(ctx, imageId)
 }
 
@@ -931,11 +1118,39 @@ func (i *Images) MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, erro
 		return 0, fmt.Errorf("%w: %d", ErrImageNotFound, imageId)
 	}
 
-	return i.store.MarkImageTagsAsSeen(ctx, imageId)
+	if image.GroupID == nil {
+		return i.store.MarkImageTagsAsSeen(ctx, imageId)
+	}
+
+	members, err := i.store.ListImageGroupMembers(ctx, *image.GroupID)
+
+	if err != nil {
+		return 0, err
+	}
+
+	var marked int64
+
+	for _, member := range members {
+		count, err := i.store.MarkImageTagsAsSeen(ctx, member.ID)
+
+		if err != nil {
+			return marked, err
+		}
+
+		marked += count
+	}
+
+	return marked, nil
 }
 
 func containsTag(tags []string, tag string) bool {
 	return slices.Contains(tags, tag)
+}
+
+func hasImageTag(tags []model.ImageTag, tag string) bool {
+	return slices.ContainsFunc(tags, func(t model.ImageTag) bool {
+		return t.Tag == tag
+	})
 }
 
 func tagSetHash(tags []string) string {

@@ -47,7 +47,7 @@
       </CardState>
     {/snippet}
 
-    <ul class="issue-list">
+    <ul class="entry-list">
       {#each shown as failure, i (i)}
         <li>
           <span class="issue-date muted" title={formatDate(failure.occurredAt)}>
@@ -69,16 +69,7 @@
 </DashboardCard>
 
 <style>
-  .issue-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-  }
-
-  .issue-list li {
+  .entry-list li {
     display: flex;
     flex-direction: column;
     gap: 2px;

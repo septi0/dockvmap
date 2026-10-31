@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Plus from "@lucide/svelte/icons/plus";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Button from "../Button.svelte";
   import TagFamilyPicker from "../TagFamilyPicker.svelte";
@@ -15,6 +16,7 @@
     error,
     onBack,
     onCreate,
+    onCreateAnother,
   }: {
     registryLabel: string | undefined;
     repository: string;
@@ -26,6 +28,7 @@
     error: string | null;
     onBack: () => void;
     onCreate: () => void;
+    onCreateAnother: () => void;
   } = $props();
 </script>
 
@@ -48,6 +51,7 @@
   {tagGroups}
   bind:selectedTag
   emptyMessage="No tags were found for this repository."
+  searchable
 />
 
 {#if error}
@@ -65,9 +69,19 @@
       <span class="muted">Pick a tag above to continue</span>
     {/if}
   </span>
-  <Button disabled={!selectedTag || creating} onclick={onCreate}>
-    {creating ? "Creating…" : "Create virtual image"}
-  </Button>
+  <div class="create-actions">
+    <Button
+      variant="secondary"
+      disabled={!selectedTag || creating}
+      onclick={onCreateAnother}
+    >
+      <Plus size={16} strokeWidth={2} />
+      Create and add another
+    </Button>
+    <Button disabled={!selectedTag || creating} onclick={onCreate}>
+      {creating ? "Creating…" : "Create virtual image"}
+    </Button>
+  </div>
 </div>
 
 <style>
@@ -99,10 +113,17 @@
 
   .create-bar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-4);
+    gap: var(--space-3) var(--space-4);
     margin-top: var(--space-5);
+  }
+
+  .create-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
   }
 
   .tag-error {

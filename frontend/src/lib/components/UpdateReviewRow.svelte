@@ -4,11 +4,15 @@
   import PinOff from "@lucide/svelte/icons/pin-off";
   import Undo2 from "@lucide/svelte/icons/undo-2";
   import Check from "@lucide/svelte/icons/check";
+  import Layers from "@lucide/svelte/icons/layers";
+  import Settings2 from "@lucide/svelte/icons/settings-2";
+  import Tags from "@lucide/svelte/icons/tags";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import AsyncState from "./AsyncState.svelte";
   import Button from "./Button.svelte";
   import ChangeTagModal from "./ChangeTagModal.svelte";
+  import ImageGroupModal from "./ImageGroupModal.svelte";
   import RefreshingIndicator from "./RefreshingIndicator.svelte";
   import TagFamilyPicker from "./TagFamilyPicker.svelte";
   import {
@@ -18,23 +22,32 @@
     setImagePin,
     updateImageTag,
   } from "../api/images";
+  import { getImageGroup } from "../api/imageGroups";
   import { errorMessage } from "../api/client";
+  import { allCount, allImages } from "../utils/format";
   import { createImageRefresh } from "../services/imageRefresh";
   import { updatesCount } from "../services/updatesCount";
   import type { Image, TagGroup } from "../api/types/images";
+  import type { ImageGroup } from "../api/types/imageGroups";
 
   let {
     image,
+    group = null,
     detailsQuery,
     sweepRunning,
     reloadToken,
     onImageChanged,
+    onGroupChanged,
+    onStructureChanged,
   }: {
     image: Image;
+    group?: ImageGroup | null;
     detailsQuery: string;
     sweepRunning: boolean;
     reloadToken: number;
     onImageChanged: (image: Image) => void;
+    onGroupChanged?: (group: ImageGroup) => void;
+    onStructureChanged?: () => void;
   } = $props();
 
   let tagGroups = $state<TagGroup[]>([]);
@@ -48,10 +61,18 @@
   let lastChange = $state<{ from: string; to: string } | null>(null);
 
   let showTagModal = $state(false);
+  let showGroupModal = $state(false);
   let refreshStatus = $state<"idle" | "running" | "stale">("idle");
 
   let locked = $derived(sweepRunning || refreshStatus === "running");
   let hasNewSelection = $derived(!!selectedTag && selectedTag !== image.tag);
+  let groupSize = $derived(group?.images.length ?? 0);
+  let pinned = $derived(group ? group.pinned : image.pinned);
+  let flagged = $derived(group ? group.updateAvailable : image.updateAvailable);
+  let suggestedTag = $derived(
+    group ? group.updateAvailableTag : image.updateAvailableTag,
+  );
+  let blocked = $derived(!!group && flagged && !suggestedTag);
 
   const imageRefresh = createImageRefresh(() => image.id, {
     onResult: (fresh) => onImageChanged(fresh),
@@ -60,7 +81,9 @@
   const stopRefreshSubscription = imageRefresh.subscribe(
     (status) => (refreshStatus = status),
   );
-  const stopSettledListener = imageRefresh.onSettled(loadTags);
+  const stopSettledListener = imageRefresh.onSettled(() =>
+    group ? reloadRow() : loadTags(),
+  );
 
   function hasTag(tag: string | null | undefined) {
     return tagGroups.some((group) => group.tags.some((t) => t.tag === tag));
@@ -87,9 +110,15 @@
 
   async function reloadRow() {
     try {
-      const fresh = await getImage(image.id);
-      onImageChanged(fresh);
-      imageRefresh.sync(fresh);
+      if (group) {
+        const fresh = await getImageGroup(group.id);
+        onGroupChanged?.(fresh);
+        imageRefresh.sync(fresh.images[0]);
+      } else {
+        const fresh = await getImage(image.id);
+        onImageChanged(fresh);
+        imageRefresh.sync(fresh);
+      }
     } catch (err) {
       tagsError = errorMessage(err, "Failed to reload image");
       return;
@@ -159,6 +188,17 @@
     }
   }
 
+  async function handleGroupSaved() {
+    updatesCount.refresh();
+    await reloadRow();
+    onStructureChanged?.();
+  }
+
+  function handleGroupDeleted() {
+    updatesCount.refresh();
+    onStructureChanged?.();
+  }
+
   async function setPinned(pinned: boolean) {
     actionError = null;
     working = true;
@@ -178,24 +218,56 @@
 <article class="card update-row">
   <header class="row-head">
     <div class="identity">
-      <a class="row-link" href={`#/images/${image.id}${detailsQuery}`}
-        >{image.name}</a
-      >
-      <span class="muted source">{image.registry}/{image.repository}</span>
+      {#if group}
+        <span class="group-icon"><Layers size={16} strokeWidth={2} /></span>
+        <button
+          type="button"
+          class="row-link group-link"
+          onclick={() => (showGroupModal = true)}>{group.name}</button
+        >
+        <span class="badge">Group · {groupSize} images</span>
+      {:else}
+        <a class="row-link" href={`#/images/${image.id}${detailsQuery}`}
+          >{image.name}</a
+        >
+        <span class="muted source">{image.registry}/{image.repository}</span>
+      {/if}
     </div>
     <span class="versions muted">
       <span>Current <span class="tag-value">{image.tag}</span></span>
-      {#if image.updateAvailable && image.updateAvailableTag}
-        <span>Suggested <strong>{image.updateAvailableTag}</strong></span>
+      {#if flagged && suggestedTag}
+        <span>Suggested <strong>{suggestedTag}</strong></span>
+      {:else if blocked && group?.partialTag}
+        <span>Newest <strong>{group.partialTag.tag}</strong></span>
       {/if}
     </span>
   </header>
+
+  {#if group}
+    <div class="members">
+      {#each group.images as member (member.id)}
+        {@const missing =
+          blocked && group.partialTag?.missing.includes(member.name)}
+        <a
+          class="member"
+          class:missing
+          href={`#/images/${member.id}${detailsQuery}`}
+        >
+          {#if missing}
+            <TriangleAlert size={12} strokeWidth={2} />
+          {/if}
+          {member.name}
+        </a>
+      {/each}
+    </div>
+  {/if}
 
   {#if lastChange}
     <p class="notice">
       <Check size={14} strokeWidth={2.5} />
       <span class="notice-text">
-        Updated from <strong>{lastChange.from}</strong> to
+        {group ? `${groupSize === 2 ? "Both" : `All ${groupSize}`} images updated` : "Updated"} from
+        <strong>{lastChange.from}</strong> to
         <strong>{lastChange.to}</strong>
       </span>
       <Button
@@ -205,16 +277,17 @@
         onclick={revert}
       >
         <Undo2 size={14} strokeWidth={2} />
-        Revert
+        {group ? `Revert ${allCount(groupSize)}` : "Revert"}
       </Button>
     </p>
   {/if}
 
-  {#if image.pinned}
+  {#if pinned}
     <p class="notice">
       <Pin size={14} strokeWidth={2} />
       <span class="notice-text">
-        Pinned to <strong>{image.tag}</strong>. New versions won't be flagged.
+        {group ? "Group pinned" : "Pinned"} to <strong>{image.tag}</strong>. New
+        versions won't be flagged.
       </span>
       <Button
         variant="secondary"
@@ -226,7 +299,57 @@
         Unpin
       </Button>
     </p>
-  {:else if image.updateAvailable}
+  {:else if blocked}
+    <p class="notice warning">
+      <TriangleAlert size={14} strokeWidth={2} />
+      <span class="notice-text">
+        <strong>Update blocked.</strong>
+        {#if group?.partialTag}
+          <span class="tag-name">{group.partialTag.tag}</span> is on
+          {groupSize - group.partialTag.missing.length} of {groupSize} images.
+          <strong>{group.partialTag.missing.join(", ")}</strong>
+          {group.partialTag.missing.length === 1 ? "doesn't" : "don't"} have it.
+          Remove {group.partialTag.missing.length === 1 ? "that image" : "those images"}
+          from the group to continue, or wait for the release to reach
+          {group.partialTag.missing.length === 1 ? "it" : "them"}.
+        {:else}
+          No newer tag is available on {allImages(groupSize)}.
+        {/if}
+      </span>
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={working || locked}
+        onclick={() => (showGroupModal = true)}
+      >
+        <Settings2 size={14} strokeWidth={2} />
+        Manage group
+      </Button>
+    </p>
+
+    <div class="row-actions">
+      {#if locked}
+        <RefreshingIndicator text="Checking upstream…" />
+      {/if}
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={working || locked}
+        onclick={() => setPinned(true)}
+      >
+        <Pin size={14} strokeWidth={2} />
+        Pin group
+      </Button>
+    </div>
+  {:else if flagged}
+    {#if group?.partialTag}
+      <p class="partial-note muted">
+        <span class="tag-name">{group.partialTag.tag}</span> is newer, but
+        {group.partialTag.missing.join(", ")}
+        {group.partialTag.missing.length === 1 ? "doesn't" : "don't"} have it yet.
+      </p>
+    {/if}
+
     <AsyncState
       loading={!tagsLoaded}
       error={tagsError}
@@ -239,7 +362,13 @@
         bind:selectedTag
         currentTag={image.tag}
         dimPrereleases
+        showAge
       />
+      {#if group}
+        <p class="group-hint muted">
+          Only tags available on {allImages(groupSize)} are shown.
+        </p>
+      {/if}
     </AsyncState>
 
     <div class="row-actions">
@@ -252,6 +381,7 @@
         disabled={working}
         onclick={() => (showTagModal = true)}
       >
+        <Tags size={14} strokeWidth={2} />
         All tags…
       </Button>
       <Button
@@ -261,7 +391,7 @@
         onclick={() => setPinned(true)}
       >
         <Pin size={14} strokeWidth={2} />
-        Pin
+        {group ? "Pin group" : "Pin"}
       </Button>
       <Button
         size="sm"
@@ -269,11 +399,19 @@
         onclick={applySelectedTag}
       >
         <ArrowUp size={14} strokeWidth={2.5} />
-        {hasNewSelection ? `Update to ${selectedTag}` : "Select a new tag"}
+        {#if !hasNewSelection}
+          Select a new tag
+        {:else if group}
+          Update {allCount(groupSize)} to {selectedTag}
+        {:else}
+          Update to {selectedTag}
+        {/if}
       </Button>
     </div>
   {:else if !lastChange}
-    <p class="muted empty-note">No update is flagged for this image anymore.</p>
+    <p class="muted empty-note">
+      No update is flagged for this {group ? "group" : "image"} anymore.
+    </p>
   {/if}
 
   {#if actionError}
@@ -290,9 +428,21 @@
     imageId={image.id}
     currentTag={image.tag}
     refreshStatus={refreshStatus === "stale" ? "idle" : refreshStatus}
+    groupName={group?.name}
+    {groupSize}
     onClose={() => (showTagModal = false)}
     onTagUpdated={(tag) => settleTagChange(image.tag, tag)}
     onTagsRefreshed={reloadRow}
+  />
+{/if}
+
+{#if group}
+  <ImageGroupModal
+    open={showGroupModal}
+    {group}
+    onClose={() => (showGroupModal = false)}
+    onSaved={handleGroupSaved}
+    onDeleted={handleGroupDeleted}
   />
 {/if}
 
@@ -328,13 +478,68 @@
   }
 
   .row-link {
-    color: inherit;
-    text-decoration: none;
     font-weight: 500;
   }
 
-  .row-link:hover {
-    text-decoration: underline;
+  .group-link {
+    padding: 0;
+    border: none;
+    background: none;
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .group-icon {
+    display: inline-flex;
+    align-self: center;
+    color: var(--color-text-muted);
+  }
+
+  .members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  .member {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 100%;
+    overflow-wrap: break-word;
+    padding: 1px var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+    text-decoration: none;
+  }
+
+  .member:hover {
+    border-color: var(--color-border-strong);
+    color: var(--color-text);
+  }
+
+  .member.missing {
+    border-color: var(--color-warning);
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
+  }
+
+  .tag-name {
+    font-family: monospace;
+  }
+
+  .partial-note,
+  .group-hint {
+    margin: 0;
+    font-size: 0.8125rem;
+  }
+
+  .group-hint {
+    margin-top: var(--space-2);
   }
 
   .source,
@@ -368,6 +573,11 @@
     background: var(--color-accent-muted-bg);
     color: var(--color-accent);
     font-size: 0.875rem;
+  }
+
+  .notice.warning {
+    background: var(--color-warning-bg);
+    color: var(--color-warning);
   }
 
   .notice-text {

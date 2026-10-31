@@ -58,7 +58,7 @@
 </script>
 
 <Modal {open} onClose={guardedClose} title="Change email">
-  <p class="hint muted">
+  <p class="section-hint muted">
     This address receives tag alert emails and any account notifications.
   </p>
 
@@ -79,7 +79,7 @@
       required
     />
 
-    <div class="actions">
+    <div class="modal-actions">
       <Button
         type="button"
         variant="secondary"
@@ -96,21 +96,3 @@
   </form>
 </Modal>
 
-<style>
-  .hint {
-    margin: 0 0 var(--space-4);
-    font-size: 0.875rem;
-  }
-
-  form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-  }
-</style>

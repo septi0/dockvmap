@@ -8,8 +8,16 @@ import (
 )
 
 func apiServiceError(rw http.ResponseWriter, err error) {
+	var groupTagErr *service.GroupTagUnavailableError
+
 	switch {
+	case errors.As(err, &groupTagErr),
+		errors.Is(err, service.ErrImageGroupBusy),
+		errors.Is(err, service.ErrImageInAnotherGroup):
+		apiError(rw, http.StatusConflict, err.Error())
+
 	case errors.Is(err, service.ErrInvalidImage),
+		errors.Is(err, service.ErrInvalidImageGroup),
 		errors.Is(err, service.ErrInvalidRegistry),
 		errors.Is(err, service.ErrInvalidUser),
 		errors.Is(err, service.ErrInvalidProxyToken):

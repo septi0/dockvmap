@@ -208,11 +208,6 @@
 
   .row-link {
     color: var(--color-accent);
-    text-decoration: none;
-  }
-
-  .row-link:hover {
-    text-decoration: underline;
   }
 
   .tags-cell {

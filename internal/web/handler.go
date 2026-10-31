@@ -29,6 +29,13 @@ type imageService interface {
 	SetPinned(ctx context.Context, imageId int64, pinned bool) error
 	MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, error)
 	GetTagHistory(ctx context.Context, imageId int64) ([]model.ImageTagHistory, error)
+	ListGroups(ctx context.Context, filters model.ImageGroupListFilters) ([]model.ImageGroup, error)
+	CountGroups(ctx context.Context, filters model.ImageGroupListFilters) (int64, error)
+	GetGroup(ctx context.Context, groupId int64) (*model.ImageGroup, error)
+	CreateGroup(ctx context.Context, input service.ImageGroupInput) (int64, error)
+	UpdateGroup(ctx context.Context, groupId int64, input service.ImageGroupInput) error
+	DeleteGroup(ctx context.Context, groupId int64) error
+	CommonTags(ctx context.Context, imageIDs []int64) ([]model.ImageTag, error)
 }
 
 type discoveryService interface {

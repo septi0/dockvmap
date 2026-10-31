@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2/expirable"
@@ -16,8 +17,10 @@ const (
 )
 
 type resolveCache struct {
-	entries *expirable.LRU[string, model.Image]
-	group   singleflight.Group
+	entries    *expirable.LRU[string, model.Image]
+	group      singleflight.Group
+	mu         sync.Mutex
+	generation uint64
 }
 
 func newResolveCache() *resolveCache {
@@ -38,6 +41,8 @@ func (c *resolveCache) resolve(ctx context.Context, name string, lookup func(con
 			return &copied, nil
 		}
 
+		generation := c.currentGeneration()
+
 		img, err := lookup(ctx, name)
 
 		if err != nil {
@@ -45,7 +50,7 @@ func (c *resolveCache) resolve(ctx context.Context, name string, lookup func(con
 		}
 
 		if img != nil {
-			c.entries.Add(name, *img)
+			c.store(name, *img, generation)
 		}
 
 		return img, nil
@@ -56,4 +61,32 @@ func (c *resolveCache) resolve(ctx context.Context, name string, lookup func(con
 	}
 
 	return result.(*model.Image), nil
+}
+
+func (c *resolveCache) currentGeneration() uint64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.generation
+}
+
+func (c *resolveCache) store(name string, img model.Image, generation uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if generation == c.generation {
+		c.entries.Add(name, img)
+	}
+}
+
+func (c *resolveCache) invalidate(names ...string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.generation++
+
+	for _, name := range names {
+		c.entries.Remove(name)
+		c.group.Forget(name)
+	}
 }

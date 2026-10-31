@@ -4,6 +4,7 @@
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import { refreshImageTags } from "../api/images";
   import { errorMessage } from "../api/client";
+  import { allImages } from "../utils/format";
   import { toast } from "../services/toast";
 
   let {
@@ -11,6 +12,7 @@
     onRefreshed,
     label = "Refresh tags",
     variant = "link",
+    groupSize = 0,
   }: {
     imageId: number;
     onRefreshed?: (
@@ -18,6 +20,7 @@
     ) => void | Promise<void>;
     label?: string;
     variant?: "link" | "button";
+    groupSize?: number;
   } = $props();
 
   let showConfirm = $state(false);
@@ -76,7 +79,9 @@
 <ConfirmDialog
   open={showConfirm}
   title="Refresh tags"
-  message="Check the upstream registry for new or updated tags now?"
+  message={groupSize > 0
+    ? `Check the upstream registry for new or updated tags on ${allImages(groupSize)} now?`
+    : "Check the upstream registry for new or updated tags now?"}
   confirmLabel="Refresh"
   {error}
   submitting={refreshing}

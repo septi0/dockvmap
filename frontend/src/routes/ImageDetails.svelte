@@ -5,6 +5,9 @@
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
   import ArrowUp from "@lucide/svelte/icons/arrow-up";
+  import Layers from "@lucide/svelte/icons/layers";
+  import Plus from "@lucide/svelte/icons/plus";
+  import Settings2 from "@lucide/svelte/icons/settings-2";
   import Pin from "@lucide/svelte/icons/pin";
   import PinOff from "@lucide/svelte/icons/pin-off";
   import History from "@lucide/svelte/icons/history";
@@ -18,6 +21,7 @@
   import DetailRow from "../lib/components/DetailRow.svelte";
   import Button from "../lib/components/Button.svelte";
   import ChangeTagModal from "../lib/components/ChangeTagModal.svelte";
+  import ImageGroupModal from "../lib/components/ImageGroupModal.svelte";
   import TagHistoryModal from "../lib/components/TagHistoryModal.svelte";
   import TagActivityModal from "../lib/components/TagActivityModal.svelte";
   import RefreshTagsButton from "../lib/components/RefreshTagsButton.svelte";
@@ -25,15 +29,18 @@
   import RenameImageModal from "../lib/components/RenameImageModal.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import { getImage, deleteImage, setImagePin } from "../lib/api/images";
+  import { getImageGroup } from "../lib/api/imageGroups";
   import { getPullInfo } from "../lib/api/metrics";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
+  import { updatesCount } from "../lib/services/updatesCount";
   import {
     createImageRefresh,
     applyImageRefreshFields,
   } from "../lib/services/imageRefresh";
-  import { formatDate } from "../lib/utils/format";
+  import { allImages, formatDate } from "../lib/utils/format";
   import type { Image } from "../lib/api/types/images";
+  import type { ImageGroup } from "../lib/api/types/imageGroups";
   import type { PullInfo } from "../lib/api/types/metrics";
 
   let { params }: { params: { id: string } } = $props();
@@ -49,12 +56,14 @@
   const backHref = fromUpdates ? updatesHref : imagesHref;
 
   let image = $state<Image | null>(null);
+  let group = $state<ImageGroup | null>(null);
   let pullInfo = $state<PullInfo | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let loadToken = 0;
 
   let showTagModal = $state(false);
+  let showGroupModal = $state(false);
   let showHistoryModal = $state(false);
   let showActivityModal = $state(false);
 
@@ -72,6 +81,17 @@
   let refreshStatus = $state<"idle" | "running" | "stale">("idle");
   let modalReloadToken = $state(0);
 
+  let groupSize = $derived(group?.images.length ?? 0);
+  let updateAvailable = $derived(
+    group ? group.updateAvailable : (image?.updateAvailable ?? false),
+  );
+  let updateAvailableTag = $derived(
+    group ? group.updateAvailableTag : image?.updateAvailableTag,
+  );
+  let updateBlocked = $derived(!!group && updateAvailable && !updateAvailableTag);
+  let pinned = $derived(group ? group.pinned : (image?.pinned ?? false));
+  let scopeLabel = $derived(group ? "group" : "image");
+
   const imageRefresh = createImageRefresh(() => imageId, {
     onResult: (fresh) => {
       if (image) applyImageRefreshFields(image, fresh);
@@ -82,9 +102,14 @@
   const stopRefreshSubscription = imageRefresh.subscribe(
     (status) => (refreshStatus = status),
   );
-  const stopSettledListener = imageRefresh.onSettled(
-    () => (modalReloadToken += 1),
-  );
+  const stopSettledListener = imageRefresh.onSettled(() => {
+    modalReloadToken += 1;
+    loadGroup().catch(() => {});
+  });
+
+  async function loadGroup() {
+    group = image?.group ? await getImageGroup(image.group.id) : null;
+  }
 
   async function load() {
     const requestId = ++loadToken;
@@ -97,6 +122,7 @@
       image = img;
       pullInfo = info;
       imageRefresh.sync(img);
+      await loadGroup();
     } catch (err) {
       if (requestId !== loadToken) return;
       error = errorMessage(err, "Failed to load virtual image");
@@ -127,17 +153,38 @@
     try {
       image = await getImage(imageId);
       imageRefresh.sync(image);
+      await loadGroup();
     } catch {}
   }
 
   async function handleTagUpdated(tag: string) {
-    toast.success(`Tag updated to "${tag}".`);
+    toast.success(
+      group
+        ? `Tag updated to "${tag}" on ${allImages(groupSize)}.`
+        : `Tag updated to "${tag}".`,
+    );
     await refreshImageDetails();
   }
 
   async function handleTagRestored(tag: string) {
-    toast.success(`Restored tag to "${tag}".`);
+    toast.success(
+      group
+        ? `Restored tag to "${tag}" on ${allImages(groupSize)}.`
+        : `Restored tag to "${tag}".`,
+    );
     await refreshImageDetails();
+  }
+
+  async function handleGroupSaved(name: string) {
+    toast.success(`Group "${name}" saved.`);
+    await refreshImageDetails();
+    updatesCount.refresh();
+  }
+
+  async function handleGroupDeleted(name: string) {
+    toast.success(`Group "${name}" deleted.`);
+    await refreshImageDetails();
+    updatesCount.refresh();
   }
 
   async function copyPullCommand() {
@@ -165,7 +212,7 @@
   async function togglePin() {
     if (!image) return;
 
-    const next = !image.pinned;
+    const next = !pinned;
     pinError = null;
     pinning = true;
 
@@ -174,8 +221,8 @@
       await refreshImageDetails();
       toast.success(
         next
-          ? "Image pinned. New versions won't be flagged or emailed."
-          : "Image unpinned. Update tracking resumed.",
+          ? `${group ? "Group" : "Image"} pinned. New versions won't be flagged or emailed.`
+          : `${group ? "Group" : "Image"} unpinned. Update tracking resumed.`,
       );
     } catch (err) {
       pinError = errorMessage(err, "Failed to update pin state");
@@ -226,18 +273,51 @@
         <h2>Details</h2>
         <DetailRow label="Registry">{image.registry}</DetailRow>
         <DetailRow label="Repository">{image.repository}</DetailRow>
+        <DetailRow label="Group">
+          <span class="detail-cell-row">
+            {#if group}
+              <span class="group-name">
+                <Layers size={14} strokeWidth={2} />
+                {group.name}
+              </span>
+              <a
+                class="group-size"
+                href={`/images?group=${group.id}`}
+                use:link>{groupSize} images</a
+              >
+              <Button
+                variant="secondary"
+                size="sm"
+                onclick={() => (showGroupModal = true)}
+              >
+                <Settings2 size={14} strokeWidth={2} />
+                Manage group
+              </Button>
+            {:else}
+              <span class="muted">Not in a group</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onclick={() => (showGroupModal = true)}
+              >
+                <Plus size={14} strokeWidth={2} />
+                Add to group
+              </Button>
+            {/if}
+          </span>
+        </DetailRow>
         <DetailRow label="Current tag">
           <div class="detail-cell">
             <span class="detail-cell-row">
               <span class="tag-value">{image.tag}</span>
-              {#if image.updateAvailable}
+              {#if updateAvailable && !updateBlocked}
                 <Button
                   variant="warning"
                   size="sm"
                   onclick={() => (showTagModal = true)}
                 >
                   <ArrowUp size={14} strokeWidth={2.5} />
-                  Update
+                  {group ? "Update group" : "Update"}
                 </Button>
               {:else}
                 <Button
@@ -246,18 +326,33 @@
                   onclick={() => (showTagModal = true)}
                 >
                   <ArrowLeftRight size={14} strokeWidth={2} />
-                  Change tag
+                  {group ? "Change group tag" : "Change tag"}
                 </Button>
               {/if}
             </span>
-            {#if image.updateAvailable}
+            {#if updateBlocked}
               <p class="warning-text">
                 <TriangleAlert size={14} strokeWidth={2} />
-                {#if image.updateAvailableTag}
-                  Update available: {image.tag} &rarr; {image.updateAvailableTag}
+                {#if group?.partialTag}
+                  Update blocked: {group.partialTag.tag} is missing from
+                  {group.partialTag.missing.join(", ")}.
+                {:else}
+                  Update blocked: no newer tag is available on {allImages(groupSize)}.
+                {/if}
+              </p>
+            {:else if updateAvailable}
+              <p class="warning-text">
+                <TriangleAlert size={14} strokeWidth={2} />
+                {#if updateAvailableTag}
+                  Update available: {image.tag} &rarr; {updateAvailableTag}
                 {:else}
                   A newer tag is available in this tag's family.
                 {/if}
+              </p>
+            {/if}
+            {#if group}
+              <p class="tracking-hint muted">
+                Shared by {allImages(groupSize)} in this group.
               </p>
             {/if}
           </div>
@@ -265,8 +360,8 @@
         <DetailRow label="Update tracking">
           <div class="detail-cell">
             <span class="detail-cell-row">
-              <span class="tracking-state" class:is-pinned={image.pinned}>
-                {#if image.pinned}
+              <span class="tracking-state" class:is-pinned={pinned}>
+                {#if pinned}
                   <Pin size={14} strokeWidth={2} />
                   Pinned to the current tag
                 {:else}
@@ -279,17 +374,19 @@
                 disabled={pinning}
                 onclick={togglePin}
               >
-                {#if image.pinned}
+                {#if pinned}
                   <PinOff size={14} strokeWidth={2} />
-                  Unpin image
+                  Unpin {scopeLabel}
                 {:else}
                   <Pin size={14} strokeWidth={2} />
-                  Pin image
+                  Pin {scopeLabel}
                 {/if}
               </Button>
             </span>
             <p class="tracking-hint muted">
-              {#if image.pinned}
+              {#if group}
+                Pinning applies to {allImages(groupSize)} in this group.
+              {:else if image.pinned}
                 Upstream tags are still fetched, but newer versions aren't
                 flagged as an available update or sent in tag notification
                 emails.
@@ -432,14 +529,26 @@
     currentTag={image.tag}
     refreshStatus={refreshStatus === "stale" ? "idle" : refreshStatus}
     reloadToken={modalReloadToken}
+    groupName={group?.name}
+    {groupSize}
     onClose={() => (showTagModal = false)}
     onTagUpdated={handleTagUpdated}
     onTagsRefreshed={refreshImageDetails}
   />
 
+  <ImageGroupModal
+    open={showGroupModal}
+    {group}
+    {image}
+    onClose={() => (showGroupModal = false)}
+    onSaved={handleGroupSaved}
+    onDeleted={handleGroupDeleted}
+  />
+
   <TagHistoryModal
     open={showHistoryModal}
     imageId={image.id}
+    {groupSize}
     onClose={() => (showHistoryModal = false)}
     onRestored={handleTagRestored}
   />
@@ -463,7 +572,9 @@
 <ConfirmDialog
   open={showDeleteConfirm}
   title="Delete virtual image"
-  message={`Delete "${image?.name ?? ""}"? This cannot be undone.`}
+  message={group
+    ? `Delete "${image?.name ?? ""}"? It will be removed from ${group.name}. This cannot be undone.`
+    : `Delete "${image?.name ?? ""}"? This cannot be undone.`}
   confirmLabel="Delete"
   danger
   error={deleteError}
@@ -491,6 +602,22 @@
   .field-hint {
     margin: var(--space-1) 0 var(--space-4);
     font-size: 0.8125rem;
+  }
+
+  .group-name {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-weight: 500;
+  }
+
+  .group-size {
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+  }
+
+  .group-size:hover {
+    color: var(--color-text);
   }
 
   .tracking-state {

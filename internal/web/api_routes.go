@@ -153,6 +153,37 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/images/{id}/pin", apiMethod(http.MethodPut, w.apiSetImagePin))
 
+	mux.HandleFunc("/image-groups", func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.apiListImageGroups(rw, r)
+
+		case http.MethodPost:
+			w.apiCreateImageGroup(rw, r)
+
+		default:
+			apiError(rw, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+
+	mux.HandleFunc("/image-groups/common-tags", apiMethod(http.MethodGet, w.apiGetCommonTags))
+
+	mux.HandleFunc("/image-groups/{id}", func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.apiGetImageGroup(rw, r)
+
+		case http.MethodPut:
+			w.apiUpdateImageGroup(rw, r)
+
+		case http.MethodDelete:
+			w.apiDeleteImageGroup(rw, r)
+
+		default:
+			apiError(rw, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+
 	mux.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 		apiError(rw, http.StatusNotFound, "API endpoint not found")
 	})

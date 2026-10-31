@@ -7,17 +7,20 @@
   import AsyncState from "./AsyncState.svelte";
   import { getTagHistory, getImageTags, updateImageTag } from "../api/images";
   import { errorMessage } from "../api/client";
+  import { allImages } from "../utils/format";
   import { formatDate } from "../utils/format";
   import type { TagHistoryEntry } from "../api/types/images";
 
   let {
     open,
     imageId,
+    groupSize = 0,
     onClose,
     onRestored,
   }: {
     open: boolean;
     imageId: number;
+    groupSize?: number;
     onClose: () => void;
     onRestored: (tag: string) => void;
   } = $props();
@@ -86,8 +89,11 @@
 </script>
 
 <Modal {open} {onClose} title="Tag history" size="lg">
-  <p class="hint muted">
+  <p class="section-hint muted">
     Every tag this virtual image has pointed to, most recent first.
+    {#if groupSize > 0}
+      Restoring a tag changes {allImages(groupSize)} in the group.
+    {/if}
   </p>
 
   <AsyncState
@@ -98,12 +104,12 @@
     emptyMessage="No history yet."
     listSkeleton
   >
-    <ul class="history-list">
+    <ul class="entry-list">
       {#each history as entry, index (entry.id)}
         {@const isCurrent = index === 0}
         {@const isAvailable = availableTags.has(entry.tag)}
-        <li class="history-entry" class:current={isCurrent}>
-          <div class="history-main">
+        <li class="entry-card" class:current={isCurrent}>
+          <div class="entry-main">
             <span class="history-tag">{entry.tag}</span>
             {#if isCurrent}
               <span class="current-badge">
@@ -111,9 +117,9 @@
               </span>
             {/if}
           </div>
-          <div class="history-meta">
+          <div class="entry-meta">
             <span class="history-source">{sourceLabel(entry)}</span>
-            <span class="history-date">{formatDate(entry.appliedAt)}</span>
+            <span class="entry-date">{formatDate(entry.appliedAt)}</span>
           </div>
           {#if !isCurrent}
             <div class="history-action">
@@ -147,35 +153,8 @@
 </Modal>
 
 <style>
-  .hint {
-    margin: 0 0 var(--space-4);
-    font-size: 0.875rem;
-  }
-
-  .history-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .history-entry {
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-  }
-
-  .history-entry.current {
+  .entry-card.current {
     border-color: var(--color-accent);
-  }
-
-  .history-main {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
   }
 
   .history-tag {
@@ -195,21 +174,6 @@
     color: var(--color-accent);
     font-size: 0.75rem;
     font-weight: 600;
-  }
-
-  .history-meta {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-top: var(--space-1);
-    color: var(--color-text-muted);
-    font-size: 0.8125rem;
-  }
-
-  .history-date::before {
-    content: "\2022";
-    margin-right: var(--space-2);
-    color: var(--color-text-faint);
   }
 
   .history-action {

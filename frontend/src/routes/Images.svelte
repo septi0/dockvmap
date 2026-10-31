@@ -8,6 +8,7 @@
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Check from "@lucide/svelte/icons/check";
   import Pin from "@lucide/svelte/icons/pin";
+  import Layers from "@lucide/svelte/icons/layers";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
@@ -17,16 +18,20 @@
   import Button from "../lib/components/Button.svelte";
   import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
   import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
+  import ImageGroupModal from "../lib/components/ImageGroupModal.svelte";
   import { listImages, IMAGES_PAGE_SIZE } from "../lib/api/images";
+  import { getImageGroup, IMAGE_GROUPS_MAX_LIMIT, listImageGroups } from "../lib/api/imageGroups";
   import { triggerTagRefresh } from "../lib/api/worker";
   import { toast } from "../lib/services/toast";
   import { tagRefreshStatus } from "../lib/services/tagRefreshStatus";
+  import { updatesCount } from "../lib/services/updatesCount";
   import { errorMessage } from "../lib/api/client";
   import {
     IMAGE_STATUS_FILTERS,
     type Image,
     type ImageStatusFilter,
   } from "../lib/api/types/images";
+  import type { ImageGroup } from "../lib/api/types/imageGroups";
   import { formatDate } from "../lib/utils/format";
   import { writeListQuery } from "../lib/utils/listQuery";
   import { createListView } from "../lib/utils/listView.svelte";
@@ -44,12 +49,18 @@
 
   let tagRefreshRunning = $derived($tagRefreshStatus.data?.running ?? false);
 
+  const NOT_GROUPED = "none";
+
+  let groups = $state<ImageGroup[]>([]);
+  let managedGroup = $state<ImageGroup | null>(null);
+  let groupError = $state<string | null>(null);
+
   const view = createListView<
-    { search: string; status: string; offset: number },
+    { search: string; status: string; group: string; offset: number },
     Image
   >({
     routePath: "/images",
-    defaults: { search: "", status: "", offset: 0 },
+    defaults: { search: "", status: "", group: "", offset: 0 },
     errorFallback: "Failed to load images",
     fetch: (q) =>
       listImages({
@@ -59,10 +70,40 @@
         status: (IMAGE_STATUS_FILTERS as readonly string[]).includes(q.status)
           ? (q.status as ImageStatusFilter)
           : undefined,
+        ungrouped: q.group === NOT_GROUPED ? true : undefined,
+        groupId:
+          q.group && q.group !== NOT_GROUPED ? Number(q.group) : undefined,
       }).then((r) => ({ items: r.images, total: r.total })),
   });
 
+  async function loadGroups() {
+    try {
+      const result = await listImageGroups({ limit: IMAGE_GROUPS_MAX_LIMIT });
+      groups = result.groups;
+    } catch {
+      groups = [];
+    }
+  }
+
+  async function openGroup(id: number) {
+    groupError = null;
+
+    try {
+      managedGroup = await getImageGroup(id);
+    } catch (err) {
+      groupError = errorMessage(err, "Failed to load group");
+    }
+  }
+
+  function handleGroupChanged(message: string) {
+    toast.success(message);
+    view.reload();
+    loadGroups();
+    updatesCount.refresh();
+  }
+
   onMount(view.init);
+  onMount(loadGroups);
   onMount(() => tagRefreshStatus.watch());
   onMount(() =>
     tagRefreshStatus.onCompleted(() => {
@@ -75,7 +116,7 @@
   }
 
   function openImage(event: MouseEvent, id: number) {
-    if ((event.target as HTMLElement).closest("a")) return;
+    if ((event.target as HTMLElement).closest("a, button")) return;
     push(`/images/${id}${rowQuery()}`);
   }
 
@@ -154,21 +195,49 @@
         {/each}
       </select>
     </div>
+    {#if groups.length > 0}
+      <div class="filter-field">
+        <span class="filter-label">Group</span>
+        <select
+          class="input filter-control"
+          class:is-active={view.filters.group !== ""}
+          bind:value={view.filters.group}
+          onchange={view.applyFilters}
+        >
+          <option value="">All images</option>
+          <option value={NOT_GROUPED}>Not in a group</option>
+          {#each groups as group (group.id)}
+            <option value={String(group.id)}>{group.name}</option>
+          {/each}
+        </select>
+      </div>
+    {/if}
   </FilterBar>
+
+  {#if groupError}
+    <p class="error">
+      <TriangleAlert size={16} strokeWidth={2} />
+      {groupError}
+    </p>
+  {/if}
 
   <AsyncState
     loading={view.loading && !view.loaded}
     busy={view.loading && view.loaded}
     error={view.error}
     empty={view.items.length === 0}
-    emptyMessage="No virtual images yet. Add one to start tracking tags."
+    emptyMessage={view.hasActiveFilters
+      ? "No images match your filters."
+      : "No virtual images yet. Add one to start tracking tags."}
     columns={6}
   >
     {#snippet emptyAction()}
-      <Button onclick={() => push("/images/new")}>
-        <Plus size={16} strokeWidth={2} />
-        Add virtual image
-      </Button>
+      {#if !view.hasActiveFilters}
+        <Button onclick={() => push("/images/new")}>
+          <Plus size={16} strokeWidth={2} />
+          Add virtual image
+        </Button>
+      {/if}
     {/snippet}
 
     <div class="card table-wrap">
@@ -176,10 +245,10 @@
         <thead>
           <tr>
             <th>Name</th>
-            <th>Registry</th>
-            <th>Repository</th>
+            <th class="phone-hidden">Registry</th>
+            <th class="phone-hidden">Repository</th>
             <th>Tag</th>
-            <th>Last checked</th>
+            <th class="phone-hidden">Last checked</th>
             <th>Update</th>
           </tr>
         </thead>
@@ -200,12 +269,26 @@
                       <CircleAlert size={14} strokeWidth={2} />
                     </span>
                   {/if}
+                  {#if image.group}
+                    {@const groupId = image.group.id}
+                    <button
+                      type="button"
+                      class="group-label"
+                      title={`In group ${image.group.name}. Click to manage it.`}
+                      onclick={() => openGroup(groupId)}
+                    >
+                      <Layers size={12} strokeWidth={2} />
+                      <span class="group-label-name">{image.group.name}</span>
+                    </button>
+                  {/if}
                 </span>
               </td>
-              <td>{image.registry}</td>
-              <td>{image.repository}</td>
+              <td class="phone-hidden">{image.registry}</td>
+              <td class="phone-hidden">{image.repository}</td>
               <td>{image.tag}</td>
-              <td>{formatDate(image.lastChecked, "Never")}</td>
+              <td class="phone-hidden">
+                {formatDate(image.lastChecked, "Never")}
+              </td>
               <td>
                 {#if image.pinned}
                   <span
@@ -249,6 +332,16 @@
   </AsyncState>
 </AppShell>
 
+{#if managedGroup}
+  <ImageGroupModal
+    open
+    group={managedGroup}
+    onClose={() => (managedGroup = null)}
+    onSaved={(name) => handleGroupChanged(`Group "${name}" saved.`)}
+    onDeleted={(name) => handleGroupChanged(`Group "${name}" deleted.`)}
+  />
+{/if}
+
 <ConfirmDialog
   open={showRefreshAllConfirm}
   title="Refresh all tags"
@@ -263,33 +356,47 @@
 <style>
   .header-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
-  }
-
-  .clickable {
-    cursor: pointer;
   }
 
   .name-cell {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-2);
+    gap: var(--space-1) var(--space-2);
   }
 
-  .check-error-icon {
+  .group-label {
     display: inline-flex;
-    color: var(--color-danger);
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 180px;
+    padding: 1px var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .group-label:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+
+  .group-label-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .row-link {
-    color: inherit;
-    text-decoration: none;
     font-weight: 500;
-  }
-
-  .row-link:hover {
-    text-decoration: underline;
+    overflow-wrap: break-word;
   }
 
   .row-link:focus-visible {

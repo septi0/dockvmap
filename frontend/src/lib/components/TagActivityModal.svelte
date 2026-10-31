@@ -47,7 +47,7 @@
 </script>
 
 <Modal {open} {onClose} title="Upstream tag activity" size="lg">
-  <p class="hint muted">
+  <p class="section-hint muted">
     Upstream tag changes DockVMap has detected for this image: tags added,
     removed, and upgrades becoming available. Most recent first.
   </p>
@@ -60,15 +60,15 @@
     emptyMessage="No upstream tag changes recorded for this image yet."
     listSkeleton
   >
-    <ul class="activity-list">
+    <ul class="entry-list">
       {#each events as event (event.id)}
-        <li class="activity-entry">
-          <div class="activity-main">
+        <li class="entry-card">
+          <div class="entry-main">
             <span class="activity-type">{formatAuditType(event.type)}</span>
           </div>
-          <div class="activity-meta">
+          <div class="entry-meta">
             <span class="activity-tags">{event.data.tags.join(", ")}</span>
-            <span class="activity-date">{formatDate(event.createdAt)}</span>
+            <span class="entry-date activity-date">{formatDate(event.createdAt)}</span>
           </div>
         </li>
       {/each}
@@ -88,46 +88,10 @@
 </Modal>
 
 <style>
-  .hint {
-    margin: 0 0 var(--space-4);
-    font-size: 0.875rem;
-  }
-
-  .activity-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
-  .activity-entry {
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-  }
-
-  .activity-main {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-  }
-
   .activity-type {
     font-size: 0.9375rem;
     font-weight: 600;
     color: var(--color-text);
-  }
-
-  .activity-meta {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    margin-top: var(--space-1);
-    color: var(--color-text-muted);
-    font-size: 0.8125rem;
   }
 
   .activity-tags {
@@ -141,11 +105,5 @@
   .activity-date {
     flex-shrink: 0;
     white-space: nowrap;
-  }
-
-  .activity-date::before {
-    content: "\2022";
-    margin-right: var(--space-2);
-    color: var(--color-text-faint);
   }
 </style>

@@ -1,4 +1,5 @@
 import type { Image } from './images'
+import type { ImageGroup } from './imageGroups'
 import type { ImageEvent } from './events'
 import type { Failure } from './failures'
 import type { ProxyMetrics } from './metrics'
@@ -18,6 +19,7 @@ export interface DashboardSummary {
 
 export interface DashboardUpdates {
   images: Image[]
+  groups: ImageGroup[]
   total: number
 }
 

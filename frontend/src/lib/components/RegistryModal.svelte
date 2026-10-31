@@ -200,7 +200,7 @@
       </p>
     {/if}
 
-    <div class="actions">
+    <div class="modal-actions split">
       <Button
         type="button"
         variant="secondary"
@@ -209,7 +209,7 @@
       >
         {testing ? "Testing…" : "Test connection"}
       </Button>
-      <div class="actions-right">
+      <div class="modal-actions-right">
         <Button type="button" variant="secondary" onclick={handleClose}>
           Cancel
         </Button>
@@ -234,17 +234,6 @@
     font-size: 0.875rem;
   }
 
-  .actions {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-  }
-
-  .actions-right {
-    display: flex;
-    gap: var(--space-2);
-  }
 
   .test-result {
     margin: var(--space-2) 0 0;

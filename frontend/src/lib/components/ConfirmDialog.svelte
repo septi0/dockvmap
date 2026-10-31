@@ -41,7 +41,7 @@
 
   <p class="message">{message}</p>
 
-  <div class="actions">
+  <div class="modal-actions">
     <Button variant="secondary" onclick={guardedCancel} disabled={submitting}
       >Cancel</Button
     >
@@ -59,11 +59,5 @@
   .message {
     margin: 0 0 var(--space-4);
     color: var(--color-text-muted);
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
   }
 </style>

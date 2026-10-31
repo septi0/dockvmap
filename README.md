@@ -47,6 +47,7 @@ docker pull dockvmap.local/myapp:current
 - **Virtual tag proxying**: OCI Distribution API proxy (`/v2/...`) that transparently resolves a stable tag to whatever real tag an image is currently pinned to.
 - **Tag family analysis**: inspects a repository's real tags, groups them into families, and tells you when a newer tag in the same family becomes available.
 - **Updates review**: a dedicated page listing every image with an update, each with all newer tags in its family, so you can compare and update them without opening each image.
+- **Image groups**: keep images that release together on one version. Changing the tag of one member changes all of them at once or none of them, only tags available on every member are offered, and the group reviews as a single row on the Updates page. The Groups page lists every group with its shared tag and status, and suggests groups for images that look related.
 - **Pinning**: park an image on its current tag from the details page. Upstream tags are still fetched and recorded, but no update is flagged and no upgrade email is sent until you unpin.
 - **Tag discovery**: when adding a virtual image, scans the upstream repository in the background (result cached) so you pick from its real tags instead of typing one blind.
 - **Tag history**: per-image record of every real tag the virtual tag has resolved to, and when each change happened.

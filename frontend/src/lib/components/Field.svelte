@@ -26,7 +26,10 @@
   let inputEl: HTMLInputElement | undefined;
 
   onMount(() => {
-    if (autofocus) inputEl?.focus();
+    if (autofocus) {
+      inputEl?.focus();
+      if (type === "text") inputEl?.setSelectionRange(value.length, value.length);
+    }
   });
 
   let revealed = $state(false);

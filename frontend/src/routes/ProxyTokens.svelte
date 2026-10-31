@@ -143,7 +143,7 @@
             <tr>
               <td>{token.label}</td>
               <td>{formatDate(token.createdAt)}</td>
-              <td class="actions">
+              <td class="table-actions">
                 <button
                   type="button"
                   class="icon-button danger"
@@ -184,11 +184,5 @@
 <style>
   .warning-text {
     margin-bottom: var(--space-4);
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-1);
   }
 </style>

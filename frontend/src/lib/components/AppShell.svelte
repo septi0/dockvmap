@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import type { Snippet } from "svelte";
   import { link } from "svelte-spa-router";
+  import Menu from "@lucide/svelte/icons/menu";
   import active from "svelte-spa-router/active";
   import Logo from "./Logo.svelte";
   import UserMenu from "./UserMenu.svelte";
@@ -11,6 +12,11 @@
   let { children }: { children: Snippet } = $props();
 
   let version = $state("");
+  let menuOpen = $state(false);
+
+  function closeMenuOnEscape(event: KeyboardEvent) {
+    if (event.key === "Escape") menuOpen = false;
+  }
 
   onMount(async () => {
     try {
@@ -24,21 +30,38 @@
     { label: "Dashboard", href: "/" },
     { label: "Registries", href: "/registries" },
     { label: "Virtual Images", href: "/images" },
+    { label: "Groups", href: "/groups" },
     { label: "Proxy Tokens", href: "/proxy-tokens" },
     { label: "Tag activity", href: "/tag-activity" },
     { label: "System", href: "/system" },
   ];
 </script>
 
+<svelte:window onkeydown={menuOpen ? closeMenuOnEscape : undefined} />
+
 <div class="shell">
-  <aside class="sidebar">
+  {#if menuOpen}
+    <button
+      type="button"
+      class="backdrop"
+      aria-label="Close menu"
+      onclick={() => (menuOpen = false)}
+    ></button>
+  {/if}
+
+  <aside class="sidebar" class:open={menuOpen}>
     <div class="brand"><Logo size="sm" /></div>
 
     <nav>
       <ul>
         {#each navItems as item}
           <li>
-            <a href={item.href} use:link use:active>{item.label}</a>
+            <a
+              href={item.href}
+              use:link
+              use:active
+              onclick={() => (menuOpen = false)}>{item.label}</a
+            >
           </li>
         {/each}
       </ul>
@@ -52,6 +75,15 @@
 
   <div class="main">
     <header class="topbar">
+      <button
+        type="button"
+        class="icon-button menu-button"
+        aria-label="Open menu"
+        aria-expanded={menuOpen}
+        onclick={() => (menuOpen = true)}
+      >
+        <Menu size={22} strokeWidth={1.75} />
+      </button>
       <UpdatesBadge />
       <UserMenu />
     </header>
@@ -154,5 +186,52 @@
   .content {
     flex: 1;
     padding: var(--space-8);
+  }
+
+  .menu-button,
+  .backdrop {
+    display: none;
+  }
+
+  @media (max-width: 768px) {
+    .sidebar {
+      position: fixed;
+      inset: 0 auto 0 0;
+      z-index: 90;
+      visibility: hidden;
+      transform: translateX(-100%);
+      transition:
+        transform var(--transition),
+        visibility var(--transition);
+    }
+
+    .sidebar.open {
+      visibility: visible;
+      transform: none;
+      box-shadow: var(--shadow-md);
+    }
+
+    .backdrop {
+      display: block;
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      padding: 0;
+      border: none;
+      background: rgba(0, 0, 0, 0.5);
+    }
+
+    .menu-button {
+      display: inline-flex;
+      margin-right: auto;
+    }
+
+    .topbar {
+      padding: var(--space-2) var(--space-4);
+    }
+
+    .content {
+      padding: var(--space-4);
+    }
   }
 </style>

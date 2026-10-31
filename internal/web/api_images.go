@@ -40,10 +40,22 @@ func parseImageListFilters(r *http.Request) (model.ImageListFilters, error) {
 		return model.ImageListFilters{}, fmt.Errorf("status must be one of: updateAvailable, failedCheck, pinned")
 	}
 
+	var groupID int64
+
+	if value := r.URL.Query().Get("groupId"); value != "" {
+		groupID, err = strconv.ParseInt(value, 10, 64)
+
+		if err != nil || groupID < 1 {
+			return model.ImageListFilters{}, fmt.Errorf("groupId must be a positive integer")
+		}
+	}
+
 	return model.ImageListFilters{
 		Pagination: pagination,
 		Search:     strings.TrimSpace(r.URL.Query().Get("search")),
 		Status:     status,
+		Ungrouped:  r.URL.Query().Get("ungrouped") == "true",
+		GroupID:    groupID,
 	}, nil
 }
 
@@ -284,7 +296,7 @@ func (w *Web) apiUpdateImageTag(rw http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, service.ErrImageNotFound):
 			apiError(rw, http.StatusNotFound, "image not found")
 
-		case errors.Is(err, service.ErrTagUnavailable):
+		case errors.Is(err, service.ErrTagUnavailable) && !isGroupTagError(err):
 			apiError(rw, http.StatusConflict, "image tag is not available")
 
 		default:

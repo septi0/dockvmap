@@ -6,6 +6,7 @@
     placeholder,
     required = false,
     disabled = false,
+    onchange,
   }: {
     label: string;
     value?: string;
@@ -13,12 +14,13 @@
     placeholder?: string;
     required?: boolean;
     disabled?: boolean;
+    onchange?: () => void;
   } = $props();
 </script>
 
 <label class="field">
   <span class="field-label">{label}</span>
-  <select class="input" bind:value {required} {disabled}>
+  <select class="input" bind:value {required} {disabled} {onchange}>
     {#if placeholder}
       <option value="" disabled selected={value === ""}>{placeholder}</option>
     {/if}

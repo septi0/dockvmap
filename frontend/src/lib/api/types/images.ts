@@ -11,6 +11,7 @@ export interface Image {
   updateAvailableTag?: string
   pinned: boolean
   refreshStatus: 'idle' | 'running'
+  group?: { id: number; name: string }
   createdAt: string
   updatedAt: string
 }
@@ -29,6 +30,8 @@ export interface ImageListParams {
   limit?: number
   search?: string
   status?: ImageStatusFilter
+  ungrouped?: boolean
+  groupId?: number
 }
 
 export interface Tag {

@@ -12,14 +12,33 @@ import (
 
 var ErrImageNameConflict = errors.New("image name already exists")
 
+const imageSelect = `
+	SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.group_id, g.name, i.tag_set_hash, i.created_at, i.updated_at
+	FROM images i
+	LEFT JOIN registries r ON r.id = i.registry_id
+	LEFT JOIN image_groups g ON g.id = i.group_id
+`
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanImage(row rowScanner, img *model.Image) error {
+	return row.Scan(
+		&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
+		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
+		&img.Pinned, &img.RefreshStatus, &img.GroupID, &img.GroupName, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
+	)
+}
+
 func imageListWhere(filters model.ImageListFilters) (string, []any) {
 	b := &whereBuilder{}
 
 	if search := strings.TrimSpace(filters.Search); search != "" {
 		term := likeTerm(search)
 		b.add(
-			`(i.name LIKE ? ESCAPE '\' OR i.repository LIKE ? ESCAPE '\' OR r.registry LIKE ? ESCAPE '\')`,
-			term, term, term,
+			`(i.name LIKE ? ESCAPE '\' OR i.repository LIKE ? ESCAPE '\' OR r.registry LIKE ? ESCAPE '\' OR g.name LIKE ? ESCAPE '\')`,
+			term, term, term, term,
 		)
 	}
 
@@ -32,20 +51,25 @@ func imageListWhere(filters model.ImageListFilters) (string, []any) {
 		b.add(`i.pinned = 1`)
 	}
 
+	if filters.Ungrouped {
+		b.add(`i.group_id IS NULL`)
+	}
+
+	if filters.GroupID > 0 {
+		b.add(`i.group_id = ?`, filters.GroupID)
+	}
+
 	return b.clause(), b.args
 }
 
 func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) ([]model.Image, error) {
 	where, args := imageListWhere(filters)
 
-	query := fmt.Sprintf(`
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.tag_set_hash, i.created_at, i.updated_at
-		FROM images i
-		LEFT JOIN registries r ON r.id = i.registry_id
+	query := fmt.Sprintf(`%s
 		%s
 		ORDER BY i.id DESC
 		LIMIT ? OFFSET ?
-	`, where)
+	`, imageSelect, where)
 
 	rows, err := s.db.QueryContext(ctx, query, append(args, filters.Limit, filters.Offset)...)
 
@@ -60,11 +84,7 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 	for rows.Next() {
 		var img model.Image
 
-		if err := rows.Scan(
-			&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
-			&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
-			&img.Pinned, &img.RefreshStatus, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
-		); err != nil {
+		if err := scanImage(rows, &img); err != nil {
 			return nil, fmt.Errorf("scanning image row: %w", err)
 		}
 
@@ -119,6 +139,7 @@ func (s *Store) CountImages(ctx context.Context, filters model.ImageListFilters)
 		SELECT COUNT(*)
 		FROM images i
 		LEFT JOIN registries r ON r.id = i.registry_id
+		LEFT JOIN image_groups g ON g.id = i.group_id
 		%s
 	`, where)
 
@@ -137,7 +158,8 @@ func (s *Store) ImageStatusCounts(ctx context.Context) (model.ImageStatusCounts,
 	err := s.db.QueryRowContext(ctx, `
 		SELECT
 			COUNT(*),
-			COALESCE(SUM(update_available), 0),
+			COALESCE(SUM(CASE WHEN update_available = 1 AND group_id IS NULL THEN 1 ELSE 0 END), 0)
+				+ COUNT(DISTINCT CASE WHEN update_available = 1 THEN group_id END),
 			COALESCE(SUM(CASE WHEN last_check_error IS NOT NULL THEN 1 ELSE 0 END), 0)
 		FROM images
 	`).Scan(&counts.Total, &counts.UpdateAvailable, &counts.FailedCheck)
@@ -152,16 +174,7 @@ func (s *Store) ImageStatusCounts(ctx context.Context) (model.ImageStatusCounts,
 func (s *Store) GetImage(ctx context.Context, name string) (*model.Image, error) {
 	var img model.Image
 
-	err := s.db.QueryRowContext(ctx, `
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.tag_set_hash, i.created_at, i.updated_at
-		FROM images i
-		LEFT JOIN registries r ON r.id = i.registry_id
-		WHERE i.name = ?
-	`, name).Scan(
-		&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
-		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
-		&img.Pinned, &img.RefreshStatus, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
-	)
+	err := scanImage(s.db.QueryRowContext(ctx, imageSelect+`WHERE i.name = ?`, name), &img)
 
 	if err != nil {
 		if isNoRows(err) {
@@ -177,16 +190,7 @@ func (s *Store) GetImage(ctx context.Context, name string) (*model.Image, error)
 func (s *Store) GetImageByID(ctx context.Context, imageId int64) (*model.Image, error) {
 	var img model.Image
 
-	err := s.db.QueryRowContext(ctx, `
-		SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.tag_set_hash, i.created_at, i.updated_at
-		FROM images i
-		LEFT JOIN registries r ON r.id = i.registry_id
-		WHERE i.id = ?
-	`, imageId).Scan(
-		&img.ID, &img.Name, &img.RegistryID, &img.Registry, &img.Repository, &img.Tag,
-		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
-		&img.Pinned, &img.RefreshStatus, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
-	)
+	err := scanImage(s.db.QueryRowContext(ctx, imageSelect+`WHERE i.id = ?`, imageId), &img)
 
 	if err != nil {
 		if isNoRows(err) {

@@ -60,11 +60,23 @@ type imageResponse struct {
 	UpdateAvailableTag *string    `json:"updateAvailableTag,omitempty"`
 	Pinned             bool       `json:"pinned"`
 	RefreshStatus      string     `json:"refreshStatus"`
+	Group              *imageRef  `json:"group,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
 
+type imageRef struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
 func newImageResponse(image model.Image) imageResponse {
+	var group *imageRef
+
+	if image.GroupID != nil && image.GroupName != nil {
+		group = &imageRef{ID: *image.GroupID, Name: *image.GroupName}
+	}
+
 	return imageResponse{
 		ID:                 image.ID,
 		Name:               image.Name,
@@ -78,9 +90,71 @@ func newImageResponse(image model.Image) imageResponse {
 		UpdateAvailableTag: image.UpdateAvailableTag,
 		Pinned:             image.Pinned,
 		RefreshStatus:      image.RefreshStatus,
+		Group:              group,
 		CreatedAt:          image.CreatedAt,
 		UpdatedAt:          image.UpdatedAt,
 	}
+}
+
+type imageGroupRequest struct {
+	Name     string  `json:"name"`
+	ImageIDs []int64 `json:"imageIds"`
+	Tag      string  `json:"tag"`
+}
+
+type imageGroupPartialTagResponse struct {
+	Tag     string   `json:"tag"`
+	Missing []string `json:"missing"`
+}
+
+type imageGroupResponse struct {
+	ID                 int64                         `json:"id"`
+	Name               string                        `json:"name"`
+	Tag                string                        `json:"tag"`
+	Pinned             bool                          `json:"pinned"`
+	UpdateAvailable    bool                          `json:"updateAvailable"`
+	UpdateAvailableTag *string                       `json:"updateAvailableTag,omitempty"`
+	PartialTag         *imageGroupPartialTagResponse `json:"partialTag,omitempty"`
+	Images             []imageResponse               `json:"images"`
+	CreatedAt          time.Time                     `json:"createdAt"`
+	UpdatedAt          time.Time                     `json:"updatedAt"`
+}
+
+func newImageGroupResponse(group model.ImageGroup) imageGroupResponse {
+	images := make([]imageResponse, 0, len(group.Images))
+
+	for _, image := range group.Images {
+		images = append(images, newImageResponse(image))
+	}
+
+	var partial *imageGroupPartialTagResponse
+
+	if group.PartialTag != nil {
+		partial = &imageGroupPartialTagResponse{Tag: group.PartialTag.Tag, Missing: group.PartialTag.Missing}
+	}
+
+	return imageGroupResponse{
+		ID:                 group.ID,
+		Name:               group.Name,
+		Tag:                group.Tag,
+		Pinned:             group.Pinned,
+		UpdateAvailable:    group.UpdateAvailable,
+		UpdateAvailableTag: group.UpdateAvailableTag,
+		PartialTag:         partial,
+		Images:             images,
+		CreatedAt:          group.CreatedAt,
+		UpdatedAt:          group.UpdatedAt,
+	}
+}
+
+func newImageGroupResponses(groups []model.ImageGroup) []imageGroupResponse {
+	responses := make([]imageGroupResponse, 0, len(groups))
+
+	for _, group := range groups {
+		responses = append(responses, newImageGroupResponse(group))
+	}
+
+	return responses
 }
 
 type updateImageTagRequest struct {

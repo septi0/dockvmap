@@ -63,7 +63,7 @@
 </script>
 
 <Modal {open} onClose={guardedClose} title="Rename virtual image">
-  <p class="hint muted">
+  <p class="section-hint muted">
     Renaming changes the path clients pull from. Any client currently pulling
     <code class="inline-code">{currentName}{virtualTag ? `:${virtualTag}` : ""}</code>
     will stop working immediately once renamed.
@@ -78,7 +78,7 @@
     </p>
   {/if}
 
-  <div class="actions">
+  <div class="modal-actions spaced">
     <Button variant="secondary" onclick={guardedClose} disabled={renaming}
       >Cancel</Button
     >
@@ -89,16 +89,3 @@
   </div>
 </Modal>
 
-<style>
-  .hint {
-    margin: 0 0 var(--space-4);
-    font-size: 0.875rem;
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-    margin-top: var(--space-4);
-  }
-</style>

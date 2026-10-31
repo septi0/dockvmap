@@ -95,3 +95,11 @@ export function toRfc3339DayStart(date: string): string | undefined {
 export function toRfc3339DayEnd(date: string): string | undefined {
   return date ? new Date(`${date}T23:59:59`).toISOString() : undefined
 }
+
+export function allCount(count: number): string {
+  return count === 2 ? 'both' : `all ${count}`
+}
+
+export function allImages(count: number): string {
+  return count === 2 ? 'both images' : `all ${count} images`
+}

@@ -14,8 +14,9 @@ import (
 
 type fakeImages struct {
 	imageService
-	list []model.Image
-	err  error
+	groups []model.ImageGroup
+	list   []model.Image
+	err    error
 }
 
 func (f fakeImages) List(context.Context, model.ImageListFilters) ([]model.Image, error) {
@@ -24,6 +25,14 @@ func (f fakeImages) List(context.Context, model.ImageListFilters) ([]model.Image
 
 func (f fakeImages) Count(context.Context, model.ImageListFilters) (int64, error) {
 	return int64(len(f.list)), f.err
+}
+
+func (f fakeImages) ListGroups(context.Context, model.ImageGroupListFilters) ([]model.ImageGroup, error) {
+	return f.groups, nil
+}
+
+func (f fakeImages) CountGroups(context.Context, model.ImageGroupListFilters) (int64, error) {
+	return int64(len(f.groups)), nil
 }
 
 func (f fakeImages) StatusCounts(context.Context) (model.ImageStatusCounts, error) {
@@ -167,5 +176,22 @@ func TestDashboardImageFailureIsolatedFromRest(t *testing.T) {
 
 	if resp.Activity.Data == nil || resp.Metrics.Data == nil {
 		t.Error("non-image sections did not survive the image failure")
+	}
+}
+
+func TestDashboardUpdatesCountsGroupsAsOneRow(t *testing.T) {
+	w := &Web{images: fakeImages{
+		list:   []model.Image{{ID: 1, Name: "app"}},
+		groups: []model.ImageGroup{{ID: 1, Name: "stack"}, {ID: 2, Name: "other"}},
+	}}
+
+	section := w.dashboardUpdates(context.Background())
+
+	if section.Error != nil {
+		t.Fatalf("error = %v", *section.Error)
+	}
+
+	if len(section.Data.Groups) != 2 || len(section.Data.Images) != 1 || section.Data.Total != 3 {
+		t.Fatalf("data = %+v", section.Data)
 	}
 }

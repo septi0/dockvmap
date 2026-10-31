@@ -1,6 +1,9 @@
 <script lang="ts">
   import Check from "@lucide/svelte/icons/check";
-  import type { TagGroup } from "../api/types/images";
+  import { formatDate, formatRelativeTime } from "../utils/format";
+  import type { Tag, TagGroup } from "../api/types/images";
+
+  const SEARCH_MIN_TAGS = 12;
 
   let {
     tagGroups,
@@ -10,6 +13,8 @@
     layout = "stack",
     emptyMessage = "No tags were found.",
     dimPrereleases = false,
+    searchable = false,
+    showAge = false,
   }: {
     tagGroups: TagGroup[];
     selectedTag?: string | null;
@@ -18,9 +23,61 @@
     layout?: "stack" | "grid";
     emptyMessage?: string;
     dimPrereleases?: boolean;
+    searchable?: boolean;
+    showAge?: boolean;
   } = $props();
 
   let expandedFamilies = $state<Set<number>>(new Set());
+  let search = $state("");
+
+  let term = $derived(search.trim().toLowerCase());
+  let tagTotal = $derived(
+    tagGroups.reduce((total, group) => total + group.tags.length, 0),
+  );
+  let showSearch = $derived(searchable && tagTotal >= SEARCH_MIN_TAGS);
+  let visibleGroups = $derived(
+    term
+      ? tagGroups
+          .map((group) => ({
+            ...group,
+            tags: group.tags.filter((t) => t.tag.toLowerCase().includes(term)),
+          }))
+          .filter((group) => group.tags.length > 0)
+      : tagGroups,
+  );
+  let currentFamilyId = $derived(
+    tagGroups.find((group) => group.tags.some((t) => t.tag === currentTag))
+      ?.familyId,
+  );
+  let firstTrackedAt = $derived(
+    Math.min(
+      ...tagGroups.flatMap((group) =>
+        group.tags.map((t) => seenTime(t) ?? Infinity),
+      ),
+    ),
+  );
+
+  function seenTime(tag: Tag): number | null {
+    const time = tag.firstSeen ? new Date(tag.firstSeen).getTime() : NaN;
+
+    return Number.isNaN(time) ? null : time;
+  }
+
+  function seenSinceTracking(tag: Tag): boolean {
+    const time = seenTime(tag);
+
+    return time !== null && time > firstTrackedAt;
+  }
+
+  function ageTitle(tag: Tag): string {
+    return seenSinceTracking(tag)
+      ? `First seen ${formatDate(tag.firstSeen)}`
+      : "Already published when tracking started";
+  }
+
+  function ignoreEnter(event: KeyboardEvent) {
+    if (event.key === "Enter") event.preventDefault();
+  }
 
   $effect(() => {
     tagGroups;
@@ -43,21 +100,33 @@
   }
 </script>
 
+{#if showSearch}
+  <div class="tag-search">
+    <input
+      type="search"
+      class="input"
+      aria-label="Search tags"
+      placeholder={`Search ${tagTotal.toLocaleString()} tags…`}
+      bind:value={search}
+      onkeydown={ignoreEnter}
+    />
+  </div>
+{/if}
+
 {#if tagGroups.length === 0}
   <p class="muted">{emptyMessage}</p>
+{:else if visibleGroups.length === 0}
+  <p class="muted">No tags match "{search.trim()}".</p>
 {:else}
   <div class="families" class:grid={layout === "grid"}>
-    {#each tagGroups as group (group.familyId)}
+    {#each visibleGroups as group (group.familyId)}
       {@const visibleCount = visibleCountFor(group)}
       {@const isExpanded = expandedFamilies.has(group.familyId)}
-      {@const visibleTags = isExpanded
+      {@const showAll = isExpanded || term !== ""}
+      {@const visibleTags = showAll
         ? group.tags
         : group.tags.slice(0, visibleCount)}
-      {@const currentIndex = currentTag
-        ? group.tags.findIndex((t) => t.tag === currentTag)
-        : -1}
-      {@const isCurrentFamily = currentIndex !== -1}
-      <div class="family" class:current={isCurrentFamily}>
+      <div class="family" class:current={group.familyId === currentFamilyId}>
         <div class="tags">
           {#each visibleTags as tagInfo (tagInfo.tag)}
             <button
@@ -65,18 +134,24 @@
               class="tag-chip"
               class:selected={selectedTag === tagInfo.tag}
               class:dimmed={dimPrereleases && tagInfo.prerelease}
+              title={showAge ? ageTitle(tagInfo) : undefined}
               onclick={() => (selectedTag = tagInfo.tag)}
             >
               {#if tagInfo.tag === currentTag}
                 <Check size={12} strokeWidth={3} />
               {/if}
               {tagInfo.tag}
+              {#if showAge && seenSinceTracking(tagInfo)}
+                <span class="tag-age">
+                  {formatRelativeTime(tagInfo.firstSeen)}
+                </span>
+              {/if}
               {#if tagInfo.new}
                 <span class="new-dot" title="New since last check"></span>
               {/if}
             </button>
           {/each}
-          {#if !isExpanded && group.tags.length > visibleCount}
+          {#if !showAll && group.tags.length > visibleCount}
             <button
               type="button"
               class="show-more"
@@ -92,6 +167,21 @@
 {/if}
 
 <style>
+  .tag-search {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    margin-bottom: var(--space-3);
+    background: var(--color-surface);
+  }
+
+  .tag-age {
+    font-family: inherit;
+    font-size: 0.6875rem;
+    color: var(--color-text-muted);
+    white-space: nowrap;
+  }
+
   .families {
     display: flex;
     flex-direction: column;

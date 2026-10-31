@@ -449,6 +449,25 @@ select.filter-control {
   font-size: 0.8125rem;
 }
 
+.warning-box {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.warning-box svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
 .inline-code {
   padding: 1px var(--space-1);
   border-radius: var(--radius-sm);
@@ -533,6 +552,15 @@ select.filter-control {
   color: var(--color-accent);
 }
 
+.row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.row-link:hover {
+  text-decoration: underline;
+}
+
 .link {
   background: none;
   border: none;
@@ -590,6 +618,63 @@ select.filter-control {
   font-size: 0.875rem;
 }
 
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.modal-actions.split {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal-actions.spaced {
+  margin-top: var(--space-4);
+}
+
+.modal-actions-right {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.entry-card {
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.entry-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.entry-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
+.entry-date::before {
+  content: "\2022";
+  margin-right: var(--space-2);
+  color: var(--color-text-faint);
+}
+
 .detail-cell {
   display: flex;
   flex-direction: column;
@@ -629,6 +714,21 @@ select.filter-control {
 
 .table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.table .table-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.table tr.clickable {
+  cursor: pointer;
+}
+
+.table .check-error-icon {
+  display: inline-flex;
+  color: var(--color-danger);
 }
 
 .table tbody tr:hover {
@@ -691,6 +791,28 @@ select.filter-control {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 768px) {
+  .phone-hidden {
+    display: none;
+  }
+
+  .list-header,
+  .detail-cell-row,
+  .command-row {
+    flex-wrap: wrap;
+  }
+
+  .section-card {
+    padding: var(--space-4);
+  }
+
+  .table th,
+  .table td {
+    padding: var(--space-2);
+    overflow-wrap: anywhere;
   }
 }
 

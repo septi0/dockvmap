@@ -56,7 +56,7 @@
       </p>
     {/if}
 
-    <div class="actions">
+    <div class="modal-actions spaced">
       <Button onclick={onClose}>Done</Button>
     </div>
   {/if}
@@ -69,11 +69,5 @@
     gap: var(--space-2);
     margin: 0 0 var(--space-4);
     color: var(--color-warning);
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: var(--space-4);
   }
 </style>

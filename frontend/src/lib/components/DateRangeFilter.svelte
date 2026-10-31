@@ -33,6 +33,7 @@
 <style>
   .date-range {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
   }

@@ -10,32 +10,81 @@
   import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
   import UpdateReviewRow from "../lib/components/UpdateReviewRow.svelte";
   import { listImages, IMAGES_PAGE_SIZE } from "../lib/api/images";
+  import {
+    IMAGE_GROUPS_MAX_LIMIT,
+    listImageGroups,
+  } from "../lib/api/imageGroups";
   import { tagRefreshStatus } from "../lib/services/tagRefreshStatus";
   import type { Image } from "../lib/api/types/images";
+  import type { ImageGroup } from "../lib/api/types/imageGroups";
   import { formatNumber } from "../lib/utils/format";
   import { writeListQuery } from "../lib/utils/listQuery";
   import { createListView } from "../lib/utils/listView.svelte";
 
-  const view = createListView<{ search: string; offset: number }, Image>({
+  type UpdateItem = { key: string; image: Image; group: ImageGroup | null };
+
+  const view = createListView<{ search: string; offset: number }, UpdateItem>({
     routePath: "/updates",
     defaults: { search: "", offset: 0 },
     errorFallback: "Failed to load updates",
-    fetch: (q) =>
-      listImages({
-        offset: q.offset,
-        limit: IMAGES_PAGE_SIZE,
-        search: q.search || undefined,
-        status: "updateAvailable",
-      }).then((r) => ({ items: r.images, total: r.total })),
+    fetch: async (q) => {
+      const search = q.search || undefined;
+      const [images, groups] = await Promise.all([
+        listImages({
+          offset: q.offset,
+          limit: IMAGES_PAGE_SIZE,
+          search,
+          status: "updateAvailable",
+          ungrouped: true,
+        }),
+        listImageGroups({
+          limit: IMAGE_GROUPS_MAX_LIMIT,
+          search,
+          status: "updateAvailable",
+        }),
+      ]);
+
+      return {
+        items: [
+          ...groups.groups.map((group) => ({
+            key: `group-${group.id}`,
+            image: group.images[0],
+            group,
+          })),
+          ...images.images.map((image) => ({
+            key: `image-${image.id}`,
+            image,
+            group: null,
+          })),
+        ],
+        total: images.total + groups.groups.length,
+      };
+    },
   });
 
   let reloadToken = $state(0);
 
   let sweepRunning = $derived($tagRefreshStatus.data?.running ?? false);
-  let cleared = $derived(
-    view.items.filter((image) => !image.updateAvailable).length,
+  let groupItems = $derived(view.items.filter((item) => item.group));
+  let imageItems = $derived(view.items.filter((item) => !item.group));
+  let visibleItems = $derived(
+    view.filters.offset === 0 ? view.items : imageItems,
   );
-  let remaining = $derived(Math.max(0, view.total - cleared));
+  let clearedGroups = $derived(
+    groupItems.filter((item) => !item.group?.updateAvailable).length,
+  );
+  let cleared = $derived(
+    imageItems.filter((item) => !item.image.updateAvailable).length,
+  );
+  let remainingGroups = $derived(groupItems.length - clearedGroups);
+  let remainingImages = $derived(
+    Math.max(0, view.total - groupItems.length - cleared),
+  );
+  let summary = $derived(
+    remainingGroups > 0
+      ? `${formatNumber(remainingGroups)} ${remainingGroups === 1 ? "group" : "groups"} and ${formatNumber(remainingImages)} ${remainingImages === 1 ? "image" : "images"} with an update available`
+      : `${formatNumber(remainingImages)} ${remainingImages === 1 ? "image" : "images"} with an update available`,
+  );
   let detailsQuery = $derived(
     writeListQuery({ from: "updates", ...view.filters }),
   );
@@ -45,13 +94,24 @@
   onMount(() =>
     tagRefreshStatus.onCompleted(() => {
       reloadToken += 1;
-      if (view.loaded && cleared === 0) view.reload();
+      if (view.loaded && cleared + clearedGroups === 0) view.reload();
     }),
   );
 
   function applyImage(fresh: Image) {
-    const image = view.items.find((item) => item.id === fresh.id);
-    if (image) Object.assign(image, fresh);
+    const item = view.items.find(
+      (candidate) => !candidate.group && candidate.image.id === fresh.id,
+    );
+    if (item) Object.assign(item.image, fresh);
+  }
+
+  function applyGroup(fresh: ImageGroup) {
+    const item = view.items.find((candidate) => candidate.group?.id === fresh.id);
+
+    if (item) {
+      item.group = fresh;
+      item.image = fresh.images[0];
+    }
   }
 
   function changePage(next: number) {
@@ -70,10 +130,7 @@
         <h1>Updates</h1>
       </div>
       {#if view.loaded && !view.error}
-        <p class="subtitle">
-          {formatNumber(remaining)}
-          {remaining === 1 ? "image" : "images"} with an update available
-        </p>
+        <p class="subtitle">{summary}</p>
       {/if}
     </div>
     {#if sweepRunning}
@@ -84,7 +141,7 @@
   <FilterBar active={view.hasActiveFilters} onClear={view.clear}>
     <SearchInput
       bind:value={view.filters.search}
-      placeholder="Search images…"
+      placeholder="Search images and groups…"
       onSearch={view.applyFilters}
     />
   </FilterBar>
@@ -93,24 +150,27 @@
     loading={view.loading && !view.loaded}
     busy={view.loading && view.loaded}
     error={view.error}
-    empty={view.items.length === 0}
+    empty={visibleItems.length === 0}
     emptyMessage={view.filters.search
       ? "No images with an update match your search."
       : "All caught up. No images have an update available."}
     listSkeleton
   >
-    {#each view.items as image (image.id)}
+    {#each visibleItems as item (item.key)}
       <UpdateReviewRow
-        {image}
+        image={item.image}
+        group={item.group}
         {detailsQuery}
         {sweepRunning}
         {reloadToken}
         onImageChanged={applyImage}
+        onGroupChanged={applyGroup}
+        onStructureChanged={view.reload}
       />
     {/each}
 
     <Pagination
-      total={view.total}
+      total={view.total - groupItems.length}
       limit={IMAGES_PAGE_SIZE}
       offset={view.filters.offset}
       onOffsetChange={changePage}

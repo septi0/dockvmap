@@ -23,6 +23,8 @@ type Image struct {
 	UpdateAvailableTag *string    `json:"updateAvailableTag,omitempty"`
 	Pinned             bool       `json:"pinned"`
 	RefreshStatus      string     `json:"refreshStatus"`
+	GroupID            *int64     `json:"groupId,omitempty"`
+	GroupName          *string    `json:"groupName,omitempty"`
 	TagSetHash         string     `json:"-"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
@@ -48,8 +50,10 @@ func (f ImageStatusFilter) Valid() bool {
 
 type ImageListFilters struct {
 	Pagination
-	Search string
-	Status ImageStatusFilter
+	Search    string
+	Status    ImageStatusFilter
+	Ungrouped bool
+	GroupID   int64
 }
 
 type ImageStatusCounts struct {

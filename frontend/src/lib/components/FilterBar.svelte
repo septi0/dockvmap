@@ -36,8 +36,10 @@
 
   .filter-bar :global(.filter-field) {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
+    max-width: 100%;
   }
 
   .filter-bar :global(.filter-label) {

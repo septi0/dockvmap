@@ -12,6 +12,7 @@
     repository = $bindable(),
     registryOptions,
     registryLabel,
+    focusRepository = false,
     discovery,
     onSubmit,
     onCancelDiscovery,
@@ -21,6 +22,7 @@
     repository: string;
     registryOptions: { value: string; label: string }[];
     registryLabel: string | undefined;
+    focusRepository?: boolean;
     discovery: TagDiscoveryState;
     onSubmit: (event: SubmitEvent) => void;
     onCancelDiscovery: () => void;
@@ -67,6 +69,7 @@
     placeholder="library/nginx"
     required
     disabled={locked}
+    autofocus={focusRepository}
   />
 
   {#if discovering}

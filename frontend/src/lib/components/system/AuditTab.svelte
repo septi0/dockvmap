@@ -151,10 +151,6 @@
 </Modal>
 
 <style>
-  .clickable {
-    cursor: pointer;
-  }
-
   .row-trigger {
     padding: 0;
     border: none;

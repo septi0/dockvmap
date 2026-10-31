@@ -141,7 +141,7 @@
                   <span class="muted">-</span>
                 {/if}
               </td>
-              <td class="actions">
+              <td class="table-actions">
                 <button
                   type="button"
                   class="icon-button"
@@ -194,10 +194,3 @@
   onCancel={cancelDelete}
 />
 
-<style>
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-1);
-  }
-</style>

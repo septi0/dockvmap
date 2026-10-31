@@ -74,7 +74,7 @@
       required
     />
 
-    <div class="actions">
+    <div class="modal-actions">
       <Button type="button" variant="secondary" onclick={handleClose}>Cancel</Button>
       <Button type="submit" disabled={submitting}>
         {submitting ? 'Creating…' : 'Create token'}
@@ -83,10 +83,3 @@
   </form>
 </Modal>
 
-<style>
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
-  }
-</style>

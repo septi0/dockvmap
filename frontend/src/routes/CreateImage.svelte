@@ -44,6 +44,7 @@
   let selectedTag = $state<string | null>(null);
   let creating = $state(false);
   let createError = $state<string | null>(null);
+  let addingAnother = $state(false);
 
   async function loadRegistries() {
     loadingRegistries = true;
@@ -80,8 +81,7 @@
   );
 
   function deriveNameFromRepository(value: string): string {
-    const segments = value.trim().split("/").filter(Boolean);
-    return segments.length > 0 ? segments[segments.length - 1] : "";
+    return value.trim().split("/").pop() ?? "";
   }
 
   $effect(() => {
@@ -118,7 +118,20 @@
     createError = null;
   }
 
-  async function handleCreate() {
+  function startAnother() {
+    const slash = repository.lastIndexOf("/");
+
+    discovery.cancel();
+    repository = repository.slice(0, slash + 1);
+    name = "";
+    lastAutoName = "";
+    selectedTag = null;
+    tagGroups = [];
+    addingAnother = true;
+    step = 1;
+  }
+
+  async function handleCreate(addAnother = false) {
     if (!selectedTag) return;
 
     createError = null;
@@ -132,7 +145,9 @@
         tag: selectedTag,
       });
       toast.success(`Virtual image "${name.trim()}" created.`);
-      push("/images");
+
+      if (addAnother) startAnother();
+      else push("/images");
     } catch (err) {
       createError = errorMessage(err, "Failed to create virtual image");
     } finally {
@@ -203,6 +218,7 @@
             bind:repository
             {registryOptions}
             registryLabel={selectedRegistry?.registry}
+            focusRepository={addingAnother}
             discovery={$discovery}
             onSubmit={handleInspect}
             onCancelDiscovery={discovery.cancel}
@@ -218,7 +234,8 @@
             {creating}
             error={createError}
             onBack={backToSource}
-            onCreate={handleCreate}
+            onCreate={() => handleCreate()}
+            onCreateAnother={() => handleCreate(true)}
           />
         {/if}
       </div>
@@ -282,7 +299,6 @@
   .stepper-label {
     font-size: 0.875rem;
     color: var(--color-text-faint);
-    white-space: nowrap;
   }
 
   .stepper-label.active {

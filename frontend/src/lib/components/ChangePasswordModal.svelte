@@ -54,7 +54,7 @@
 </script>
 
 <Modal {open} {onClose} title="Change password">
-  <p class="hint muted">
+  <p class="section-hint muted">
     Changing your password will sign you out of any other active sessions, on
     this device or elsewhere. The one you're using right now stays signed in.
   </p>
@@ -101,7 +101,7 @@
       required
     />
 
-    <div class="actions">
+    <div class="modal-actions">
       <Button type="button" variant="secondary" onclick={onClose}>Close</Button>
       <Button type="submit" disabled={submitting}>
         <KeyRound size={16} strokeWidth={1.75} />
@@ -112,17 +112,6 @@
 </Modal>
 
 <style>
-  .hint {
-    margin: 0 0 var(--space-4);
-    font-size: 0.875rem;
-  }
-
-  form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
   .section-divider {
     display: flex;
     align-items: center;
@@ -140,11 +129,5 @@
     flex: 1;
     height: 1px;
     background: var(--color-border);
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--space-2);
   }
 </style>

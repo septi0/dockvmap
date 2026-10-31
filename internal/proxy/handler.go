@@ -24,6 +24,7 @@ func setAccess(r *http.Request, mutate func(*httpmw.AccessFields)) {
 
 type imageResolver interface {
 	Resolve(ctx context.Context, name string) (*model.Image, error)
+	OnTagChanged(fn func(names ...string))
 }
 
 type tokenVerifier interface {
@@ -45,10 +46,14 @@ func New(cfg *config.Config, images imageResolver, client *oci.Client, cache *bl
 		metrics = NewMetrics()
 	}
 
+	resolveCache := newResolveCache()
+
+	images.OnTagChanged(resolveCache.invalidate)
+
 	return &Proxy{
 		cfg:          cfg,
 		images:       images,
-		resolveCache: newResolveCache(),
+		resolveCache: resolveCache,
 		client:       client,
 		cache:        cache,
 		metrics:      metrics,

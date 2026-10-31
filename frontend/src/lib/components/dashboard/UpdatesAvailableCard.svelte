@@ -25,13 +25,19 @@
   } = $props();
 
   let images = $derived(data?.images ?? []);
+  let groups = $derived(data?.groups ?? []);
   let total = $derived(data?.total ?? 0);
 </script>
 
 <DashboardCard title="Updates available">
   {#snippet icon()}<CircleArrowUp size={16} strokeWidth={1.75} />{/snippet}
 
-  <CardBody {loading} {busy} hasError={!!error} empty={images.length === 0}>
+  <CardBody
+    {loading}
+    {busy}
+    hasError={!!error}
+    empty={images.length + groups.length === 0}
+  >
     {#snippet errorState()}
       <CardErrorState title="Couldn’t load updates" {error} {onRetry} />
     {/snippet}
@@ -66,6 +72,31 @@
     {/snippet}
 
     <ul class="item-list">
+      {#each groups as group (group.id)}
+        <li>
+          <button
+            type="button"
+            class="item-row"
+            onclick={() => push("/updates")}
+          >
+            <span class="item-main">
+              <span class="item-title">{group.name}</span>
+              <span class="item-sub muted">
+                Group of {group.images.length} images
+              </span>
+            </span>
+            <span class="item-delta">
+              <span class="delta-from">{group.tag}</span>
+              <span class="delta-arrow" aria-hidden="true">&rarr;</span>
+              {#if group.updateAvailableTag}
+                <span class="delta-to">{group.updateAvailableTag}</span>
+              {:else}
+                <span class="delta-blocked">Blocked</span>
+              {/if}
+            </span>
+          </button>
+        </li>
+      {/each}
       {#each images as image (image.id)}
         <li>
           <button
@@ -91,9 +122,9 @@
       {/each}
     </ul>
 
-    {#if total > images.length}
+    {#if total > images.length + groups.length}
       <a class="view-all link" href="/updates" use:link>
-        View all {formatNumber(total)} images with updates available
+        View all {formatNumber(total)} updates available
       </a>
     {/if}
   </CardBody>
@@ -120,6 +151,11 @@
   .delta-to {
     font-weight: 500;
     color: var(--color-accent);
+  }
+
+  .delta-blocked {
+    font-weight: 500;
+    color: var(--color-warning);
   }
 
 </style>

@@ -37,8 +37,9 @@ type dashboardSummaryData struct {
 }
 
 type dashboardUpdatesData struct {
-	Images []imageResponse `json:"images"`
-	Total  int64           `json:"total"`
+	Images []imageResponse      `json:"images"`
+	Groups []imageGroupResponse `json:"groups"`
+	Total  int64                `json:"total"`
 }
 
 type dashboardActivityData struct {
@@ -94,15 +95,37 @@ func (w *Web) dashboardSummary(ctx context.Context) dashboardSection[dashboardSu
 }
 
 func (w *Web) dashboardUpdates(ctx context.Context) dashboardSection[dashboardUpdatesData] {
-	filters := model.ImageListFilters{
-		Pagination: model.Pagination{Offset: 0, Limit: dashboardUpdatesLimit},
-		Status:     model.ImageStatusUpdateAvailable,
+	groupFilters := model.ImageGroupListFilters{
+		Pagination:      model.Pagination{Offset: 0, Limit: dashboardUpdatesLimit},
+		UpdateAvailable: true,
 	}
 
-	images, err := w.images.List(ctx, filters)
+	groups, err := w.images.ListGroups(ctx, groupFilters)
 
 	if err != nil {
 		return dashboardError[dashboardUpdatesData]("failed to load images with updates")
+	}
+
+	groupTotal, err := w.images.CountGroups(ctx, groupFilters)
+
+	if err != nil {
+		return dashboardError[dashboardUpdatesData]("failed to load images with updates")
+	}
+
+	filters := model.ImageListFilters{
+		Pagination: model.Pagination{Offset: 0, Limit: dashboardUpdatesLimit - len(groups)},
+		Status:     model.ImageStatusUpdateAvailable,
+		Ungrouped:  true,
+	}
+
+	images := []model.Image{}
+
+	if filters.Limit > 0 {
+		images, err = w.images.List(ctx, filters)
+
+		if err != nil {
+			return dashboardError[dashboardUpdatesData]("failed to load images with updates")
+		}
 	}
 
 	total, err := w.images.Count(ctx, filters)
@@ -117,7 +140,11 @@ func (w *Web) dashboardUpdates(ctx context.Context) dashboardSection[dashboardUp
 		responses = append(responses, newImageResponse(image))
 	}
 
-	return dashboardData(dashboardUpdatesData{Images: responses, Total: total})
+	return dashboardData(dashboardUpdatesData{
+		Images: responses,
+		Groups: newImageGroupResponses(groups),
+		Total:  total + groupTotal,
+	})
 }
 
 func (w *Web) dashboardIssues(ctx context.Context) dashboardSection[dashboardIssuesData] {

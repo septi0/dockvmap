@@ -1,5 +1,6 @@
 <script lang="ts">
   import Check from "@lucide/svelte/icons/check";
+  import Layers from "@lucide/svelte/icons/layers";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Modal from "./Modal.svelte";
   import Button from "./Button.svelte";
@@ -12,6 +13,7 @@
     updateImageTag,
     markImageTagsAsSeen,
   } from "../api/images";
+  import { allCount, allImages } from "../utils/format";
   import { errorMessage } from "../api/client";
   import type { TagGroup } from "../api/types/images";
 
@@ -21,6 +23,8 @@
     currentTag,
     refreshStatus = "idle",
     reloadToken = 0,
+    groupName = null,
+    groupSize = 0,
     onClose,
     onTagUpdated,
     onTagsRefreshed,
@@ -30,6 +34,8 @@
     currentTag: string;
     refreshStatus?: "idle" | "running";
     reloadToken?: number;
+    groupName?: string | null;
+    groupSize?: number;
     onClose: () => void;
     onTagUpdated: (tag: string) => void;
     onTagsRefreshed?: () => void;
@@ -143,10 +149,17 @@
   }
 </script>
 
-<Modal {open} {onClose} title="Change tracked tag" size="lg">
+<Modal
+  {open}
+  {onClose}
+  title={groupName ? "Update group tag" : "Change tracked tag"}
+  size="lg"
+>
   <div class="header-row">
     <p class="hint muted">
-      Pick which upstream tag this virtual image should resolve to.
+      {groupName
+        ? `Only tags available on ${allImages(groupSize)} are shown.`
+        : "Pick which upstream tag this virtual image should resolve to."}
     </p>
     <div class="header-actions">
       {#if refreshStatus === "running"}
@@ -154,6 +167,7 @@
       {:else}
         <RefreshTagsButton
           {imageId}
+          {groupSize}
           onRefreshed={handleTagsRefreshed}
           label="Refresh"
         />
@@ -162,8 +176,16 @@
   </div>
 
   <div class="current-banner">
-    <Check size={14} strokeWidth={2.5} />
-    <span>Currently tracking <strong>{currentTag}</strong></span>
+    {#if groupName}
+      <Layers size={14} strokeWidth={2} />
+      <span>
+        This changes {allImages(groupSize)} in <strong>{groupName}</strong>,
+        currently on <strong>{currentTag}</strong>.
+      </span>
+    {:else}
+      <Check size={14} strokeWidth={2.5} />
+      <span>Currently tracking <strong>{currentTag}</strong></span>
+    {/if}
   </div>
 
   <AsyncState loading={loadingTags} error={tagsError}>
@@ -173,15 +195,18 @@
         bind:selectedTag
         {currentTag}
         layout="stack"
+        dimPrereleases
+        searchable
+        showAge
         emptyMessage="No tags discovered yet. Try refreshing."
       />
     </div>
   </AsyncState>
 
   {#if isFamilyMismatch}
-    <p class="family-warning">
-      <span class="icon"><TriangleAlert size={16} strokeWidth={2} /></span>
-      <span class="text">
+    <p class="warning-box family-warning">
+      <TriangleAlert size={16} strokeWidth={2} />
+      <span>
         <strong>{selectedTag}</strong> is from a different tag family than
         <strong>{currentTag}</strong>, so they might not be compatible for an
         in-place update.
@@ -201,7 +226,8 @@
       {#if selectedTag === currentTag}
         <span class="muted">No changes to apply</span>
       {:else}
-        Switch to <span class="tag-value">{selectedTag}</span>?
+        {groupName ? `Switch ${allImages(groupSize)} to` : "Switch to"}
+        <span class="tag-value">{selectedTag}</span>?
       {/if}
     </span>
     <div class="tags-action-buttons">
@@ -210,7 +236,11 @@
         disabled={selectedTag === currentTag || updating}
         onclick={handleUpdate}
       >
-        {updating ? "Updating…" : "Update tag"}
+        {#if updating}
+          Updating…
+        {:else}
+          {groupName ? `Update ${allCount(groupSize)}` : "Update tag"}
+        {/if}
       </Button>
     </div>
   </div>
@@ -251,27 +281,7 @@
   }
 
   .family-warning {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-2);
     margin-bottom: var(--space-4);
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-md);
-    border: 1px solid color-mix(in srgb, var(--color-warning) 30%, transparent);
-    background: var(--color-warning-bg);
-    color: var(--color-warning);
-    font-size: 0.8125rem;
-    line-height: 1.4;
-  }
-
-  .family-warning .icon {
-    display: inline-flex;
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
-
-  .family-warning .text {
-    min-width: 0;
   }
 
   .tags-scroll {

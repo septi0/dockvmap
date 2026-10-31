@@ -22,6 +22,13 @@
     border-bottom: none;
   }
 
+  @media (max-width: 768px) {
+    .detail-row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-1);
+    }
+  }
+
   .detail-label {
     font-size: 0.8125rem;
     font-weight: 500;
