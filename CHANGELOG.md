@@ -2,6 +2,10 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.7.1 (2026-11-01)
+
+- **Stale proxy tokens**: on the Proxy Tokens page, a token not used in over 90 days gets a warning under its Last used time, so forgotten tokens are easy to spot and delete.
+
 ## v1.7.0 (2026-10-31)
 
 - **Sorting on Virtual Images**: click the Name, Last checked, Last pulled or Update column header to sort; click again to reverse, and a third time to go back to the usual order. The sort is kept when you open an image and come back, and in shared links. Without a chosen sort, the list keeps its usual order.

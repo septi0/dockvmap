@@ -30,6 +30,14 @@
   let proxyAuthEnabled = $state(true)
   let loadToken = 0
 
+  const STALE_AFTER_DAYS = 90
+
+  function isStale(token: ProxyToken): boolean {
+    if (!token.lastUsedAt) return false
+
+    return Date.now() - new Date(token.lastUsedAt).getTime() > STALE_AFTER_DAYS * 86_400_000
+  }
+
   async function load() {
     const requestId = ++loadToken
     loading = true
@@ -104,7 +112,7 @@
   </div>
 
   {#if !proxyAuthEnabled}
-    <p class="warning-text">
+    <p class="warning-text auth-warning">
       <TriangleAlert size={14} strokeWidth={2} />
       <span>
         Proxy authentication is <strong>not enabled</strong> in config.yaml. These
@@ -150,6 +158,15 @@
                     <span title={formatDate(token.lastUsedAt)}
                       >{formatRelativeTime(token.lastUsedAt)}</span
                     >
+                    {#if isStale(token)}
+                      <p
+                        class="warning-text"
+                        title="Delete it if no client needs it anymore."
+                      >
+                        <TriangleAlert size={14} strokeWidth={2} />
+                        <span>Not used in {STALE_AFTER_DAYS} days</span>
+                      </p>
+                    {/if}
                   {:else}
                     <span class="muted" title="No use recorded yet">-</span>
                   {/if}
@@ -194,7 +211,7 @@
 />
 
 <style>
-  .warning-text {
+  .auth-warning {
     margin-bottom: var(--space-4);
   }
 </style>
