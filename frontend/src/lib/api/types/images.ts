@@ -17,6 +17,8 @@ export interface Image {
   lastRequestedAt?: string
   lastPulledAt?: string
   lastPulledTag?: string
+  currentDigest?: string
+  currentDigestSince?: string
   createdAt: string
   updatedAt: string
 }

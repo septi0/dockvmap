@@ -64,6 +64,8 @@ type imageResponse struct {
 	LastRequestedAt    *time.Time `json:"lastRequestedAt,omitempty"`
 	LastPulledAt       *time.Time `json:"lastPulledAt,omitempty"`
 	LastPulledTag      *string    `json:"lastPulledTag,omitempty"`
+	CurrentDigest      *string    `json:"currentDigest,omitempty"`
+	CurrentDigestSince *time.Time `json:"currentDigestSince,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }
@@ -78,6 +80,13 @@ func newImageResponse(image model.Image) imageResponse {
 
 	if image.GroupID != nil && image.GroupName != nil {
 		group = &imageRef{ID: *image.GroupID, Name: *image.GroupName}
+	}
+
+	var digest *string
+	var digestSince *time.Time
+
+	if image.CurrentDigestTag != nil && *image.CurrentDigestTag == image.Tag {
+		digest, digestSince = image.CurrentDigest, image.CurrentDigestSince
 	}
 
 	return imageResponse{
@@ -97,6 +106,8 @@ func newImageResponse(image model.Image) imageResponse {
 		LastRequestedAt:    image.LastRequestedAt,
 		LastPulledAt:       image.LastPulledAt,
 		LastPulledTag:      image.LastPulledTag,
+		CurrentDigest:      digest,
+		CurrentDigestSince: digestSince,
 		CreatedAt:          image.CreatedAt,
 		UpdatedAt:          image.UpdatedAt,
 	}
@@ -495,6 +506,9 @@ func failureMessage(failure service.Failure) string {
 
 	case service.FailureSourceEventRegistration:
 		return fmt.Sprintf("Image %q refreshed but its tag-change notification failed to register: %s", failure.Detail, failure.Error)
+
+	case service.FailureSourceDigest:
+		return fmt.Sprintf("Image %q digest lookup failed: %s", failure.Detail, failure.Error)
 
 	default:
 		return failure.Error

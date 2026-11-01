@@ -103,3 +103,9 @@ export function allCount(count: number): string {
 export function allImages(count: number): string {
   return count === 2 ? 'both images' : `all ${count} images`
 }
+
+export function shortDigest(digest: string): string {
+  const [algorithm, hex] = digest.split(':')
+
+  return hex ? `${algorithm}:${hex.slice(0, 12)}` : digest
+}

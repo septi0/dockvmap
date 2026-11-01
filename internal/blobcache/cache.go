@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
+	"github.com/septi0/dockvmap/internal/oci"
 )
 
 type Store interface {
@@ -335,7 +336,7 @@ func (c *Cache) scanShardOrphans(ctx context.Context, shard string, cutoff time.
 
 		digest := "sha256:" + f.Name()
 
-		if !IsDigest(digest) {
+		if !oci.IsDigest(digest) {
 			continue
 		}
 
@@ -463,20 +464,8 @@ func (c *Cache) path(digest string) string {
 	return filepath.Join(c.dir, "blobs", "sha256", hexDigest[:2], hexDigest)
 }
 
-func IsDigest(digest string) bool {
-	algorithm, value, found := strings.Cut(digest, ":")
-
-	if !found || algorithm != "sha256" || len(value) != sha256.Size*2 {
-		return false
-	}
-
-	_, err := hex.DecodeString(value)
-
-	return err == nil && value == strings.ToLower(value)
-}
-
 func cacheableDigest(digest string) bool {
-	return IsDigest(digest)
+	return oci.IsDigest(digest)
 }
 
 func copyStream(destination io.Writer, source io.Reader) error {

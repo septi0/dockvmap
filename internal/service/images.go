@@ -69,10 +69,15 @@ type imageStore interface {
 	MarkImageTagsAsSeen(ctx context.Context, imageId int64) (int64, error)
 	InsertImageTagHistory(ctx context.Context, tx store.DBTX, imageId int64, tag string, previousTag *string, source model.TagHistorySource) error
 	GetImageTagHistory(ctx context.Context, imageId int64) ([]model.ImageTagHistory, error)
+	UpdateImageDigest(ctx context.Context, imageId int64, tag string, digest *string, seenAt time.Time) error
 }
 
 type tagLister interface {
 	ListTags(ctx context.Context, registry, repository string) ([]string, error)
+}
+
+type digestResolver interface {
+	ManifestDigest(ctx context.Context, registry, repository, reference string) (string, error)
 }
 
 type failureRecorder interface {
@@ -86,6 +91,7 @@ type tagFilterer interface {
 type Images struct {
 	store         imageStore
 	tagLister     tagLister
+	digests       digestResolver
 	events        eventHandler
 	audit         auditRecorder
 	failures      failureRecorder
@@ -129,6 +135,7 @@ type auditImagePinChangedData struct {
 type ImagesDeps struct {
 	Store     imageStore
 	TagLister tagLister
+	Digests   digestResolver
 	Events    eventHandler
 	Audit     auditRecorder
 	Failures  failureRecorder
@@ -140,6 +147,7 @@ func NewImages(deps ImagesDeps) *Images {
 	return &Images{
 		store:         deps.Store,
 		tagLister:     deps.TagLister,
+		digests:       deps.Digests,
 		events:        deps.Events,
 		audit:         deps.Audit,
 		failures:      deps.Failures,
@@ -448,9 +456,15 @@ func (i *Images) auditTagChange(ctx context.Context, image model.Image, tag stri
 }
 
 func (i *Images) notifyTagChanged(names ...string) {
-	if i.tagChanged != nil && len(names) > 0 {
+	if len(names) == 0 {
+		return
+	}
+
+	if i.tagChanged != nil {
 		i.tagChanged(names...)
 	}
+
+	i.refreshDigestsInBackground(names)
 }
 
 func (i *Images) GetTagHistory(ctx context.Context, imageId int64) ([]model.ImageTagHistory, error) {

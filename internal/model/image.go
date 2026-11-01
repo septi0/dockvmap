@@ -29,6 +29,9 @@ type Image struct {
 	LastRequestedAt    *time.Time `json:"lastRequestedAt,omitempty"`
 	LastPulledAt       *time.Time `json:"lastPulledAt,omitempty"`
 	LastPulledTag      *string    `json:"lastPulledTag,omitempty"`
+	CurrentDigest      *string    `json:"currentDigest,omitempty"`
+	CurrentDigestTag   *string    `json:"currentDigestTag,omitempty"`
+	CurrentDigestSince *time.Time `json:"currentDigestSince,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
 }

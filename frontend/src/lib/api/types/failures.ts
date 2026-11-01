@@ -23,6 +23,7 @@ export const FAILURE_SOURCES = [
   'refresh',
   'discovery',
   'event_registration',
+  'digest',
 ] as const
 
 export type FailureSource = (typeof FAILURE_SOURCES)[number]
@@ -33,4 +34,5 @@ export const FAILURE_SOURCE_LABELS: Record<string, string> = {
   refresh: 'Tag refresh',
   discovery: 'Tag discovery',
   event_registration: 'Event registration',
+  digest: 'Digest lookup',
 }

@@ -197,7 +197,7 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 
 	slog.Debug("manifest request", "method", r.Method, "name", name, "reference", reference, "registry", img.Registry, "repository", path, "upstream_reference", upstreamRef)
 
-	if p.cache != nil && blobcache.IsDigest(upstreamRef) {
+	if p.cache != nil && oci.IsDigest(upstreamRef) {
 		served, err := p.cache.Serve(r.Context(), w, r, upstreamRef)
 
 		if err != nil {
@@ -226,7 +226,7 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 func (p *Proxy) recordManifestRequest(r *http.Request, img *model.Image, upstreamRef string) {
 	tag := upstreamRef
 
-	if blobcache.IsDigest(upstreamRef) {
+	if oci.IsDigest(upstreamRef) {
 		tag = img.Tag
 	}
 

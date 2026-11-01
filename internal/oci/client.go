@@ -31,6 +31,13 @@ const maxRetryAfterDelay = 30 * time.Second
 
 var paramRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
 
+var manifestMediaTypes = []string{
+	"application/vnd.oci.image.index.v1+json",
+	"application/vnd.docker.distribution.manifest.list.v2+json",
+	"application/vnd.oci.image.manifest.v1+json",
+	"application/vnd.docker.distribution.manifest.v2+json",
+}
+
 type Credentials struct {
 	Username   string
 	Credential string
@@ -324,6 +331,59 @@ func (c *Client) CheckRepository(ctx context.Context, registry, repository strin
 	}
 
 	return nil
+}
+
+func (c *Client) ManifestDigest(ctx context.Context, registry, repository, reference string) (string, error) {
+	host := RegistryAPIHost(registry)
+	path := RepositoryPath(registry, repository)
+
+	endpoint := fmt.Sprintf("https://%s/v2/%s/manifests/%s", host, path, url.PathEscape(reference))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, endpoint, nil)
+
+	if err != nil {
+		return "", fmt.Errorf("creating registry request: %w", err)
+	}
+
+	for _, mediaType := range manifestMediaTypes {
+		req.Header.Add("Accept", mediaType)
+	}
+
+	response, err := c.Do(req, registry, path)
+
+	if err != nil {
+		return "", err
+	}
+
+	defer drainAndClose(response)
+
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return "", registryStatusError(response)
+	}
+
+	digest := response.Header.Get("Docker-Content-Digest")
+
+	if digest == "" {
+		return "", nil
+	}
+
+	if !IsDigest(digest) {
+		return "", fmt.Errorf("registry returned an invalid digest")
+	}
+
+	return digest, nil
+}
+
+func IsDigest(digest string) bool {
+	algorithm, value, found := strings.Cut(digest, ":")
+
+	if !found || algorithm != "sha256" || len(value) != sha256.Size*2 {
+		return false
+	}
+
+	_, err := hex.DecodeString(value)
+
+	return err == nil && value == strings.ToLower(value)
 }
 
 func registryStatusError(response *http.Response) error {

@@ -29,6 +29,10 @@ func (stubLister) ListTags(context.Context, string, string) ([]string, error) {
 	return nil, errors.New("upstream is not available in tests")
 }
 
+func (stubLister) ManifestDigest(context.Context, string, string, string) (string, error) {
+	return "", errors.New("upstream is not available in tests")
+}
+
 type stubFailures struct{}
 
 func (stubFailures) Record(context.Context, FailureSource, string, error) {}
@@ -98,6 +102,7 @@ func newGroupFixture(t *testing.T) *groupFixture {
 	f.images = NewImages(ImagesDeps{
 		Store:     st,
 		TagLister: stubLister{},
+		Digests:   stubLister{},
 		Events:    stubEvents{},
 		Audit:     audit,
 		Failures:  stubFailures{},

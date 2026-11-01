@@ -322,6 +322,8 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 		sourceTags = i.tagFilter.Apply(sourceTags)
 	}
 
+	i.refreshDigest(ctx, image)
+
 	tagsHash := tagSetHash(sourceTags)
 
 	if tagsHash == image.TagSetHash {

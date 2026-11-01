@@ -2,9 +2,12 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
-## v1.7.2 (2026-11-01)
+## v1.8.0 (2026-11-01)
 
+- **Digest tracking**: every tag check now also looks up the digest behind each image's current tag, with one lightweight request per image that doesn't count against Docker Hub's pull limit. A tag change looks up the new digest within seconds. Image details shows the digest and when it was first seen, so a tag republished under the same name is visible. Lookup failures appear in System > Failures as "Digest lookup" and never fail the tag check.
 - **Fixed**: on the Registries and Proxy Tokens tables, the line under each row no longer breaks at the edit and delete buttons.
+
+**Upgrade note:** this release migrates the database and can't be rolled back without a restore. Run `dockvmap -backup <path>` before upgrading. Digests show as Unknown until the first tag check after the upgrade, or until you refresh an image.
 
 ## v1.7.1 (2026-11-01)
 

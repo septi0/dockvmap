@@ -46,6 +46,7 @@ func cmdRefreshTags(ctx context.Context, db *store.Store, tagFilter *tagfilter.F
 	images := service.NewImages(service.ImagesDeps{
 		Store:     db,
 		TagLister: ociClient,
+		Digests:   ociClient,
 		Events:    events,
 		Audit:     audit,
 		Failures:  failureLog,

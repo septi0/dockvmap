@@ -36,7 +36,12 @@
     createImageRefresh,
     applyImageRefreshFields,
   } from "../lib/services/imageRefresh";
-  import { allImages, formatDate } from "../lib/utils/format";
+  import {
+    allImages,
+    formatDate,
+    formatRelativeTime,
+    shortDigest,
+  } from "../lib/utils/format";
   import type { Image } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
   import type { PullInfo } from "../lib/api/types/metrics";
@@ -80,6 +85,9 @@
 
   let refreshStatus = $state<"idle" | "running" | "stale">("idle");
   let modalReloadToken = $state(0);
+
+  const DIGEST_LOOKUP_WAIT_MS = 2000;
+  let digestRefreshTimer: ReturnType<typeof setTimeout> | undefined;
 
   let groupSize = $derived(group?.images.length ?? 0);
   let pinned = $derived(group ? group.pinned : (image?.pinned ?? false));
@@ -135,6 +143,7 @@
     stopRefreshSubscription();
     stopSettledListener();
     imageRefresh.destroy();
+    clearTimeout(digestRefreshTimer);
   });
 
   async function refreshImageDetails() {
@@ -145,6 +154,15 @@
     } catch {}
   }
 
+  async function refreshAfterTagChange() {
+    await refreshImageDetails();
+
+    if (!image?.currentDigest) {
+      clearTimeout(digestRefreshTimer);
+      digestRefreshTimer = setTimeout(refreshImageDetails, DIGEST_LOOKUP_WAIT_MS);
+    }
+  }
+
   async function handleTagUpdated(tag: string) {
     lastChange = image ? { from: image.tag, to: tag } : null;
     revertError = null;
@@ -153,7 +171,7 @@
         ? `Tag updated to "${tag}" on ${allImages(groupSize)}.`
         : `Tag updated to "${tag}".`,
     );
-    await refreshImageDetails();
+    await refreshAfterTagChange();
   }
 
   async function revertTag() {
@@ -182,12 +200,12 @@
         ? `Restored tag to "${tag}" on ${allImages(groupSize)}.`
         : `Restored tag to "${tag}".`,
     );
-    await refreshImageDetails();
+    await refreshAfterTagChange();
   }
 
   async function handleGroupSaved(name: string) {
     toast.success(`Group "${name}" saved.`);
-    await refreshImageDetails();
+    await refreshAfterTagChange();
     updatesCount.refresh();
   }
 
@@ -291,6 +309,28 @@
           onChangeTag={() => (showTagModal = true)}
           onRevert={revertTag}
         />
+        <DetailRow label="Digest">
+          {#if image.currentDigest}
+            <span class="detail-cell-row">
+              <span class="digest" title={image.currentDigest}
+                >{shortDigest(image.currentDigest)}</span
+              >
+              {#if image.currentDigestSince}
+                <span
+                  class="muted"
+                  title={formatDate(image.currentDigestSince)}
+                  >first seen {formatRelativeTime(image.currentDigestSince)}</span
+                >
+              {/if}
+            </span>
+          {:else}
+            <span
+              class="muted"
+              title="The registry didn't report a digest for this tag, or it hasn't been looked up yet."
+              >Unknown</span
+            >
+          {/if}
+        </DetailRow>
         <UpdateTrackingRow
           {image}
           {group}
@@ -488,6 +528,10 @@
   .check-stale {
     font-size: 0.8125rem;
     color: var(--color-text-muted);
+  }
+
+  .digest {
+    font-family: monospace;
   }
 
   .danger-card {

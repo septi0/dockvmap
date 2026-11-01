@@ -13,7 +13,7 @@ import (
 var ErrImageNameConflict = errors.New("image name already exists")
 
 const imageSelect = `
-	SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.group_id, g.name, i.tag_set_hash, i.created_at, i.updated_at, i.last_requested_at, i.last_pulled_at, i.last_pulled_tag
+	SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.group_id, g.name, i.tag_set_hash, i.created_at, i.updated_at, i.last_requested_at, i.last_pulled_at, i.last_pulled_tag, i.current_digest, i.current_digest_tag, i.current_digest_since
 	FROM images i
 	LEFT JOIN registries r ON r.id = i.registry_id
 	LEFT JOIN image_groups g ON g.id = i.group_id
@@ -45,6 +45,7 @@ func scanImage(row rowScanner, img *model.Image) error {
 		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
 		&img.Pinned, &img.RefreshStatus, &img.GroupID, &img.GroupName, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
 		&img.LastRequestedAt, &img.LastPulledAt, &img.LastPulledTag,
+		&img.CurrentDigest, &img.CurrentDigestTag, &img.CurrentDigestSince,
 	)
 }
 
@@ -412,4 +413,24 @@ func (s *Store) UpdateImageUpdateAvailable(ctx context.Context, tx DBTX, imageId
 	}
 
 	return updated != 0, nil
+}
+
+func (s *Store) UpdateImageDigest(ctx context.Context, imageId int64, tag string, digest *string, seenAt time.Time) error {
+	var since *time.Time
+
+	if digest != nil {
+		since = &seenAt
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE images
+		SET current_digest = ?, current_digest_tag = ?, current_digest_since = ?
+		WHERE id = ? AND tag = ? AND (current_digest IS NOT ? OR current_digest_tag IS NOT ?)
+	`, digest, tag, since, imageId, tag, digest, tag)
+
+	if err != nil {
+		return fmt.Errorf("updating image %d digest: %w", imageId, err)
+	}
+
+	return nil
 }
