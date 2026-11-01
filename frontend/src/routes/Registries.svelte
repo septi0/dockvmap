@@ -141,23 +141,25 @@
                   <span class="muted">-</span>
                 {/if}
               </td>
-              <td class="table-actions">
-                <button
-                  type="button"
-                  class="icon-button"
-                  onclick={() => (editingRegistry = registry)}
-                  aria-label="Edit {registry.registry}"
-                >
-                  <Pencil size={16} strokeWidth={1.75} />
-                </button>
-                <button
-                  type="button"
-                  class="icon-button danger"
-                  onclick={() => (deletingRegistry = registry)}
-                  aria-label="Delete {registry.registry}"
-                >
-                  <Trash2 size={16} strokeWidth={1.75} />
-                </button>
+              <td>
+                <div class="table-actions">
+                  <button
+                    type="button"
+                    class="icon-button"
+                    onclick={() => (editingRegistry = registry)}
+                    aria-label="Edit {registry.registry}"
+                  >
+                    <Pencil size={16} strokeWidth={1.75} />
+                  </button>
+                  <button
+                    type="button"
+                    class="icon-button danger"
+                    onclick={() => (deletingRegistry = registry)}
+                    aria-label="Delete {registry.registry}"
+                  >
+                    <Trash2 size={16} strokeWidth={1.75} />
+                  </button>
+                </div>
               </td>
             </tr>
           {/each}

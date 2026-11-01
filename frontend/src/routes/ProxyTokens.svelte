@@ -172,15 +172,17 @@
                   {/if}
                 </td>
               {/if}
-              <td class="table-actions">
-                <button
-                  type="button"
-                  class="icon-button danger"
-                  onclick={() => (deletingToken = token)}
-                  aria-label="Delete {token.label}"
-                >
-                  <Trash2 size={16} strokeWidth={1.75} />
-                </button>
+              <td>
+                <div class="table-actions">
+                  <button
+                    type="button"
+                    class="icon-button danger"
+                    onclick={() => (deletingToken = token)}
+                    aria-label="Delete {token.label}"
+                  >
+                    <Trash2 size={16} strokeWidth={1.75} />
+                  </button>
+                </div>
               </td>
             </tr>
           {/each}

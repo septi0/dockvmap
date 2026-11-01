@@ -2,6 +2,10 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.7.2 (2026-11-01)
+
+- **Fixed**: on the Registries and Proxy Tokens tables, the line under each row no longer breaks at the edit and delete buttons.
+
 ## v1.7.1 (2026-11-01)
 
 - **Stale proxy tokens**: on the Proxy Tokens page, a token not used in over 90 days gets a warning under its Last used time, so forgotten tokens are easy to spot and delete.
