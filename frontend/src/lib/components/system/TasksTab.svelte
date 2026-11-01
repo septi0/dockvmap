@@ -106,7 +106,7 @@
             </td>
             <td>
               {#if task.lastRun}
-                <div title={formatDate(task.lastRun)}>
+                <div class="time-cell" title={formatDate(task.lastRun)}>
                   {formatRelativeTime(task.lastRun)}
                 </div>
                 {#if task.lastError}

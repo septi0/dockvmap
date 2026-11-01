@@ -112,17 +112,17 @@
         <thead>
           <tr>
             <th>Registry</th>
-            <th>Username</th>
+            <th class="phone-hidden">Username</th>
             <th>Authentication</th>
-            <th>Options</th>
+            <th class="phone-hidden">Options</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {#each registries as registry (registry.id)}
             <tr>
-              <td>{registry.registry}</td>
-              <td>{registry.username ?? "-"}</td>
+              <td class="host-cell">{registry.registry}</td>
+              <td class="phone-hidden">{registry.username ?? "-"}</td>
               <td>
                 {#if registry.authenticationConfigured}
                   <span class="badge badge-accent">Configured</span>
@@ -130,7 +130,7 @@
                   <span class="badge">None</span>
                 {/if}
               </td>
-              <td>
+              <td class="phone-hidden">
                 {#if registry.options.insecure}
                   <span class="badge badge-warning">Insecure</span>
                 {/if}
@@ -196,3 +196,9 @@
   onCancel={cancelDelete}
 />
 
+
+<style>
+  .host-cell {
+    overflow-wrap: anywhere;
+  }
+</style>

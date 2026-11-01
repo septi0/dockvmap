@@ -468,10 +468,6 @@
     overflow-wrap: anywhere;
   }
 
-  .time-cell {
-    white-space: nowrap;
-  }
-
   .copy-cell {
     width: 1%;
     text-align: right;

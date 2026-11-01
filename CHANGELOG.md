@@ -2,6 +2,11 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## Unreleased
+
+- **Tables on phones**: words in table cells no longer break in the middle ("Usernam/e", "v3.2./3"). Registries hides Username and Options on phones, both still in the edit dialog, and long registry hosts and failure messages wrap where needed.
+- **Task times on one line**: System > Tasks shows "Last run" like "52m ago" on one line on wider screens.
+
 ## v1.8.0 (2026-11-01)
 
 - **Digest tracking**: every tag check now also looks up the digest behind each image's current tag, with one lightweight request per image that doesn't count against Docker Hub's pull limit. A tag change looks up the new digest within seconds. Image details shows the digest and when it was first seen, so a tag republished under the same name is visible. Lookup failures appear in System > Failures as "Digest lookup" and never fail the tag check.

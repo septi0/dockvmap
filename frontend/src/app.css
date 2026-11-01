@@ -766,6 +766,10 @@ select.filter-control {
   color: var(--color-danger);
 }
 
+.table .time-cell {
+  white-space: nowrap;
+}
+
 .table tbody tr:hover {
   background: var(--color-surface-hover);
 }
@@ -847,7 +851,11 @@ select.filter-control {
   .table th,
   .table td {
     padding: var(--space-2);
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+  }
+
+  .table .time-cell {
+    white-space: normal;
   }
 }
 

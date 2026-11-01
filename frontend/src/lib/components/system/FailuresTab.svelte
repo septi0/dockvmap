@@ -105,10 +105,6 @@
 </AsyncState>
 
 <style>
-  .time-cell {
-    white-space: nowrap;
-  }
-
   .message-cell {
     color: var(--color-danger);
     overflow-wrap: anywhere;
