@@ -22,7 +22,7 @@
   let rows = $derived(
     (result?.hosts ?? [])
       .flatMap(({ host, containers }) =>
-        (containers ?? []).map((container) => ({ host, container })),
+        containers.map((container) => ({ host, container })),
       )
       .sort((a, b) => attentionRank(a.host, a.container) - attentionRank(b.host, b.container)),
   );

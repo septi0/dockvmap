@@ -11,7 +11,6 @@ export interface ImageEvent {
 
 export const TAG_EVENT_TYPES = ['TAG_ADDED', 'TAG_REMOVED', 'UPGRADE_AVAILABLE'] as const
 
-
 export interface ImageEventList {
   events: ImageEvent[]
   total: number

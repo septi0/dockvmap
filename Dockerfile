@@ -23,7 +23,7 @@ COPY frontend/package.json frontend/package-lock.json frontend/
 RUN make frontend-deps
 
 COPY . .
-RUN make build DEFAULT_DATA_PATH=${DATA_DIR}
+RUN make build-server DEFAULT_DATA_PATH=${DATA_DIR}
 
 # ---------- Runtime stage ----------
 FROM alpine:3.20 AS runtime

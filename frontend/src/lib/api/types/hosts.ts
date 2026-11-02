@@ -76,7 +76,7 @@ export interface HostContainer {
 
 export interface HostDetails {
   host: Host
-  containers: HostContainer[] | null
+  containers: HostContainer[]
 }
 
 export interface ImageRollout extends Rollout {

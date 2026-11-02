@@ -127,7 +127,7 @@ func (a *Agent) collect(ctx context.Context, proxyHost string, report *agentapi.
 	}
 
 	if len(report.Containers) > agentapi.MaxContainers {
-		return fmt.Errorf("this host has %d containers; dockvmap accepts at most %d per host", len(report.Containers), agentapi.MaxContainers)
+		return fmt.Errorf("this host has %d containers; DockVMap accepts at most %d per host", len(report.Containers), agentapi.MaxContainers)
 	}
 
 	for id, repoDigests := range digests {

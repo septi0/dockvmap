@@ -224,7 +224,7 @@ func (s *Store) TouchHost(ctx context.Context, id int64, agentVersion string, pr
 	`, seenAt, agentVersion, protocolVersion, id)
 
 	if err != nil {
-		return fmt.Errorf("recording host %d check-in: %w", id, err)
+		return fmt.Errorf("recording host %d poll: %w", id, err)
 	}
 
 	return nil

@@ -7,10 +7,12 @@ AGENT_DATA_PATH   ?= data/agent
 LDFLAGS           := -X main.version=$(VERSION) -X main.defaultDataPath=$(DEFAULT_DATA_PATH)
 
 .DEFAULT_GOAL := help
-.PHONY: build build-agent build-frontend frontend-deps dev dev-backend dev-frontend dev-agent \
+.PHONY: build build-server build-agent build-frontend frontend-deps dev dev-backend dev-frontend dev-agent \
         test vet fmt lint check verify clean help
 
-build: build-frontend build-agent ## Build the frontend and both binaries (bin/dockvmap, bin/dockvmap-agent)
+build: build-server build-agent ## Build the frontend and both binaries (bin/dockvmap, bin/dockvmap-agent)
+
+build-server: build-frontend ## Build the frontend and only DockVMap (bin/dockvmap)
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/dockvmap
 
 build-agent: ## Build only the agent (bin/dockvmap-agent), a static binary

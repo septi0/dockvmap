@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Modal from "../Modal.svelte";
   import Field from "../Field.svelte";
@@ -27,9 +28,11 @@
   $effect(() => {
     if (!open) return;
 
-    name = host?.name ?? "";
-    address = host?.address ?? "";
-    error = null;
+    untrack(() => {
+      name = host?.name ?? "";
+      address = host?.address ?? "";
+      error = null;
+    });
   });
 
   function handleClose() {

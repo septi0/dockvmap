@@ -637,10 +637,6 @@ func newRolloutResponse(rollout model.Rollout) rolloutResponse {
 }
 
 func newHostContainerResponses(containers []model.HostContainer) []hostContainerResponse {
-	if containers == nil {
-		return nil
-	}
-
 	responses := make([]hostContainerResponse, 0, len(containers))
 
 	for _, c := range containers {

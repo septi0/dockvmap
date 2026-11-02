@@ -31,6 +31,7 @@ type fakeDocker struct {
 	paths        []string
 	methods      []string
 	broken       bool
+	hung         bool
 	eventsBroken bool
 	webState     string
 }
@@ -63,8 +64,13 @@ func (d *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 	d.mu.Lock()
 	d.paths = append(d.paths, r.URL.Path)
 	d.methods = append(d.methods, r.Method)
-	broken, eventsBroken, webState := d.broken, d.eventsBroken, d.webState
+	broken, hung, eventsBroken, webState := d.broken, d.hung, d.eventsBroken, d.webState
 	d.mu.Unlock()
+
+	if hung && strings.HasSuffix(r.URL.Path, "/containers/json") {
+		<-r.Context().Done()
+		return
+	}
 
 	if broken && r.URL.Path != "/version" {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -519,6 +525,23 @@ func TestAgentReportsDockerErrors(t *testing.T) {
 
 	if !strings.Contains(report.DockerError, "daemon is sad") || len(report.Containers) != 0 || report.Fingerprint == "" {
 		t.Fatalf("report = %+v", report)
+	}
+}
+
+func TestAgentReportsAHungDockerBeforeDockVMapGivesUp(t *testing.T) {
+	docker := newFakeDocker(t)
+	docker.set(func(d *fakeDocker) { d.hung = true })
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
+	pinned := adopt(t, client, ta)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	report, err := client.Snapshot(ctx, ta.address, pinned, "", proxyHost)
+
+	if err != nil || !strings.Contains(report.DockerError, "didn't answer within 5s") {
+		t.Fatalf("report = %+v, err = %v; a hung Docker must come back as a Docker error inside DockVMap's poll timeout", report, err)
 	}
 }
 

@@ -3,7 +3,6 @@ package web
 import (
 	"net"
 	"net/http"
-	"strings"
 
 	"github.com/septi0/dockvmap/internal/service"
 )
@@ -26,28 +25,17 @@ func (w *Web) proxyTarget(r *http.Request) service.ProxyTarget {
 }
 
 func (w *Web) proxyAddress(r *http.Request) (host, port string, configured bool) {
-	configuredHost := strings.TrimSpace(w.cfg.ProxyPublicHost)
-	configured = configuredHost != ""
+	if address := w.cfg.ProxyPublicAddress(); address != "" {
+		host, port, _ = net.SplitHostPort(address)
 
-	if configured {
-		if h, p, err := net.SplitHostPort(configuredHost); err == nil {
-			host, port = h, p
-		} else {
-			host = configuredHost
-		}
-	} else {
-		var err error
-
-		host, _, err = net.SplitHostPort(r.Host)
-
-		if err != nil {
-			host = r.Host
-		}
+		return host, port, true
 	}
 
-	if port == "" {
-		port = w.cfg.ProxyListenPort()
+	host, _, err := net.SplitHostPort(r.Host)
+
+	if err != nil {
+		host = r.Host
 	}
 
-	return host, port, configured
+	return host, w.cfg.ProxyListenPort(), false
 }

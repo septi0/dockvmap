@@ -17,7 +17,7 @@ import (
 
 const (
 	dockerAPIVersion     = "1.41"
-	dockerRequestTimeout = 30 * time.Second
+	dockerRequestTimeout = 5 * time.Second
 )
 
 type dockerStatusError struct {
@@ -288,6 +288,10 @@ func (d *dockerClient) describe(err error) error {
 
 	if errors.As(err, &urlErr) {
 		err = urlErr.Err
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("the Docker daemon at %s didn't answer within %s", d.host, dockerRequestTimeout)
 	}
 
 	hint := ""

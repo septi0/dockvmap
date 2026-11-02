@@ -27,7 +27,6 @@ export const FAILURE_SOURCES = [
   'digest',
 ] as const
 
-
 export const FAILURE_SOURCE_LABELS: Record<string, string> = {
   webhook: 'Webhook delivery',
   email: 'Email delivery',

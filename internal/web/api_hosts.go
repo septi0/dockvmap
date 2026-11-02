@@ -42,7 +42,7 @@ func (w *Web) apiCreateHost(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *Web) apiUpdateHost(rw http.ResponseWriter, r *http.Request) {
-	id, ok := hostIDParam(rw, r)
+	id, ok := parseHostID(rw, r)
 	if !ok {
 		return
 	}
@@ -61,7 +61,7 @@ func (w *Web) apiUpdateHost(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *Web) apiGetHost(rw http.ResponseWriter, r *http.Request) {
-	id, ok := hostIDParam(rw, r)
+	id, ok := parseHostID(rw, r)
 	if !ok {
 		return
 	}
@@ -80,7 +80,7 @@ func (w *Web) apiGetHost(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *Web) apiDeleteHost(rw http.ResponseWriter, r *http.Request) {
-	id, ok := hostIDParam(rw, r)
+	id, ok := parseHostID(rw, r)
 	if !ok {
 		return
 	}
@@ -94,7 +94,7 @@ func (w *Web) apiDeleteHost(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *Web) apiTrustHostAgent(rw http.ResponseWriter, r *http.Request) {
-	id, ok := hostIDParam(rw, r)
+	id, ok := parseHostID(rw, r)
 	if !ok {
 		return
 	}
@@ -165,7 +165,7 @@ func (w *Web) apiListImageRollouts(rw http.ResponseWriter, r *http.Request) {
 	apiJSON(rw, http.StatusOK, responses)
 }
 
-func hostIDParam(rw http.ResponseWriter, r *http.Request) (int64, bool) {
+func parseHostID(rw http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 
 	if err != nil {
