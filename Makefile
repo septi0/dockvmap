@@ -3,8 +3,7 @@ AGENT_BINARY      := bin/dockvmap-agent
 VERSION           ?= $(shell git describe --tags --always 2>/dev/null || echo 0.0.0-dev)
 DEFAULT_DATA_PATH ?= ./data
 CONFIG            ?= config/config.yaml
-AGENT_TOKEN_FILE  ?= config/agent.token
-AGENT_URL         ?= http://localhost:8080
+AGENT_DATA_PATH   ?= data/agent
 LDFLAGS           := -X main.version=$(VERSION) -X main.defaultDataPath=$(DEFAULT_DATA_PATH)
 
 .DEFAULT_GOAL := help
@@ -15,7 +14,7 @@ build: build-frontend build-agent ## Build the frontend and both binaries (bin/d
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/dockvmap
 
 build-agent: ## Build only the agent (bin/dockvmap-agent), a static binary
-	CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$(VERSION)" -o $(AGENT_BINARY) ./cmd/dockvmap-agent
+	CGO_ENABLED=0 go build -ldflags "-s -w $(LDFLAGS)" -o $(AGENT_BINARY) ./cmd/dockvmap-agent
 
 build-frontend: frontend/node_modules ## Build frontend/dist
 	cd frontend && npm run build
@@ -27,8 +26,8 @@ frontend/node_modules: frontend/package.json frontend/package-lock.json
 	cd frontend && npm ci
 	@touch $@
 
-dev: ## Run backend + frontend dev server together, plus the agent when config/agent.token exists (Ctrl+C stops all); CONFIG=<path> for another config
-	$(MAKE) -j3 dev-backend dev-frontend $(if $(wildcard $(AGENT_TOKEN_FILE)),dev-agent) CONFIG=$(CONFIG)
+dev: ## Run backend + frontend dev server together, plus the agent when data/agent exists (Ctrl+C stops all); CONFIG=<path> for another config
+	$(MAKE) -j3 dev-backend dev-frontend $(if $(wildcard $(AGENT_DATA_PATH)),dev-agent) CONFIG=$(CONFIG)
 
 dev-backend: build-frontend $(CONFIG)
 	go run -ldflags "$(LDFLAGS)" ./cmd/dockvmap -config $(CONFIG)
@@ -36,9 +35,9 @@ dev-backend: build-frontend $(CONFIG)
 dev-frontend: frontend/node_modules
 	cd frontend && npm run dev
 
-dev-agent: ## Run the agent against the dev backend, with the host token from config/agent.token
-	DOCKVMAP_URL=$(AGENT_URL) DOCKVMAP_AGENT_TOKEN_FILE=$(AGENT_TOKEN_FILE) DOCKVMAP_LOG_LEVEL=debug \
-		go run -ldflags "-X main.version=$(VERSION)" ./cmd/dockvmap-agent
+dev-agent: ## Run the agent on 127.0.0.1:9002 for the dev backend, keeping its state in data/agent
+	DOCKVMAP_AGENT_LISTEN=127.0.0.1:9002 DOCKVMAP_LOG_LEVEL=debug \
+		go run -ldflags "-X main.version=$(VERSION)" ./cmd/dockvmap-agent -data-path $(AGENT_DATA_PATH)
 
 config/config.yaml:
 	mkdir -p config

@@ -19,12 +19,38 @@
       };
     }
 
+    if (host.pollErrorKind === "identityChanged") {
+      return {
+        label: "Agent identity changed",
+        tone: "failed",
+        title: `The agent at ${host.address} isn't the one DockVMap adopted. If you reset or reinstalled it, trust the new agent on this host's page.`,
+      };
+    }
+
+    if (host.pollErrorKind === "pairedElsewhere") {
+      return {
+        label: "Paired with another DockVMap",
+        tone: "failed",
+        title: `The agent at ${host.address} belongs to another DockVMap. Delete its data volume and start it again to pair it with this one.`,
+      };
+    }
+
     if (!host.lastSeenAt) {
-      return { label: "Waiting for agent", tone: "stopped", title: "Run the agent on this host with its token." };
+      return {
+        label: "Waiting for agent",
+        tone: "stopped",
+        title: host.pollError
+          ? `Can't reach the agent at ${host.address}: ${host.pollError}`
+          : `Start the agent on this host. DockVMap adopts it at ${host.address}.`,
+      };
     }
 
     if (!host.online) {
-      return { label: "Offline", tone: "failed" };
+      return {
+        label: "Offline",
+        tone: "failed",
+        title: host.pollError ? `Can't reach the agent at ${host.address}: ${host.pollError}` : undefined,
+      };
     }
 
     if (host.dockerError) {

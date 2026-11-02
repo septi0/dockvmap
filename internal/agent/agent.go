@@ -2,33 +2,42 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/septi0/dockvmap/internal/agentapi"
 )
 
 const (
-	heartbeatInterval  = 60 * time.Second
 	cacheResetInterval = time.Hour
-	eventDebounce      = 2 * time.Second
 	firstRetryDelay    = 5 * time.Second
+	maxRetryDelay      = time.Minute
+	shutdownTimeout    = 5 * time.Second
 )
 
 var containerChanges = []string{"create", "start", "die", "destroy", "rename", "pause", "unpause", "update", "health_status"}
 
 type Agent struct {
-	cfg             Config
-	version         string
-	docker          *dockerClient
-	controller      *controllerClient
-	cache           *dockerCache
-	proxyHost       string
-	lastFingerprint string
-	lastError       string
+	cfg         Config
+	version     string
+	docker      *dockerClient
+	cache       *dockerCache
+	identity    tls.Certificate
+	fingerprint string
+
+	mu     sync.Mutex
+	paired pairing
+
+	snapshotMu  sync.Mutex
+	dockerError string
 }
 
 func New(cfg Config, version string) (*Agent, error) {
@@ -38,129 +47,118 @@ func New(cfg Config, version string) (*Agent, error) {
 		return nil, err
 	}
 
+	identity, err := loadIdentity(cfg.DataPath)
+
+	if err != nil {
+		return nil, err
+	}
+
+	paired, err := loadPairing(cfg.DataPath)
+
+	if err != nil {
+		return nil, err
+	}
+
 	return &Agent{
-		cfg:        cfg,
-		version:    version,
-		docker:     docker,
-		controller: newControllerClient(cfg, version),
-		cache:      newDockerCache(),
+		cfg:         cfg,
+		version:     version,
+		docker:      docker,
+		cache:       newDockerCache(),
+		identity:    identity,
+		fingerprint: agentapi.Fingerprint(identity.Leaf),
+		paired:      paired,
 	}, nil
 }
 
-func (a *Agent) Run(ctx context.Context) {
-	events := make(chan struct{}, 1)
+func (a *Agent) Fingerprint() string {
+	return a.fingerprint
+}
 
-	go a.watchEvents(ctx, events)
+func (a *Agent) Run(ctx context.Context) error {
+	listener, err := net.Listen("tcp", a.cfg.Listen)
 
-	heartbeat := time.NewTicker(heartbeatInterval)
-	defer heartbeat.Stop()
-
-	cacheReset := time.NewTicker(cacheResetInterval)
-	defer cacheReset.Stop()
-
-	var debounce, retry <-chan time.Time
-	retryDelay := firstRetryDelay
-
-	syncNow := func() {
-		if err := a.sync(ctx); err != nil {
-			a.logFailure(err)
-			retry = time.After(retryDelay)
-			retryDelay = min(retryDelay*2, heartbeatInterval)
-
-			return
-		}
-
-		a.logRecovery()
-		retry, retryDelay = nil, firstRetryDelay
+	if err != nil {
+		return fmt.Errorf("listening on %s: %w", a.cfg.Listen, err)
 	}
 
-	syncNow()
+	return a.Serve(ctx, listener)
+}
+
+func (a *Agent) Serve(ctx context.Context, listener net.Listener) error {
+	go a.watchEvents(ctx)
+	go a.resetCache(ctx)
+
+	if paired := a.pairedWith(); paired == "" {
+		slog.Info("waiting for DockVMap to adopt this agent", "listen", listener.Addr().String())
+	} else {
+		slog.Info("paired with DockVMap", "dockvmap", paired)
+	}
+
+	server := &http.Server{
+		Handler: a.handler(),
+		TLSConfig: &tls.Config{
+			Certificates: []tls.Certificate{a.identity},
+			ClientAuth:   tls.RequireAnyClientCert,
+			MinVersion:   tls.VersionTLS13,
+		},
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      2 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    64 << 10,
+		ErrorLog:          slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug),
+	}
+
+	errs := make(chan error, 1)
+
+	go func() { errs <- server.ServeTLS(listener, "", "") }()
+
+	select {
+	case err := <-errs:
+		return err
+
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+
+		if err := server.Shutdown(shutdownCtx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+
+		slog.Info("agent stopped")
+
+		return nil
+	}
+}
+
+func (a *Agent) pairedWith() string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return a.paired.DockVMap
+}
+
+func (a *Agent) resetCache(ctx context.Context) {
+	ticker := time.NewTicker(cacheResetInterval)
+	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("agent stopped")
 			return
-
-		case <-events:
-			if debounce == nil {
-				debounce = time.After(eventDebounce)
-			}
-
-		case <-debounce:
-			debounce = nil
-			syncNow()
-
-		case <-retry:
-			retry = nil
-			syncNow()
-
-		case <-heartbeat.C:
-			syncNow()
-
-		case <-cacheReset.C:
+		case <-ticker.C:
 			a.cache.reset()
 		}
 	}
 }
 
-func (a *Agent) sync(ctx context.Context) error {
-	if a.proxyHost == "" {
-		config, err := a.controller.config(ctx)
-
-		if err != nil {
-			return err
-		}
-
-		a.proxyHost = config.ProxyHost
-		slog.Info("connected to dockvmap", "url", a.cfg.URL.Redacted(), "proxy", a.proxyHost)
-	}
-
-	report := a.snapshot(ctx)
-
-	if report.Fingerprint == a.lastFingerprint {
-		err := a.controller.heartbeat(ctx, agentapi.Heartbeat{
-			ProtocolVersion: report.ProtocolVersion,
-			AgentVersion:    report.AgentVersion,
-			Fingerprint:     report.Fingerprint,
-		})
-
-		if err == nil {
-			slog.Debug("heartbeat sent")
-			return nil
-		}
-
-		if !isStatus(err, agentapi.FullReportNeededStatus) {
-			return a.controllerFailed(err)
-		}
-
-		slog.Info("dockvmap asked for a full report")
-	}
-
-	if err := a.controller.report(ctx, report); err != nil {
-		a.lastFingerprint = ""
-
-		return a.controllerFailed(err)
-	}
-
-	a.lastFingerprint = report.Fingerprint
-	slog.Debug("report sent", "containers", len(report.Containers), "dockerError", report.DockerError)
-
-	return nil
-}
-
-func (a *Agent) controllerFailed(err error) error {
-	var controllerErr *controllerError
-
-	if errors.As(err, &controllerErr) {
-		a.proxyHost = ""
-	}
-
-	return err
-}
-
-func (a *Agent) watchEvents(ctx context.Context, events chan<- struct{}) {
+func (a *Agent) watchEvents(ctx context.Context) {
 	delay := firstRetryDelay
+
+	onConnect := func() {
+		a.cache.reset()
+		a.cache.setWatching(true)
+	}
 
 	onEvent := func(event dockerEvent) {
 		action, _, _ := strings.Cut(event.Action, ":")
@@ -170,30 +168,25 @@ func (a *Agent) watchEvents(ctx context.Context, events chan<- struct{}) {
 			a.cache.forgetContainer(event.Actor.ID)
 		case event.Type == "image":
 			a.cache.forgetImages()
-		default:
-			return
-		}
-
-		select {
-		case events <- struct{}{}:
-		default:
 		}
 	}
 
 	for {
 		connected := time.Now()
 
-		err := a.docker.watchEvents(ctx, a.cache.reset, onEvent)
+		err := a.docker.watchEvents(ctx, onConnect, onEvent)
+
+		a.cache.setWatching(false)
 
 		if ctx.Err() != nil {
 			return
 		}
 
-		if time.Since(connected) > heartbeatInterval {
+		if time.Since(connected) > maxRetryDelay {
 			delay = firstRetryDelay
 		}
 
-		slog.Warn("watching Docker events failed; changes are picked up by the next heartbeat until it reconnects", "error", err, "retry", delay)
+		slog.Warn("watching Docker events failed; every poll reads Docker in full until it reconnects", "error", err, "retry", delay)
 
 		select {
 		case <-ctx.Done():
@@ -201,29 +194,6 @@ func (a *Agent) watchEvents(ctx context.Context, events chan<- struct{}) {
 		case <-time.After(delay):
 		}
 
-		delay = min(delay*2, heartbeatInterval)
+		delay = min(delay*2, maxRetryDelay)
 	}
-}
-
-func (a *Agent) logFailure(err error) {
-	if err.Error() == a.lastError {
-		slog.Debug("still failing", "error", err)
-		return
-	}
-
-	a.lastError = err.Error()
-	slog.Error("syncing with dockvmap failed", "error", err)
-}
-
-func (a *Agent) logRecovery() {
-	if a.lastError != "" {
-		slog.Info("syncing with dockvmap works again")
-		a.lastError = ""
-	}
-}
-
-func isStatus(err error, status int) bool {
-	var controllerErr *controllerError
-
-	return errors.As(err, &controllerErr) && controllerErr.status == status
 }

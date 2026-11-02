@@ -50,6 +50,7 @@ type workerDeps struct {
 	worker              *service.Worker
 	failures            *service.FailureLog
 	images              *service.Images
+	hosts               *service.Hosts
 	discoveries         *service.Discoveries
 	cache               *blobcache.Cache
 	notifications       *service.Notifications
@@ -112,6 +113,14 @@ func scheduledJobs(deps workerDeps) []scheduledJob {
 			disabledReason: "tags_check_interval is not a positive duration",
 		})
 	}
+
+	jobs = append(jobs, scheduledJob{
+		name:        "agent-poll",
+		description: "Read every host's containers from its agent.",
+		interval:    cfg.AgentsPollIntervalDuration(),
+		enabled:     true,
+		run:         deps.hosts.PollAll,
+	})
 
 	jobs = append(jobs, blobCacheJobs(deps)...)
 

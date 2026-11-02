@@ -94,6 +94,8 @@ func cmdBackup(ctx context.Context, dbPath, credentialEncryptionKey, destPath st
 	}
 
 	fmt.Println("    (without it, stored registry credentials cannot be decrypted)")
+	fmt.Printf("  - the agent client identity %s\n", filepath.Join(dataPath, agentClientIdentityFile))
+	fmt.Println("    (without it, every host agent has to be reset and adopted again)")
 	fmt.Println("  - your config.yaml, which is not part of this backup")
 
 	return nil

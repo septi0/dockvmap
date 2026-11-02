@@ -7,16 +7,26 @@ import (
 
 var cleanExitCodes = []int{0, 137, 143}
 
+const (
+	HostPollFailed          = "failed"
+	HostPollIdentityChanged = "identityChanged"
+	HostPollPairedElsewhere = "pairedElsewhere"
+)
+
 type Host struct {
 	ID                  int64
 	Name                string
+	Address             string
+	AgentFingerprint    *string
 	CreatedAt           time.Time
 	LastSeenAt          *time.Time
+	PollError           *string
+	PollErrorKind       *string
 	AgentVersion        *string
 	ProtocolVersion     *int
 	Info                HostInfo
 	DockerError         *string
-	Fingerprint         *string
+	ReportFingerprint   *string
 	RunningContainers   int
 	StoppedContainers   int
 	Stacks              int

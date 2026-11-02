@@ -63,7 +63,7 @@ docker pull dockvmap.local/myapp:current
 - **Web UI**: Svelte SPA for managing registries, virtual images, and reviewing what changed and when.
 - **Notifications**: digest emails (SMTP) and/or generic webhooks when a tracked image's tags change. Email volume is selectable per account (every tag change / only when an upgrade becomes available / off); webhooks always fire and carry an `updateAvailable` flag.
 - **Optional blob cache**: on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.
-- **Hosts**: a small read-only agent on each Docker host reports its containers, so you see what runs where, with state, health, stacks and ports, and which containers pulled through DockVMap are outdated or pulled but not recreated. See [Hosts and the agent](#hosts-and-the-agent).
+- **Hosts**: DockVMap reads a small read-only agent on each Docker host, so you see what runs where, with state, health, stacks and ports, and which containers pulled through DockVMap are outdated or pulled but not recreated. See [Hosts and the agent](#hosts-and-the-agent).
 - **Pull tracking**: when each image was last pulled through the proxy and which real tag clients got, with a warning when nobody has pulled since the last tag change. A pull that downloads nothing new isn't recorded, so after rolling back to a version your hosts already have, the warning stays until the next real download. Groups show how many members were pulled on the shared tag. Each proxy token shows when it was last used, with a warning once it has gone unused for over 90 days.
 - **Proxy authentication**: optional HTTP Basic Auth (via issued tokens) in front of the registry proxy itself.
 - **Audit log**: every state-changing action recorded, with resolved client IP and actor.
@@ -127,13 +127,21 @@ Skip both and anything that can reach `:8080` directly can forge `X-Forwarded-Fo
 
 ## Hosts and the agent
 
-See which containers run on each Docker host, and whether the ones pulled through DockVMap run the version it points to. A small agent on each host reads Docker and reports to DockVMap. The agent only connects out, so DockVMap never needs access to your hosts, and it never changes anything on them.
+See which containers run on each Docker host, and whether the ones pulled through DockVMap run the version it points to. A small agent on each host reads Docker, and DockVMap connects to it to read what it found. The agent never connects anywhere and never changes anything on the host, so only DockVMap needs a firewall rule to reach your hosts, not the other way around.
 
 ### Setup
 
-1. On the **Hosts** page, click **Add host** and give it a name. DockVMap shows the host's token once, with a ready-to-use compose file.
-2. Run the agent on that host: copy `compose.agent.sample.yaml` to `compose.yaml`, set `DOCKVMAP_URL` and the token, and `docker compose up -d`.
-3. The host shows as Online within seconds. Lost the token? **Regenerate token** on the host's page replaces it, and the old one stops working right away.
+1. On the **Hosts** page, click **Add host**, give it a name and the address DockVMap reaches it on, like `10.0.20.15` or `nas.lan:9002`. DockVMap shows a ready-to-use compose file.
+2. Run the agent on that host: copy `compose.agent.sample.yaml` to `compose.yaml` and `docker compose up -d`. Allow DockVMap to reach the host on the agent's port, `9002` by default.
+3. On its next check, DockVMap adopts the agent and the host shows as Online.
+
+### Pairing
+
+The first time DockVMap reaches an agent, it adopts it: each side keeps the other's certificate fingerprint and from then on only talks to that one, over TLS in both directions. The agent keeps its certificate and the pairing in its `/data` volume, so it stays paired across restarts and updates. There are no tokens to copy.
+
+- **An agent paired with another DockVMap** refuses this one, and the host shows **Paired with another DockVMap**. To move it, delete the agent's volume and start it again.
+- **An agent with a new identity**, for example after its volume was deleted or the host was reinstalled, isn't trusted on its own: the host shows **Agent identity changed** and DockVMap stops reading it. If you reset the agent yourself, click **Trust new agent** on the host's page.
+- **DockVMap's side** of the pairing is `<data-path>/agent_client.pem`. Back it up with the database; without it every agent has to be reset and adopted again.
 
 ### Agent settings
 
@@ -141,15 +149,12 @@ All settings are environment variables on the agent.
 
 | Variable | Default | Description |
 |---|---|---|
-| `DOCKVMAP_URL` | none | Required. DockVMap's web UI address, the same one you open in a browser (not the registry proxy port). |
-| `DOCKVMAP_AGENT_TOKEN` | none | The host's token from the Hosts page. Required unless `DOCKVMAP_AGENT_TOKEN_FILE` is set. |
-| `DOCKVMAP_AGENT_TOKEN_FILE` | none | Read the token from a file instead, e.g. a Docker secret. Set this or `DOCKVMAP_AGENT_TOKEN`, not both. |
-| `DOCKVMAP_CA_FILE` | none | PEM certificate to trust in addition to the system ones, for DockVMap behind a private CA or a self-signed certificate. |
-| `DOCKVMAP_AGENT_PROXY_ONLY` | `false` | Report only containers whose image comes through DockVMap's proxy. |
+| `DOCKVMAP_AGENT_LISTEN` | `:9002` | Address the agent listens on for DockVMap. |
+| `DOCKVMAP_AGENT_PROXY_ONLY` | `false` | Report only containers whose image comes through DockVMap's proxy. Needs [`proxy_public_host`](#networking) set on DockVMap. |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker to read: a `unix://` socket, or `tcp://` to a socket proxy. |
 | `DOCKVMAP_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
 
-Use `https://` whenever the agent reaches DockVMap over a network you don't trust. `http://` works for a DockVMap without TLS, but the token travels unencrypted, and the agent logs a warning at startup.
+The agent keeps its state in `/data` in the image; mount a volume there, as the sample compose file does. It logs its fingerprint at startup, so you can compare it with the one on the host's page in DockVMap.
 
 ### Docker access
 
@@ -160,7 +165,7 @@ The agent only reads from Docker: containers, images, system info and events. Mo
 - **The host**: hostname, OS, architecture, CPUs, memory and Docker version.
 - **Each container**: name, image, state and health, exit code, compose project and service, when it was created, started and stopped, and its published ports.
 
-Never environment variables, mounts, other labels or logs. The agent sends a full report only when something changed, seconds after a Docker event, and otherwise a small heartbeat every minute. A host not heard from for 3 minutes shows as Offline, with the containers it had when it was last online.
+Never environment variables, mounts, other labels or logs. DockVMap asks every agent for changes every [`agents_poll_interval`](#core) (30 seconds by default), and opening a host's page asks right away. When nothing changed, the agent answers in a few bytes. A host that misses 3 checks in a row shows as Offline, with the containers it had when it was last online; the reason, like a refused connection, shows on hover.
 
 ### Versions
 
@@ -181,7 +186,7 @@ Matching uses the proxy address clients pull from, so set [`proxy_public_host`](
 
 ### Build from source
 
-`make build-agent` builds `bin/dockvmap-agent`, one static binary with no dependencies, configured by the same environment variables. `Dockerfile.agent` builds the agent image.
+`make build-agent` builds `bin/dockvmap-agent`, one static binary with no dependencies, configured by the same environment variables. Like DockVMap, it takes `-data-path` for its state, `./data` by default (`/data` in the image), and `-version`. `Dockerfile.agent` builds the agent image.
 
 ## Configuration
 
@@ -199,6 +204,7 @@ Every setting is optional. The Default column gives the built-in value; `none` m
 |---|---|---|
 | `virtual_tag` | `current` | The tag name clients pull instead of a real upstream tag. |
 | `tags_check_interval` | `24h` | Minimum time between upstream tag-change polls. The last poll time is persisted, so restarts don't reset the interval. |
+| `agents_poll_interval` | `30s` | How often DockVMap asks each host's agent for changes. A host that misses 3 checks in a row shows as Offline. |
 | `tag_discovery_ttl` | `1h` | How long a repository's discovered tag list (shown when adding a virtual image) is cached before a "Check repository" click refreshes it in the background. |
 | `session_lifetime` | `168h` | Web UI session duration. |
 | `logs_path` | none | Directory for log files. Unset logs to stdout only. |
@@ -304,9 +310,10 @@ dockvmap -version                    # print version and exit
 The snapshot is **the database only**; the blob cache is regenerable and isn't included. A full restore also needs:
 
 - **The credential encryption key**: the file at `<data-path>/credential_encryption.key`, or the `credential_encryption_key` value if you set one in config. Without it, stored registry credentials can't be decrypted.
+- **The agent client identity**: the file at `<data-path>/agent_client.pem`. Without it, every host agent has to be reset and adopted again.
 - **Your `config.yaml`**, which DockVMap never touches and you keep yourself.
 
-To restore: stop DockVMap, put the snapshot at `<data-path>/dockvmap.db`, restore the credential key, and start a binary of the same version or newer (an older binary refuses to run against a newer schema).
+To restore: stop DockVMap, put the snapshot at `<data-path>/dockvmap.db`, restore the credential key and the agent client identity, and start a binary of the same version or newer (an older binary refuses to run against a newer schema).
 
 ## Development
 

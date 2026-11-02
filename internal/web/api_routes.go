@@ -127,6 +127,9 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 		case http.MethodGet:
 			w.apiGetHost(rw, r)
 
+		case http.MethodPut:
+			w.apiUpdateHost(rw, r)
+
 		case http.MethodDelete:
 			w.apiDeleteHost(rw, r)
 
@@ -135,7 +138,7 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 		}
 	})
 
-	mux.HandleFunc("/hosts/{id}/token", apiMethod(http.MethodPost, w.apiRegenerateHostToken))
+	mux.HandleFunc("/hosts/{id}/trust-agent", apiMethod(http.MethodPost, w.apiTrustHostAgent))
 
 	mux.HandleFunc("/images", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {

@@ -5,31 +5,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/septi0/dockvmap/internal/agentapi"
 	"github.com/septi0/dockvmap/internal/model"
-	"github.com/septi0/dockvmap/internal/oci"
 	"github.com/septi0/dockvmap/internal/store"
 )
 
 var (
 	ErrInvalidHost              = errors.New("invalid host")
 	ErrHostAlreadyExists        = errors.New("host already exists")
+	ErrHostAddressInUse         = errors.New("host address already in use")
 	ErrHostNotFound             = errors.New("host not found")
 	ErrInvalidAgentReport       = errors.New("invalid agent report")
 	ErrUnsupportedAgentProtocol = errors.New("unsupported agent protocol")
-	ErrFullReportNeeded         = errors.New("full report needed")
 )
-
-const HostOfflineAfter = 3 * time.Minute
 
 const crashBadgeWindow = 7 * 24 * time.Hour
 
 const (
 	maxHostNameLength       = 100
+	maxHostAddressLength    = 255
 	maxAgentVersionLength   = 64
 	maxFingerprintLength    = 128
 	maxImageRefLength       = 512
@@ -40,16 +41,13 @@ const (
 	maxIPLength             = 64
 )
 
-var containerHealthStates = []string{"", "healthy", "unhealthy", "starting"}
-
-var portTypes = []string{"tcp", "udp", "sctp"}
-
 type hostStore interface {
-	CreateHost(ctx context.Context, name, tokenHash string) (int64, error)
+	CreateHost(ctx context.Context, name, address string) (int64, error)
 	ListHosts(ctx context.Context) ([]model.Host, error)
 	GetHostByID(ctx context.Context, id int64) (*model.Host, error)
-	HostIDByTokenHash(ctx context.Context, tokenHash string) (int64, bool, error)
-	UpdateHostToken(ctx context.Context, id int64, tokenHash string) (bool, error)
+	UpdateHost(ctx context.Context, id int64, name, address string) (bool, error)
+	SetHostAgent(ctx context.Context, id int64, fingerprint *string) error
+	RecordHostPollError(ctx context.Context, id int64, kind, message string) error
 	DeleteHost(ctx context.Context, id int64) (bool, error)
 	TouchHost(ctx context.Context, id int64, agentVersion string, protocolVersion int, seenAt *time.Time) error
 	ReplaceHostSnapshot(ctx context.Context, id int64, snapshot model.HostSnapshot, seenAt time.Time) error
@@ -67,49 +65,164 @@ type ProxyTarget struct {
 }
 
 type auditHostData struct {
-	Name string `json:"name"`
+	Name    string `json:"name"`
+	Address string `json:"address,omitempty"`
+}
+
+type auditHostUpdateData struct {
+	Name       string `json:"name"`
+	Address    string `json:"address"`
+	OldName    string `json:"oldName"`
+	OldAddress string `json:"oldAddress"`
+}
+
+type HostsDeps struct {
+	Store        hostStore
+	Audit        auditRecorder
+	Agents       agentDialer
+	PollInterval time.Duration
+	ProxyHost    string
 }
 
 type Hosts struct {
-	store hostStore
-	audit auditRecorder
-	now   func() time.Time
+	store        hostStore
+	audit        auditRecorder
+	agents       agentDialer
+	offlineAfter time.Duration
+	proxyHost    string
+	now          func() time.Time
+
+	mu     sync.Mutex
+	polls  map[int64]*sync.Mutex
+	polled map[int64]time.Time
 }
 
-func NewHosts(store hostStore, audit auditRecorder) *Hosts {
-	return &Hosts{store: store, audit: audit, now: time.Now}
+func NewHosts(deps HostsDeps) *Hosts {
+	return &Hosts{
+		store:        deps.Store,
+		audit:        deps.Audit,
+		agents:       deps.Agents,
+		offlineAfter: hostOfflineAfterPolls * deps.PollInterval,
+		proxyHost:    deps.ProxyHost,
+		now:          time.Now,
+		polls:        make(map[int64]*sync.Mutex),
+		polled:       make(map[int64]time.Time),
+	}
 }
 
-func (h *Hosts) Create(ctx context.Context, name string) (int64, string, error) {
+func (h *Hosts) Create(ctx context.Context, name, address string) (int64, error) {
+	name, address, err := validateHost(name, address)
+
+	if err != nil {
+		return 0, err
+	}
+
+	id, err := h.store.CreateHost(ctx, name, address)
+
+	if err != nil {
+		return 0, hostConflict(err)
+	}
+
+	recordAudit(ctx, h.audit, AuditTypeHostCreated, auditHostData{Name: name, Address: address})
+
+	return id, nil
+}
+
+func (h *Hosts) Update(ctx context.Context, id int64, name, address string) error {
+	host, err := h.getHost(ctx, id)
+
+	if err != nil {
+		return err
+	}
+
+	name, address, err = validateHost(name, address)
+
+	if err != nil {
+		return err
+	}
+
+	if name == host.Name && address == host.Address {
+		return nil
+	}
+
+	updated, err := h.store.UpdateHost(ctx, id, name, address)
+
+	if err != nil {
+		return hostConflict(err)
+	}
+
+	if !updated {
+		return fmt.Errorf("%w: %d", ErrHostNotFound, id)
+	}
+
+	recordAudit(ctx, h.audit, AuditTypeHostUpdated, auditHostUpdateData{
+		Name: name, Address: address, OldName: host.Name, OldAddress: host.Address,
+	})
+
+	return nil
+}
+
+func hostConflict(err error) error {
+	switch {
+	case errors.Is(err, store.ErrHostNameConflict):
+		return ErrHostAlreadyExists
+	case errors.Is(err, store.ErrHostAddressConflict):
+		return ErrHostAddressInUse
+	}
+
+	return err
+}
+
+func validateHost(name, address string) (string, string, error) {
 	name = strings.TrimSpace(name)
 
 	if name == "" {
-		return 0, "", fmt.Errorf("%w: name is required", ErrInvalidHost)
+		return "", "", fmt.Errorf("%w: name is required", ErrInvalidHost)
 	}
 
 	if len(name) > maxHostNameLength {
-		return 0, "", fmt.Errorf("%w: name must be at most %d characters", ErrInvalidHost, maxHostNameLength)
+		return "", "", fmt.Errorf("%w: name must be at most %d characters", ErrInvalidHost, maxHostNameLength)
 	}
 
-	token, err := generateSecretToken()
+	address, err := normalizeAgentAddress(address)
 
 	if err != nil {
-		return 0, "", err
+		return "", "", err
 	}
 
-	id, err := h.store.CreateHost(ctx, name, hashSecretToken(token))
+	return name, address, nil
+}
 
-	if errors.Is(err, store.ErrHostNameConflict) {
-		return 0, "", ErrHostAlreadyExists
+func normalizeAgentAddress(raw string) (string, error) {
+	address := strings.TrimSpace(raw)
+
+	if address == "" {
+		return "", fmt.Errorf("%w: address is required", ErrInvalidHost)
 	}
+
+	if len(address) > maxHostAddressLength || strings.Contains(address, "://") || strings.ContainsAny(address, "/?#@ \t") {
+		return "", fmt.Errorf("%w: address must be a host or host:port, like 10.0.0.5 or nas.lan:%s", ErrInvalidHost, agentapi.DefaultPort)
+	}
+
+	host, port, err := net.SplitHostPort(address)
 
 	if err != nil {
-		return 0, "", err
+		host, port = strings.TrimSuffix(strings.TrimPrefix(address, "["), "]"), ""
 	}
 
-	recordAudit(ctx, h.audit, AuditTypeHostCreated, auditHostData{Name: name})
+	if port == "" {
+		port = agentapi.DefaultPort
+	}
 
-	return id, token, nil
+	if number, err := strconv.Atoi(port); err != nil || number < 1 || number > 65535 {
+		return "", fmt.Errorf("%w: port must be a number from 1 to 65535", ErrInvalidHost)
+	}
+
+	if host == "" || strings.ContainsAny(host, "[]") {
+		return "", fmt.Errorf("%w: address must be a host or host:port, like 10.0.0.5 or nas.lan:%s", ErrInvalidHost, agentapi.DefaultPort)
+	}
+
+	return net.JoinHostPort(host, port), nil
 }
 
 func (h *Hosts) List(ctx context.Context, proxy ProxyTarget) ([]model.Host, error) {
@@ -261,6 +374,16 @@ func (h *Hosts) Get(ctx context.Context, id int64, proxy ProxyTarget) (*model.Ho
 		return nil, err
 	}
 
+	if host.PollError == nil {
+		if err := h.poll(ctx, id, livePollMaxAge, livePollTimeout); err != nil {
+			return nil, err
+		}
+
+		if host, err = h.getHost(ctx, id); err != nil {
+			return nil, err
+		}
+	}
+
 	containers, err := h.store.ListHostContainers(ctx, id)
 
 	if err != nil {
@@ -278,32 +401,24 @@ func (h *Hosts) Get(ctx context.Context, id int64, proxy ProxyTarget) (*model.Ho
 	return &model.HostDetails{Host: *host, Containers: containers}, nil
 }
 
-func (h *Hosts) RegenerateToken(ctx context.Context, id int64) (string, error) {
+func (h *Hosts) TrustNewAgent(ctx context.Context, id int64) error {
 	host, err := h.getHost(ctx, id)
 
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	token, err := generateSecretToken()
-
-	if err != nil {
-		return "", err
+	if host.PollErrorKind == nil || *host.PollErrorKind != model.HostPollIdentityChanged {
+		return fmt.Errorf("%w: the agent's identity has not changed", ErrInvalidHost)
 	}
 
-	updated, err := h.store.UpdateHostToken(ctx, id, hashSecretToken(token))
-
-	if err != nil {
-		return "", err
+	if err := h.store.SetHostAgent(ctx, id, nil); err != nil {
+		return err
 	}
 
-	if !updated {
-		return "", fmt.Errorf("%w: %d", ErrHostNotFound, id)
-	}
+	recordAudit(ctx, h.audit, AuditTypeHostAgentTrusted, auditHostData{Name: host.Name, Address: host.Address})
 
-	recordAudit(ctx, h.audit, AuditTypeHostTokenRegenerated, auditHostData{Name: host.Name})
-
-	return token, nil
+	return h.poll(ctx, id, 0, livePollTimeout)
 }
 
 func (h *Hosts) Delete(ctx context.Context, id int64) error {
@@ -323,85 +438,12 @@ func (h *Hosts) Delete(ctx context.Context, id int64) error {
 		return fmt.Errorf("%w: %d", ErrHostNotFound, id)
 	}
 
-	recordAudit(ctx, h.audit, AuditTypeHostDeleted, auditHostData{Name: host.Name})
+	h.mu.Lock()
+	delete(h.polls, id)
+	delete(h.polled, id)
+	h.mu.Unlock()
 
-	return nil
-}
-
-func (h *Hosts) Authenticate(ctx context.Context, token string) (int64, bool, error) {
-	if token == "" {
-		return 0, false, nil
-	}
-
-	return h.store.HostIDByTokenHash(ctx, hashSecretToken(token))
-}
-
-func (h *Hosts) Report(ctx context.Context, hostID int64, report agentapi.Report) error {
-	if err := h.checkAgent(ctx, hostID, report.ProtocolVersion, report.AgentVersion, report.Fingerprint); err != nil {
-		return err
-	}
-
-	snapshot, err := snapshotFromReport(report)
-
-	if err != nil {
-		return err
-	}
-
-	host, err := h.getHost(ctx, hostID)
-
-	if err != nil {
-		return err
-	}
-
-	now := h.now().UTC()
-
-	if host.Fingerprint != nil && *host.Fingerprint == snapshot.Fingerprint {
-		return h.store.TouchHost(ctx, hostID, snapshot.AgentVersion, snapshot.ProtocolVersion, &now)
-	}
-
-	if snapshot.DockerError != nil {
-		return h.store.RecordHostDockerError(ctx, hostID, snapshot, now)
-	}
-
-	return h.store.ReplaceHostSnapshot(ctx, hostID, snapshot, now)
-}
-
-func (h *Hosts) Heartbeat(ctx context.Context, hostID int64, heartbeat agentapi.Heartbeat) error {
-	if err := h.checkAgent(ctx, hostID, heartbeat.ProtocolVersion, heartbeat.AgentVersion, heartbeat.Fingerprint); err != nil {
-		return err
-	}
-
-	host, err := h.getHost(ctx, hostID)
-
-	if err != nil {
-		return err
-	}
-
-	if host.Fingerprint == nil || *host.Fingerprint != heartbeat.Fingerprint {
-		return ErrFullReportNeeded
-	}
-
-	now := h.now().UTC()
-
-	return h.store.TouchHost(ctx, hostID, heartbeat.AgentVersion, heartbeat.ProtocolVersion, &now)
-}
-
-func (h *Hosts) checkAgent(ctx context.Context, hostID int64, protocolVersion int, agentVersion, fingerprint string) error {
-	if len(agentVersion) > maxAgentVersionLength {
-		return fmt.Errorf("%w: agent version longer than %d characters", ErrInvalidAgentReport, maxAgentVersionLength)
-	}
-
-	if protocolVersion != agentapi.ProtocolVersion {
-		if err := h.store.TouchHost(ctx, hostID, agentVersion, protocolVersion, nil); err != nil {
-			return err
-		}
-
-		return fmt.Errorf("%w: agent speaks protocol %d, this dockvmap speaks %d; run the agent version that matches dockvmap", ErrUnsupportedAgentProtocol, protocolVersion, agentapi.ProtocolVersion)
-	}
-
-	if fingerprint == "" || len(fingerprint) > maxFingerprintLength {
-		return fmt.Errorf("%w: fingerprint is missing or too long", ErrInvalidAgentReport)
-	}
+	recordAudit(ctx, h.audit, AuditTypeHostDeleted, auditHostData{Name: host.Name, Address: host.Address})
 
 	return nil
 }
@@ -483,7 +525,11 @@ func (h *Hosts) getHost(ctx context.Context, id int64) (*model.Host, error) {
 
 func (h *Hosts) markStatus(host *model.Host) {
 	host.AgentUpdateNeeded = host.ProtocolVersion != nil && *host.ProtocolVersion != agentapi.ProtocolVersion
-	host.Online = host.LastSeenAt != nil && !host.AgentUpdateNeeded && h.now().Sub(*host.LastSeenAt) < HostOfflineAfter
+	host.Online = host.LastSeenAt != nil && !host.AgentUpdateNeeded && !h.agentRefused(host) && h.now().Sub(*host.LastSeenAt) < h.offlineAfter
+}
+
+func (h *Hosts) agentRefused(host *model.Host) bool {
+	return host.PollErrorKind != nil && *host.PollErrorKind != model.HostPollFailed
 }
 
 func (h *Hosts) track(ctx context.Context, containers []model.HostContainer, proxy ProxyTarget) error {
@@ -549,208 +595,4 @@ func trackContainer(c model.HostContainer, image *model.Image, virtualTag string
 	tracking.InRollout = (c.Running() || c.Restarting()) && followsVirtualTag && tracking.Status != model.ContainerVersionUnknown
 
 	return tracking
-}
-
-func snapshotFromReport(report agentapi.Report) (model.HostSnapshot, error) {
-	if len(report.Containers) > agentapi.MaxContainers {
-		return model.HostSnapshot{}, fmt.Errorf("%w: more than %d containers", ErrInvalidAgentReport, agentapi.MaxContainers)
-	}
-
-	if len(report.Images) > agentapi.MaxImages {
-		return model.HostSnapshot{}, fmt.Errorf("%w: more than %d images", ErrInvalidAgentReport, agentapi.MaxImages)
-	}
-
-	if err := validateHostInfo(report.Host); err != nil {
-		return model.HostSnapshot{}, err
-	}
-
-	if len(report.DockerError) > agentapi.MaxTextLength {
-		return model.HostSnapshot{}, fmt.Errorf("%w: docker error longer than %d characters", ErrInvalidAgentReport, agentapi.MaxTextLength)
-	}
-
-	digests, err := imageDigests(report.Images)
-
-	if err != nil {
-		return model.HostSnapshot{}, err
-	}
-
-	snapshot := model.HostSnapshot{
-		AgentVersion:    report.AgentVersion,
-		ProtocolVersion: report.ProtocolVersion,
-		Info:            hostInfo(report.Host),
-		DockerError:     optional(report.DockerError),
-		Containers:      make([]model.HostContainer, 0, len(report.Containers)),
-		Fingerprint:     report.Fingerprint,
-	}
-
-	seen := make(map[string]bool, len(report.Containers))
-
-	for _, c := range report.Containers {
-		if err := validateContainer(c); err != nil {
-			return model.HostSnapshot{}, err
-		}
-
-		if seen[c.ID] {
-			return model.HostSnapshot{}, fmt.Errorf("%w: container %q is listed twice", ErrInvalidAgentReport, c.ID)
-		}
-
-		seen[c.ID] = true
-		snapshot.Containers = append(snapshot.Containers, hostContainer(c, digests))
-	}
-
-	return snapshot, nil
-}
-
-func validateHostInfo(info agentapi.HostInfo) error {
-	for _, field := range []string{info.Hostname, info.DockerVersion, info.OS, info.Architecture} {
-		if len(field) > agentapi.MaxTextLength {
-			return fmt.Errorf("%w: host info field longer than %d characters", ErrInvalidAgentReport, agentapi.MaxTextLength)
-		}
-	}
-
-	if info.CPUs < 0 || info.MemoryBytes < 0 {
-		return fmt.Errorf("%w: negative host resources", ErrInvalidAgentReport)
-	}
-
-	return nil
-}
-
-func validateContainer(c agentapi.Container) error {
-	switch {
-	case c.ID == "" || len(c.ID) > maxDockerIDLength:
-		return fmt.Errorf("%w: container id is missing or too long", ErrInvalidAgentReport)
-	case c.Name == "" || len(c.Name) > agentapi.MaxTextLength:
-		return fmt.Errorf("%w: container %q name is missing or too long", ErrInvalidAgentReport, c.ID)
-	case c.Image == "" || len(c.Image) > maxImageRefLength:
-		return fmt.Errorf("%w: container %q image is missing or too long", ErrInvalidAgentReport, c.Name)
-	case len(c.ImageID) > maxDockerIDLength || len(c.RefImageID) > maxDockerIDLength:
-		return fmt.Errorf("%w: container %q image id is too long", ErrInvalidAgentReport, c.Name)
-	case c.State == "" || len(c.State) > maxContainerStateLength:
-		return fmt.Errorf("%w: container %q state is missing or too long", ErrInvalidAgentReport, c.Name)
-	case !slices.Contains(containerHealthStates, c.Health):
-		return fmt.Errorf("%w: container %q has unknown health %q", ErrInvalidAgentReport, c.Name, c.Health)
-	case len(c.ComposeProject) > agentapi.MaxTextLength || len(c.ComposeService) > agentapi.MaxTextLength:
-		return fmt.Errorf("%w: container %q field longer than %d characters", ErrInvalidAgentReport, c.Name, agentapi.MaxTextLength)
-	case c.Created < 0 || c.StartedAt < 0 || c.FinishedAt < 0:
-		return fmt.Errorf("%w: container %q has a negative time", ErrInvalidAgentReport, c.Name)
-	case len(c.Ports) > maxPortsPerContainer:
-		return fmt.Errorf("%w: container %q has more than %d ports", ErrInvalidAgentReport, c.Name, maxPortsPerContainer)
-	}
-
-	for _, p := range c.Ports {
-		if !validPort(p.PrivatePort) || !validPort(p.PublicPort) || !slices.Contains(portTypes, p.Type) || len(p.IP) > maxIPLength {
-			return fmt.Errorf("%w: container %q has an invalid port", ErrInvalidAgentReport, c.Name)
-		}
-	}
-
-	return nil
-}
-
-func validPort(port int) bool {
-	return port >= 0 && port <= 65535
-}
-
-func imageDigests(images []agentapi.Image) (map[string][]string, error) {
-	digests := make(map[string][]string, len(images))
-
-	for _, image := range images {
-		if image.ID == "" || len(image.ID) > maxDockerIDLength {
-			return nil, fmt.Errorf("%w: image id is missing or too long", ErrInvalidAgentReport)
-		}
-
-		if len(image.RepoDigests) > maxRepoDigestsPerItem {
-			return nil, fmt.Errorf("%w: image %q has more than %d digests", ErrInvalidAgentReport, image.ID, maxRepoDigestsPerItem)
-		}
-
-		for _, repoDigest := range image.RepoDigests {
-			_, digest, found := strings.Cut(repoDigest, "@")
-
-			if found && oci.IsDigest(digest) && !slices.Contains(digests[image.ID], digest) {
-				digests[image.ID] = append(digests[image.ID], digest)
-			}
-		}
-	}
-
-	return digests, nil
-}
-
-func hostContainer(c agentapi.Container, digests map[string][]string) model.HostContainer {
-	ref := agentapi.ParseImageRef(c.Image)
-
-	container := model.HostContainer{
-		ContainerID:     c.ID,
-		Name:            c.Name,
-		Image:           c.Image,
-		ImageHost:       ref.Host,
-		ImageRepository: ref.Repository,
-		ImageTag:        optional(ref.Tag),
-		ImageDigest:     optional(ref.Digest),
-		RunningDigests:  knownDigests(digests, c.ImageID),
-		State:           c.State,
-		Health:          optional(c.Health),
-		ExitCode:        c.ExitCode,
-		ComposeProject:  optional(c.ComposeProject),
-		ComposeService:  optional(c.ComposeService),
-	}
-
-	if c.RefImageID != "" && c.RefImageID != c.ImageID {
-		container.RefDigests = knownDigests(digests, c.RefImageID)
-	}
-
-	for _, p := range c.Ports {
-		container.Ports = append(container.Ports, model.ContainerPort{IP: p.IP, PrivatePort: p.PrivatePort, PublicPort: p.PublicPort, Type: p.Type})
-	}
-
-	container.CreatedAt = unixTime(c.Created)
-	container.StartedAt = unixTime(c.StartedAt)
-	container.FinishedAt = unixTime(c.FinishedAt)
-
-	return container
-}
-
-func knownDigests(digests map[string][]string, imageID string) []string {
-	known := digests[imageID]
-
-	if oci.IsDigest(imageID) && !slices.Contains(known, imageID) {
-		known = append(slices.Clone(known), imageID)
-	}
-
-	return known
-}
-
-func hostInfo(info agentapi.HostInfo) model.HostInfo {
-	result := model.HostInfo{
-		Hostname:      optional(info.Hostname),
-		DockerVersion: optional(info.DockerVersion),
-		OS:            optional(info.OS),
-		Architecture:  optional(info.Architecture),
-	}
-
-	if info.CPUs > 0 {
-		result.CPUs = &info.CPUs
-	}
-
-	if info.MemoryBytes > 0 {
-		result.MemoryBytes = &info.MemoryBytes
-	}
-
-	return result
-}
-
-func unixTime(seconds int64) *time.Time {
-	if seconds <= 0 {
-		return nil
-	}
-
-	t := time.Unix(seconds, 0).UTC()
-
-	return &t
-}
-
-func optional(value string) *string {
-	if value == "" {
-		return nil
-	}
-
-	return &value
 }

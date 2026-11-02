@@ -7,11 +7,17 @@ export interface HostInfo {
   memoryBytes?: number
 }
 
+export type HostPollErrorKind = 'failed' | 'identityChanged' | 'pairedElsewhere'
+
 export interface Host {
   id: number
   name: string
+  address: string
+  agentFingerprint?: string
   createdAt: string
   lastSeenAt?: string
+  pollError?: string
+  pollErrorKind?: HostPollErrorKind
   online: boolean
   current: boolean
   agentVersion?: string
@@ -85,16 +91,12 @@ export interface ImageContainers {
   configuredHosts: number
 }
 
-export interface CreateHostParams {
+export interface HostParams {
   name: string
+  address: string
 }
 
-export interface HostToken {
+export interface HostConnection extends HostParams {
   id: number
-  name: string
-  token: string
-}
-
-export interface HostConnection extends HostToken {
   lastSeenAt?: string
 }

@@ -16,17 +16,35 @@ import (
 
 const shortContainerIDLength = 12
 
-func (a *Agent) snapshot(ctx context.Context) agentapi.Report {
+func (a *Agent) snapshot(ctx context.Context, proxyHost string) agentapi.Report {
+	a.snapshotMu.Lock()
+	defer a.snapshotMu.Unlock()
+
+	if !a.cache.isWatching() {
+		a.cache.reset()
+	}
+
 	report := agentapi.Report{ProtocolVersion: agentapi.ProtocolVersion, AgentVersion: a.version}
 
-	if err := a.collect(ctx, &report); err != nil {
-		slog.Warn("reading Docker failed", "error", err)
+	err := a.collect(ctx, proxyHost, &report)
+
+	switch {
+	case err != nil && ctx.Err() == nil:
+		if err.Error() != a.dockerError {
+			slog.Warn("reading Docker failed", "error", err)
+		}
+
+		a.dockerError = err.Error()
 
 		report = agentapi.Report{
 			ProtocolVersion: agentapi.ProtocolVersion,
 			AgentVersion:    a.version,
 			DockerError:     limit(err.Error(), agentapi.MaxTextLength),
 		}
+
+	case err == nil && a.dockerError != "":
+		slog.Info("reading Docker works again")
+		a.dockerError = ""
 	}
 
 	report.Fingerprint = fingerprint(report)
@@ -34,7 +52,7 @@ func (a *Agent) snapshot(ctx context.Context) agentapi.Report {
 	return report
 }
 
-func (a *Agent) collect(ctx context.Context, report *agentapi.Report) error {
+func (a *Agent) collect(ctx context.Context, proxyHost string, report *agentapi.Report) error {
 	epoch := a.cache.currentEpoch()
 
 	info, err := a.info(ctx, epoch)
@@ -77,7 +95,7 @@ func (a *Agent) collect(ctx context.Context, report *agentapi.Report) error {
 			c.Image = details.image
 		}
 
-		if a.cfg.ProxyOnly && !agentapi.ParseImageRef(c.Image).OnHost(a.proxyHost) {
+		if a.cfg.ProxyOnly && !agentapi.ParseImageRef(c.Image).OnHost(proxyHost) {
 			continue
 		}
 

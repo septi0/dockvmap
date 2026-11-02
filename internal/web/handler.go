@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/septi0/dockvmap/frontend"
-	"github.com/septi0/dockvmap/internal/agentapi"
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/ipmatch"
 	"github.com/septi0/dockvmap/internal/model"
@@ -94,14 +93,12 @@ type proxyTokenService interface {
 }
 
 type hostService interface {
-	Create(ctx context.Context, name string) (int64, string, error)
+	Create(ctx context.Context, name, address string) (int64, error)
 	List(ctx context.Context, proxy service.ProxyTarget) ([]model.Host, error)
 	Get(ctx context.Context, id int64, proxy service.ProxyTarget) (*model.HostDetails, error)
-	RegenerateToken(ctx context.Context, id int64) (string, error)
+	Update(ctx context.Context, id int64, name, address string) error
+	TrustNewAgent(ctx context.Context, id int64) error
 	Delete(ctx context.Context, id int64) error
-	Authenticate(ctx context.Context, token string) (int64, bool, error)
-	Report(ctx context.Context, hostID int64, report agentapi.Report) error
-	Heartbeat(ctx context.Context, hostID int64, heartbeat agentapi.Heartbeat) error
 	ImageContainers(ctx context.Context, imageID int64, proxy service.ProxyTarget) (*model.ImageContainers, error)
 	ImageRollouts(ctx context.Context, proxy service.ProxyTarget) ([]model.ImageRollout, error)
 }
@@ -220,15 +217,12 @@ func New(deps Dependencies) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	apiMux := http.NewServeMux()
-	agentMux := http.NewServeMux()
 
 	w.registerAPIRoutes(apiMux)
-	w.registerAgentRoutes(agentMux)
 
 	mux.HandleFunc("/health", w.apiHealth)
 
 	mux.Handle("/api/", http.StripPrefix("/api", w.withRequestInfo(w.requireAuth(apiMux))))
-	mux.Handle("/api/agent/", http.StripPrefix("/api/agent", w.withRequestInfo(w.requireAgent(agentMux))))
 
 	w.registerFrontendRoutes(mux)
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/septi0/dockvmap/internal/agentclient"
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/oci"
 	"github.com/septi0/dockvmap/internal/proxy"
@@ -74,7 +75,19 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 	health := service.NewHealth(db)
 	proxyUsage := service.NewProxyUsage(db)
 	proxyTokens := service.NewProxyTokens(db, audit, proxyUsage)
-	hosts := service.NewHosts(db, audit)
+	agentIdentity, err := loadAgentClientIdentity(dataPath)
+
+	if err != nil {
+		return err
+	}
+
+	hosts := service.NewHosts(service.HostsDeps{
+		Store:        db,
+		Audit:        audit,
+		Agents:       agentclient.New(agentIdentity, version),
+		PollInterval: cfg.AgentsPollIntervalDuration(),
+		ProxyHost:    cfg.ProxyPublicAddress(),
+	})
 	worker := service.NewWorker(db)
 	proxyMetricsHistory := service.NewProxyMetricsHistory(db)
 	metrics := proxy.NewMetrics()
@@ -106,6 +119,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		worker:              worker,
 		failures:            failureLog,
 		images:              images,
+		hosts:               hosts,
 		discoveries:         discoveries,
 		cache:               cache,
 		notifications:       notifications,

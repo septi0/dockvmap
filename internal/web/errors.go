@@ -27,6 +27,9 @@ func apiServiceError(rw http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrHostAlreadyExists):
 		apiError(rw, http.StatusConflict, "a host with this name already exists")
 
+	case errors.Is(err, service.ErrHostAddressInUse):
+		apiError(rw, http.StatusConflict, "a host with this address already exists")
+
 	case errors.Is(err, service.ErrHostNotFound):
 		apiError(rw, http.StatusNotFound, "host not found")
 

@@ -7,7 +7,7 @@
   import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
-  import AddHostModal from "../lib/components/hosts/AddHostModal.svelte";
+  import HostModal from "../lib/components/hosts/HostModal.svelte";
   import HostConnectModal from "../lib/components/hosts/HostConnectModal.svelte";
   import HostStatus from "../lib/components/hosts/HostStatus.svelte";
   import RolloutSummary from "../lib/components/hosts/RolloutSummary.svelte";
@@ -17,7 +17,7 @@
   import { formatCount, formatDate, formatRelativeTime } from "../lib/utils/format";
   import { proxyAddress } from "../lib/utils/pullInfo";
   import { getPullInfo } from "../lib/api/metrics";
-  import type { Host, HostConnection, HostToken } from "../lib/api/types/hosts";
+  import type { Host, HostConnection } from "../lib/api/types/hosts";
   import type { PullInfo } from "../lib/api/types/metrics";
 
   const REFRESH_INTERVAL_MS = 30_000;
@@ -74,8 +74,8 @@
     push(`/hosts/${id}`);
   }
 
-  function handleCreated(result: HostToken) {
-    connection = { ...result };
+  function handleCreated(result: HostConnection) {
+    connection = result;
     load();
   }
 
@@ -193,10 +193,10 @@
   </AsyncState>
 </AppShell>
 
-<AddHostModal
+<HostModal
   open={showAddModal}
   onClose={() => (showAddModal = false)}
-  onCreated={handleCreated}
+  onSaved={handleCreated}
 />
 
 <HostConnectModal {connection} onClose={closeConnection} />

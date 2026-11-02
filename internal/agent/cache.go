@@ -12,6 +12,7 @@ type containerDetails struct {
 type dockerCache struct {
 	mu         sync.Mutex
 	epoch      int
+	watching   bool
 	info       *dockerInfo
 	images     map[string][]string
 	refImages  map[string]string
@@ -34,6 +35,20 @@ func (c *dockerCache) reset() {
 	c.images = nil
 	c.refImages = make(map[string]string)
 	c.containers = make(map[string]containerDetails)
+}
+
+func (c *dockerCache) setWatching(watching bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.watching = watching
+}
+
+func (c *dockerCache) isWatching() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.watching
 }
 
 func (c *dockerCache) forgetContainer(id string) {

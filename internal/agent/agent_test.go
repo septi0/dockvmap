@@ -2,11 +2,12 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/septi0/dockvmap/internal/agentapi"
+	"github.com/septi0/dockvmap/internal/agentclient"
 )
 
 const proxyHost = "registry.test:5050"
@@ -25,11 +27,12 @@ type fakeDocker struct {
 	events chan string
 	minAPI string
 
-	mu       sync.Mutex
-	paths    []string
-	methods  []string
-	broken   bool
-	webState string
+	mu           sync.Mutex
+	paths        []string
+	methods      []string
+	broken       bool
+	eventsBroken bool
+	webState     string
 }
 
 func newFakeDocker(t *testing.T) *fakeDocker {
@@ -60,7 +63,7 @@ func (d *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 	d.mu.Lock()
 	d.paths = append(d.paths, r.URL.Path)
 	d.methods = append(d.methods, r.Method)
-	broken, webState := d.broken, d.webState
+	broken, eventsBroken, webState := d.broken, d.eventsBroken, d.webState
 	d.mu.Unlock()
 
 	if broken && r.URL.Path != "/version" {
@@ -133,6 +136,11 @@ func (d *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": "No such image"})
 
 	case version + "/events":
+		if eventsBroken {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
 		w.(http.Flusher).Flush()
 
 		for {
@@ -172,97 +180,27 @@ func (d *fakeDocker) event(kind, action, id string) {
 	d.events <- string(encoded)
 }
 
-type fakeController struct {
-	server *httptest.Server
-
-	mu          sync.Mutex
-	reports     []agentapi.Report
-	heartbeats  int
-	token       string
-	fingerprint string
-	arrived     chan string
+type testAgent struct {
+	agent    *Agent
+	address  string
+	dataPath string
+	stop     func()
 }
 
-func newFakeController(t *testing.T) *fakeController {
-	c := &fakeController{token: "secret", arrived: make(chan string, 20)}
-	c.server = httptest.NewServer(http.HandlerFunc(c.serve))
-	t.Cleanup(c.server.Close)
-
-	return c
-}
-
-func (c *fakeController) serve(w http.ResponseWriter, r *http.Request) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if r.Header.Get("Authorization") != "Bearer "+c.token {
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-
-	switch r.URL.Path {
-	case agentapi.ConfigPath:
-		_ = json.NewEncoder(w).Encode(agentapi.Config{ProxyHost: proxyHost})
-
-	case agentapi.ReportPath:
-		var report agentapi.Report
-		_ = json.NewDecoder(r.Body).Decode(&report)
-		c.reports = append(c.reports, report)
-		c.fingerprint = report.Fingerprint
-		c.arrived <- "report"
-
-	case agentapi.HeartbeatPath:
-		var heartbeat agentapi.Heartbeat
-		_ = json.NewDecoder(r.Body).Decode(&heartbeat)
-
-		if heartbeat.Fingerprint != c.fingerprint {
-			w.WriteHeader(agentapi.FullReportNeededStatus)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": "full report needed"})
-			c.arrived <- "conflict"
-
-			return
-		}
-
-		c.heartbeats++
-		c.arrived <- "heartbeat"
-	}
-}
-
-func (c *fakeController) next(t *testing.T, within time.Duration) string {
+func startAgent(t *testing.T, docker *fakeDocker, proxyOnly bool, dataPath string) *testAgent {
 	t.Helper()
 
-	select {
-	case kind := <-c.arrived:
-		return kind
-	case <-time.After(within):
-		t.Fatalf("nothing arrived within %v", within)
-		return ""
+	if dataPath == "" {
+		dataPath = t.TempDir()
 	}
-}
 
-func (c *fakeController) quiet(t *testing.T, during time.Duration) {
-	t.Helper()
+	a, err := New(Config{DataPath: dataPath, DockerHost: "unix://" + docker.socket, ProxyOnly: proxyOnly}, "v1.9.0")
 
-	select {
-	case kind := <-c.arrived:
-		t.Fatalf("unexpected %s", kind)
-	case <-time.After(during):
+	if err != nil {
+		t.Fatal(err)
 	}
-}
 
-func (c *fakeController) lastReport() agentapi.Report {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	return c.reports[len(c.reports)-1]
-}
-
-func startAgent(t *testing.T, docker *fakeDocker, controller *fakeController, proxyOnly bool) {
-	t.Helper()
-
-	base, _ := url.Parse(controller.server.URL)
-
-	a, err := New(Config{URL: base, Token: "secret", DockerHost: "unix://" + docker.socket, ProxyOnly: proxyOnly}, "v1.9.0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 
 	if err != nil {
 		t.Fatal(err)
@@ -272,45 +210,92 @@ func startAgent(t *testing.T, docker *fakeDocker, controller *fakeController, pr
 	done := make(chan struct{})
 
 	go func() {
-		a.Run(ctx)
+		if err := a.Serve(ctx, listener); err != nil {
+			t.Errorf("serve: %v", err)
+		}
+
 		close(done)
 	}()
 
-	t.Cleanup(func() {
-		cancel()
-		<-done
-	})
-}
-
-func firstReport(t *testing.T, controller *fakeController) agentapi.Report {
-	t.Helper()
-
-	if kind := controller.next(t, 5*time.Second); kind != "report" {
-		t.Fatalf("first message = %s, want a report", kind)
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			cancel()
+			<-done
+		})
 	}
 
-	return controller.lastReport()
+	t.Cleanup(stop)
+
+	return &testAgent{agent: a, address: listener.Addr().String(), dataPath: dataPath, stop: stop}
 }
 
-func warmUp(t *testing.T, docker *fakeDocker, controller *fakeController) {
+func (ta *testAgent) waitWatching(t *testing.T) {
 	t.Helper()
 
-	firstReport(t, controller)
-	docker.event("container", "start", "c1")
+	deadline := time.Now().Add(5 * time.Second)
 
-	if kind := controller.next(t, eventDebounce+3*time.Second); kind != "heartbeat" {
-		t.Fatalf("warm-up event should send a heartbeat, got %s", kind)
+	for !ta.agent.cache.isWatching() {
+		if time.Now().After(deadline) {
+			t.Fatal("the agent never started watching Docker events")
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func newClient(t *testing.T) *agentclient.Client {
+	t.Helper()
+
+	data, err := agentapi.NewIdentity("dockvmap")
+
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	docker.takePaths()
+	identity, err := agentapi.ParseIdentity(data)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return agentclient.New(identity, "v1.9.0")
+}
+
+func adopt(t *testing.T, client *agentclient.Client, ta *testAgent) string {
+	t.Helper()
+
+	adoption, seen, err := client.Adopt(context.Background(), ta.address, "")
+
+	if err != nil {
+		t.Fatalf("adopt: %v", err)
+	}
+
+	if seen != ta.agent.Fingerprint() || adoption.ProtocolVersion != agentapi.ProtocolVersion || adoption.AgentVersion != "v1.9.0" {
+		t.Fatalf("adoption = %+v, seen = %s, want %s", adoption, seen, ta.agent.Fingerprint())
+	}
+
+	return seen
+}
+
+func snapshot(t *testing.T, client *agentclient.Client, ta *testAgent, pinned, fingerprint string) *agentapi.Report {
+	t.Helper()
+
+	report, err := client.Snapshot(context.Background(), ta.address, pinned, fingerprint, proxyHost)
+
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+
+	return report
 }
 
 func TestAgentReportsTheHostSnapshot(t *testing.T) {
 	docker := newFakeDocker(t)
-	controller := newFakeController(t)
-	startAgent(t, docker, controller, false)
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
 
-	report := firstReport(t, controller)
+	report := snapshot(t, client, ta, adopt(t, client, ta), "")
 
 	if report.ProtocolVersion != agentapi.ProtocolVersion || report.AgentVersion != "v1.9.0" || report.DockerError != "" || len(report.Fingerprint) != 64 {
 		t.Fatalf("report header = %+v", report)
@@ -384,93 +369,132 @@ func TestAgentReportsTheHostSnapshot(t *testing.T) {
 	}
 }
 
-func TestAgentSendsHeartbeatsWhenNothingChanged(t *testing.T) {
+func TestAgentAnswersNotModifiedUntilSomethingChanges(t *testing.T) {
 	docker := newFakeDocker(t)
-	controller := newFakeController(t)
-	startAgent(t, docker, controller, false)
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
+	pinned := adopt(t, client, ta)
 
-	warmUp(t, docker, controller)
-	docker.event("container", "start", "c1")
+	ta.waitWatching(t)
 
-	if kind := controller.next(t, eventDebounce+3*time.Second); kind != "heartbeat" {
-		t.Fatalf("an event that changed nothing should send a heartbeat, got %s", kind)
+	first := snapshot(t, client, ta, pinned, "")
+	docker.takePaths()
+
+	if report := snapshot(t, client, ta, pinned, first.Fingerprint); report != nil {
+		t.Fatalf("an unchanged host should answer not modified, got %+v", report)
 	}
 
-	if paths := docker.takePaths(); !slices.Equal(paths, []string{"/v1.41/containers/json", "/v1.41/containers/c1/json"}) {
-		t.Fatalf("docker requests = %v, want the list and only the affected container", paths)
+	if paths := docker.takePaths(); !slices.Equal(paths, []string{"/v1.41/containers/json"}) {
+		t.Fatalf("docker requests = %v, want only the container list while events keep the cache valid", paths)
 	}
 
 	docker.set(func(d *fakeDocker) { d.webState = "exited" })
 	docker.event("container", "die", "c1")
 
-	if kind := controller.next(t, eventDebounce+3*time.Second); kind != "report" || controller.lastReport().Containers[0].State != "exited" {
-		t.Fatalf("a real change should send a full report, got %s", kind)
+	deadline := time.Now().Add(5 * time.Second)
+
+	for {
+		report := snapshot(t, client, ta, pinned, first.Fingerprint)
+
+		if report != nil {
+			if report.Fingerprint == first.Fingerprint || !slices.ContainsFunc(report.Containers, func(c agentapi.Container) bool { return c.ID == "c1" && c.State == "exited" }) {
+				t.Fatalf("changed report = %+v", report)
+			}
+
+			break
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatal("the change never showed up")
+		}
+
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
 func TestAgentIgnoresHealthcheckExecEvents(t *testing.T) {
 	docker := newFakeDocker(t)
-	controller := newFakeController(t)
-	startAgent(t, docker, controller, false)
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
+	pinned := adopt(t, client, ta)
 
-	firstReport(t, controller)
+	ta.waitWatching(t)
+	snapshot(t, client, ta, pinned, "")
 
 	for range 3 {
 		docker.event("container", "exec_create: /bin/sh -c true", "c1")
 		docker.event("container", "exec_die", "c1")
 	}
 
-	controller.quiet(t, eventDebounce+time.Second)
+	time.Sleep(200 * time.Millisecond)
+	docker.takePaths()
+	snapshot(t, client, ta, pinned, "")
+
+	if paths := docker.takePaths(); !slices.Equal(paths, []string{"/v1.41/containers/json"}) {
+		t.Fatalf("docker requests = %v, exec events must not re-read the container", paths)
+	}
 }
 
 func TestAgentRereadsImagesAfterImageEvents(t *testing.T) {
 	docker := newFakeDocker(t)
-	controller := newFakeController(t)
-	startAgent(t, docker, controller, false)
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
+	pinned := adopt(t, client, ta)
 
-	warmUp(t, docker, controller)
-	docker.event("image", "pull", "registry.test:5050/web:current")
-	controller.next(t, eventDebounce+3*time.Second)
+	ta.waitWatching(t)
+	snapshot(t, client, ta, pinned, "")
 
-	paths := docker.takePaths()
+	docker.event("image", "pull", proxyHost+"/web:current")
 
-	if !slices.Contains(paths, "/v1.41/images/json") || !slices.Contains(paths, "/v1.41/images/"+proxyHost+"/web:current/json") {
-		t.Fatalf("docker requests = %v, want images re-read", paths)
-	}
+	deadline := time.Now().Add(5 * time.Second)
 
-	if slices.Contains(paths, "/v1.41/containers/c1/json") || slices.Contains(paths, "/v1.41/info") {
-		t.Fatalf("docker requests = %v, an image event must not re-read containers or info", paths)
+	for {
+		docker.takePaths()
+		snapshot(t, client, ta, pinned, "")
+		paths := docker.takePaths()
+
+		if slices.Contains(paths, "/v1.41/images/json") {
+			if !slices.Contains(paths, "/v1.41/images/"+proxyHost+"/web:current/json") {
+				t.Fatalf("docker requests = %v, want the tag looked up again", paths)
+			}
+
+			if slices.Contains(paths, "/v1.41/containers/c1/json") || slices.Contains(paths, "/v1.41/info") {
+				t.Fatalf("docker requests = %v, an image event must not re-read containers or info", paths)
+			}
+
+			return
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("images were never re-read, last requests = %v", paths)
+		}
+
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 
-func TestAgentSendsAFullReportWhenAsked(t *testing.T) {
+func TestAgentReadsDockerInFullWhileEventsAreDown(t *testing.T) {
 	docker := newFakeDocker(t)
-	controller := newFakeController(t)
-	startAgent(t, docker, controller, false)
+	docker.set(func(d *fakeDocker) { d.eventsBroken = true })
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
+	pinned := adopt(t, client, ta)
 
-	firstReport(t, controller)
+	snapshot(t, client, ta, pinned, "")
+	docker.takePaths()
+	snapshot(t, client, ta, pinned, "")
 
-	controller.mu.Lock()
-	controller.fingerprint = ""
-	controller.mu.Unlock()
-
-	docker.event("container", "start", "c1")
-
-	if kind := controller.next(t, eventDebounce+3*time.Second); kind != "conflict" {
-		t.Fatalf("got %s, want the heartbeat to be refused", kind)
-	}
-
-	if kind := controller.next(t, time.Second); kind != "report" {
-		t.Fatalf("got %s, want a full report right after", kind)
+	if paths := docker.takePaths(); !slices.Contains(paths, "/v1.41/containers/c1/json") || !slices.Contains(paths, "/v1.41/images/json") {
+		t.Fatalf("docker requests = %v, without events every poll must read Docker in full", paths)
 	}
 }
 
 func TestAgentProxyOnlyReportsProxyContainers(t *testing.T) {
 	docker := newFakeDocker(t)
-	controller := newFakeController(t)
-	startAgent(t, docker, controller, true)
+	ta := startAgent(t, docker, true, "")
+	client := newClient(t)
 
-	report := firstReport(t, controller)
+	report := snapshot(t, client, ta, adopt(t, client, ta), "")
 
 	names := []string{}
 
@@ -488,10 +512,10 @@ func TestAgentProxyOnlyReportsProxyContainers(t *testing.T) {
 func TestAgentReportsDockerErrors(t *testing.T) {
 	docker := newFakeDocker(t)
 	docker.set(func(d *fakeDocker) { d.broken = true })
-	controller := newFakeController(t)
-	startAgent(t, docker, controller, false)
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
 
-	report := firstReport(t, controller)
+	report := snapshot(t, client, ta, adopt(t, client, ta), "")
 
 	if !strings.Contains(report.DockerError, "daemon is sad") || len(report.Containers) != 0 || report.Fingerprint == "" {
 		t.Fatalf("report = %+v", report)
@@ -501,53 +525,119 @@ func TestAgentReportsDockerErrors(t *testing.T) {
 func TestAgentNegotiatesAHigherMinimumAPIVersion(t *testing.T) {
 	docker := newFakeDocker(t)
 	docker.minAPI = "1.44"
-	controller := newFakeController(t)
-	startAgent(t, docker, controller, false)
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
 
-	if report := firstReport(t, controller); report.DockerError != "" || len(report.Containers) != 4 {
+	if report := snapshot(t, client, ta, adopt(t, client, ta), ""); report.DockerError != "" || len(report.Containers) != 4 {
 		t.Fatalf("report = %+v", report)
 	}
 }
 
-func TestAgentRetriesAfterARejectedToken(t *testing.T) {
+func TestAgentWaitsToBeAdopted(t *testing.T) {
 	docker := newFakeDocker(t)
-	controller := newFakeController(t)
-	controller.token = "regenerated"
-	startAgent(t, docker, controller, false)
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
 
-	time.Sleep(time.Second)
+	if _, err := client.Snapshot(context.Background(), ta.address, ta.agent.Fingerprint(), "", proxyHost); !errors.Is(err, agentclient.ErrNotAdopted) {
+		t.Fatalf("snapshot before adoption = %v, want ErrNotAdopted", err)
+	}
 
-	controller.mu.Lock()
-	controller.token = "secret"
-	controller.mu.Unlock()
+	pinned := adopt(t, client, ta)
 
-	if kind := controller.next(t, firstRetryDelay+3*time.Second); kind != "report" {
-		t.Fatalf("got %s, want a report once the token works", kind)
+	if _, seen, err := client.Adopt(context.Background(), ta.address, pinned); err != nil || seen != pinned {
+		t.Fatalf("adopting again from the same DockVMap = %s, %v", seen, err)
+	}
+}
+
+func TestAgentPairsWithTheFirstDockVMapOnly(t *testing.T) {
+	docker := newFakeDocker(t)
+	ta := startAgent(t, docker, false, "")
+	first, other := newClient(t), newClient(t)
+	pinned := adopt(t, first, ta)
+
+	if _, _, err := other.Adopt(context.Background(), ta.address, ""); !errors.Is(err, agentclient.ErrPairedElsewhere) {
+		t.Fatalf("adopt by another DockVMap = %v, want ErrPairedElsewhere", err)
+	}
+
+	if _, err := other.Snapshot(context.Background(), ta.address, pinned, "", proxyHost); !errors.Is(err, agentclient.ErrPairedElsewhere) {
+		t.Fatalf("snapshot by another DockVMap = %v, want ErrPairedElsewhere", err)
+	}
+
+	snapshot(t, first, ta, pinned, "")
+}
+
+func TestAgentPairsOnceWhenTwoDockVMapsRace(t *testing.T) {
+	docker := newFakeDocker(t)
+	ta := startAgent(t, docker, false, "")
+	results := make(chan error, 2)
+
+	for _, client := range []*agentclient.Client{newClient(t), newClient(t)} {
+		go func() {
+			_, _, err := client.Adopt(context.Background(), ta.address, "")
+			results <- err
+		}()
+	}
+
+	first, second := <-results, <-results
+
+	if (first == nil) == (second == nil) || !errors.Is(errors.Join(first, second), agentclient.ErrPairedElsewhere) {
+		t.Fatalf("results = %v, %v; want exactly one adoption and one refusal", first, second)
+	}
+}
+
+func TestAgentKeepsItsIdentityAndPairingAcrossRestarts(t *testing.T) {
+	docker := newFakeDocker(t)
+	ta := startAgent(t, docker, false, "")
+	client := newClient(t)
+	pinned := adopt(t, client, ta)
+
+	ta.stop()
+
+	restarted := startAgent(t, docker, false, ta.dataPath)
+
+	if restarted.agent.Fingerprint() != pinned {
+		t.Fatalf("fingerprint after restart = %s, want %s", restarted.agent.Fingerprint(), pinned)
+	}
+
+	snapshot(t, client, restarted, pinned, "")
+
+	restarted.stop()
+
+	replaced := startAgent(t, docker, false, "")
+
+	if _, err := client.Snapshot(context.Background(), replaced.address, pinned, "", proxyHost); !errors.Is(err, agentclient.ErrIdentityChanged) {
+		t.Fatalf("snapshot from an agent with a new identity = %v, want ErrIdentityChanged", err)
+	}
+}
+
+func TestAgentRefusesClientsWithoutACertificate(t *testing.T) {
+	docker := newFakeDocker(t)
+	ta := startAgent(t, docker, false, "")
+
+	plain := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+
+	resp, err := plain.Get("https://" + ta.address + agentapi.SnapshotPath)
+
+	if err == nil {
+		resp.Body.Close()
+		t.Fatalf("a client without a certificate got %s", resp.Status)
 	}
 }
 
 func TestErrorsExplainWhatToDo(t *testing.T) {
-	unauthorized := (&controllerError{status: http.StatusUnauthorized}).Error()
+	silent, err := net.Listen("tcp", "127.0.0.1:0")
 
-	if !strings.Contains(unauthorized, "regenerate it on this host's page") {
-		t.Errorf("401 message = %q", unauthorized)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	base, _ := url.Parse("https://127.0.0.1:1")
-	client := newControllerClient(Config{URL: base, Token: "x"}, "v1")
+	defer silent.Close()
 
-	if _, err := client.config(context.Background()); err == nil || !strings.Contains(err.Error(), "cannot reach dockvmap at https://127.0.0.1:1") {
-		t.Errorf("unreachable = %v", err)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
 
-	tlsServer := httptest.NewTLSServer(http.NotFoundHandler())
-	defer tlsServer.Close()
-
-	tlsBase, _ := url.Parse(tlsServer.URL)
-	client = newControllerClient(Config{URL: tlsBase, Token: "x"}, "v1")
-
-	if _, err := client.config(context.Background()); err == nil || !strings.Contains(err.Error(), "set DOCKVMAP_CA_FILE") {
-		t.Errorf("untrusted certificate = %v", err)
+	if _, _, err := newClient(t).Adopt(ctx, silent.Addr().String(), ""); err == nil || !strings.Contains(err.Error(), "didn't answer in time") {
+		t.Errorf("an agent that never answers = %v", err)
 	}
 
 	missing, _ := newDockerClient("unix://" + filepath.Join(t.TempDir(), "missing.sock"))
@@ -560,6 +650,10 @@ func TestErrorsExplainWhatToDo(t *testing.T) {
 
 	if _, err := refused.info(context.Background()); err == nil || !strings.Contains(err.Error(), "check DOCKER_HOST") {
 		t.Errorf("refused = %v", err)
+	}
+
+	if _, err := New(Config{DataPath: filepath.Join(t.TempDir(), "missing"), DockerHost: defaultDockerHost}, "v1"); err == nil || !strings.Contains(err.Error(), "saving the agent identity in") {
+		t.Errorf("missing data path = %v", err)
 	}
 }
 

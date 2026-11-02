@@ -1,17 +1,17 @@
 package agentapi
 
-import (
-	"net/http"
-	"strings"
-)
+import "strings"
 
 const ProtocolVersion = 1
 
+const DefaultPort = "9002"
+
 const (
-	ConfigPath    = "/api/agent/v1/config"
-	ReportPath    = "/api/agent/v1/report"
-	HeartbeatPath = "/api/agent/v1/heartbeat"
+	AdoptPath    = "/v1/adopt"
+	SnapshotPath = "/v1/snapshot"
 )
+
+const ProxyHostHeader = "X-Dockvmap-Proxy-Host"
 
 const (
 	MaxContainers = 1000
@@ -19,10 +19,13 @@ const (
 	MaxTextLength = 255
 )
 
-const FullReportNeededStatus = http.StatusConflict
+type Adoption struct {
+	ProtocolVersion int    `json:"protocolVersion"`
+	AgentVersion    string `json:"agentVersion"`
+}
 
-type Config struct {
-	ProxyHost string `json:"proxyHost"`
+type Error struct {
+	Error string `json:"error"`
 }
 
 type Report struct {
@@ -33,12 +36,6 @@ type Report struct {
 	Containers      []Container `json:"containers"`
 	Images          []Image     `json:"images"`
 	DockerError     string      `json:"dockerError,omitempty"`
-}
-
-type Heartbeat struct {
-	ProtocolVersion int    `json:"protocolVersion"`
-	AgentVersion    string `json:"agentVersion"`
-	Fingerprint     string `json:"fingerprint"`
 }
 
 type HostInfo struct {

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -19,6 +21,7 @@ type Config struct {
 	VirtualTag              string               `yaml:"virtual_tag" env:"DOCKVMAP_VIRTUAL_TAG" default:"current"`
 	TagsCheckInterval       string               `yaml:"tags_check_interval" env:"DOCKVMAP_TAGS_CHECK_INTERVAL" default:"24h"`
 	TagDiscoveryTTL         string               `yaml:"tag_discovery_ttl" env:"DOCKVMAP_TAG_DISCOVERY_TTL" default:"1h"`
+	AgentsPollInterval      string               `yaml:"agents_poll_interval" env:"DOCKVMAP_AGENTS_POLL_INTERVAL" default:"30s"`
 	ProxyServerListen       string               `yaml:"proxy_server_listen" env:"DOCKVMAP_PROXY_SERVER_LISTEN" default:":5000"`
 	ProxyPublicHost         string               `yaml:"proxy_public_host" env:"DOCKVMAP_PROXY_PUBLIC_HOST"`
 	ProxyAccessLog          *bool                `yaml:"proxy_access_log" env:"DOCKVMAP_PROXY_ACCESS_LOG" default:"true"`
@@ -138,6 +141,7 @@ func (c *Config) validate() error {
 		{"login_rate_limit.window", c.LoginRateLimit.Window},
 		{"tag_discovery_ttl", c.TagDiscoveryTTL},
 		{"tags_check_interval", c.TagsCheckInterval},
+		{"agents_poll_interval", c.AgentsPollInterval},
 		{"blob_cache.lifetime", c.BlobCache.Lifetime},
 		{"blob_cache.cleanup_interval", c.BlobCache.CleanupInterval},
 	}
@@ -201,6 +205,41 @@ func (c *Config) TagDiscoveryTTLDuration() time.Duration {
 func (c *Config) TagsCheckIntervalDuration() time.Duration {
 	d, _ := time.ParseDuration(c.TagsCheckInterval)
 	return d
+}
+
+func (c *Config) AgentsPollIntervalDuration() time.Duration {
+	d, _ := time.ParseDuration(c.AgentsPollInterval)
+	return d
+}
+
+func (c *Config) ProxyListenPort() string {
+	_, port, err := net.SplitHostPort(c.ProxyServerListen)
+
+	if err != nil {
+		return c.ProxyServerListen
+	}
+
+	return port
+}
+
+func (c *Config) ProxyPublicAddress() string {
+	configured := strings.TrimSpace(c.ProxyPublicHost)
+
+	if configured == "" {
+		return ""
+	}
+
+	host, port, err := net.SplitHostPort(configured)
+
+	if err != nil {
+		host, port = strings.TrimSuffix(strings.TrimPrefix(configured, "["), "]"), ""
+	}
+
+	if port == "" {
+		port = c.ProxyListenPort()
+	}
+
+	return net.JoinHostPort(host, port)
 }
 
 func (c *Config) BlobCacheMaxSizeBytes() int64 {

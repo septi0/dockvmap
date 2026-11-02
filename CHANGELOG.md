@@ -4,7 +4,7 @@ Changes people running DockVMap will notice, newest first. Upgrade notes call ou
 
 ## v1.9.0 (unreleased)
 
-- **Hosts**: see the containers on each of your Docker hosts. Add a host on the new Hosts page and run the DockVMap agent on it (`ghcr.io/septi0/dockvmap-agent`, sample in `compose.agent.sample.yaml`). The agent only connects out to DockVMap and only reads from Docker. Each host shows whether it's online, its containers with state, health, stack, image and published ports, and which containers pulled through DockVMap are up to date, outdated, or pulled but not recreated. See "Hosts and the agent" in the README.
+- **Hosts**: see the containers on each of your Docker hosts. Add a host with its address on the new Hosts page and run the DockVMap agent on it (`ghcr.io/septi0/dockvmap-agent`, sample in `compose.agent.sample.yaml`). DockVMap connects to the agent on port 9002 and adopts it on its first check, so hosts never need a route back to DockVMap and there are no tokens to copy. The agent only reads from Docker. Each host shows whether it's online, its containers with state, health, stack, image and published ports, and which containers pulled through DockVMap are up to date, outdated, or pulled but not recreated. DockVMap checks every host every 30 seconds (`agents_poll_interval`), and opening a host checks it right away. See "Hosts and the agent" in the README.
 - **Running on**: Image details lists the containers running that image on every host, with what needs attention first, and how many are up to date.
 - **Deployed column**: the Virtual Images and Hosts lists show how many containers run the current version, like "5/8", once hosts report containers pulled through DockVMap. Numbers refresh by themselves, and hosts that are offline or can't read Docker are counted separately.
 - **Crashes at a glance**: the Hosts list flags containers that keep restarting or crashed in the last 7 days. A host that goes offline, or can't read Docker, keeps showing its last known containers.
@@ -19,7 +19,7 @@ Changes people running DockVMap will notice, newest first. Upgrade notes call ou
 - **Removed**: Image details no longer shows when a client last checked for a newer version.
 - **Task times on one line**: System > Tasks shows "Last run" like "52m ago" on one line on wider screens.
 
-**Upgrade note:** this release migrates the database and can't be rolled back without a restore. Run `dockvmap -backup <path>` before upgrading. Set `proxy_public_host` if you haven't, so containers are matched to virtual images by the address clients pull from.
+**Upgrade note:** this release migrates the database and can't be rolled back without a restore. Run `dockvmap -backup <path>` before upgrading. Set `proxy_public_host` if you haven't, so containers are matched to virtual images by the address clients pull from. DockVMap now also keeps `agent_client.pem` in its data folder; back it up with the database. If you ran `v1.9.0-rc.1`, its hosts are removed: add them again with their address and replace the agents with the new compose file.
 
 ## v1.8.0 (2026-11-01)
 

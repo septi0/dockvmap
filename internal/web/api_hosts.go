@@ -26,19 +26,38 @@ func (w *Web) apiListHosts(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *Web) apiCreateHost(rw http.ResponseWriter, r *http.Request) {
-	request, ok := decodeJSON[createHostRequest](rw, r)
+	request, ok := decodeJSON[hostRequest](rw, r)
 	if !ok {
 		return
 	}
 
-	id, token, err := w.hosts.Create(r.Context(), request.Name)
+	id, err := w.hosts.Create(r.Context(), request.Name, request.Address)
 
 	if err != nil {
 		apiServiceError(rw, err)
 		return
 	}
 
-	apiJSON(rw, http.StatusCreated, hostTokenResponse{ID: id, Name: request.Name, Token: token})
+	apiJSON(rw, http.StatusCreated, map[string]int64{"id": id})
+}
+
+func (w *Web) apiUpdateHost(rw http.ResponseWriter, r *http.Request) {
+	id, ok := hostIDParam(rw, r)
+	if !ok {
+		return
+	}
+
+	request, ok := decodeJSON[hostRequest](rw, r)
+	if !ok {
+		return
+	}
+
+	if err := w.hosts.Update(r.Context(), id, request.Name, request.Address); err != nil {
+		apiServiceError(rw, err)
+		return
+	}
+
+	apiJSON(rw, http.StatusOK, map[string]string{"status": "updated"})
 }
 
 func (w *Web) apiGetHost(rw http.ResponseWriter, r *http.Request) {
@@ -74,20 +93,18 @@ func (w *Web) apiDeleteHost(rw http.ResponseWriter, r *http.Request) {
 	apiJSON(rw, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-func (w *Web) apiRegenerateHostToken(rw http.ResponseWriter, r *http.Request) {
+func (w *Web) apiTrustHostAgent(rw http.ResponseWriter, r *http.Request) {
 	id, ok := hostIDParam(rw, r)
 	if !ok {
 		return
 	}
 
-	token, err := w.hosts.RegenerateToken(r.Context(), id)
-
-	if err != nil {
+	if err := w.hosts.TrustNewAgent(r.Context(), id); err != nil {
 		apiServiceError(rw, err)
 		return
 	}
 
-	apiJSON(rw, http.StatusOK, map[string]string{"token": token})
+	apiJSON(rw, http.StatusOK, map[string]string{"status": "trusted"})
 }
 
 func (w *Web) apiGetImageHosts(rw http.ResponseWriter, r *http.Request) {

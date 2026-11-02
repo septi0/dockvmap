@@ -513,8 +513,12 @@ func failureMessage(failure service.Failure) string {
 type hostResponse struct {
 	ID                  int64            `json:"id"`
 	Name                string           `json:"name"`
+	Address             string           `json:"address"`
+	AgentFingerprint    *string          `json:"agentFingerprint,omitempty"`
 	CreatedAt           time.Time        `json:"createdAt"`
 	LastSeenAt          *time.Time       `json:"lastSeenAt,omitempty"`
+	PollError           *string          `json:"pollError,omitempty"`
+	PollErrorKind       *string          `json:"pollErrorKind,omitempty"`
 	Online              bool             `json:"online"`
 	Current             bool             `json:"current"`
 	AgentVersion        *string          `json:"agentVersion,omitempty"`
@@ -589,22 +593,21 @@ type imageContainersResponse struct {
 	ConfiguredHosts int                   `json:"configuredHosts"`
 }
 
-type createHostRequest struct {
-	Name string `json:"name"`
-}
-
-type hostTokenResponse struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	Token string `json:"token"`
+type hostRequest struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
 }
 
 func newHostResponse(host model.Host) hostResponse {
 	return hostResponse{
 		ID:                host.ID,
 		Name:              host.Name,
+		Address:           host.Address,
+		AgentFingerprint:  host.AgentFingerprint,
 		CreatedAt:         host.CreatedAt,
 		LastSeenAt:        host.LastSeenAt,
+		PollError:         host.PollError,
+		PollErrorKind:     host.PollErrorKind,
 		Online:            host.Online,
 		Current:           host.Current(),
 		AgentVersion:      host.AgentVersion,

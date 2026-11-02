@@ -79,18 +79,22 @@ function portAddress(ip = ''): string {
   return ip.includes(':') ? `[${ip}]:` : `${ip}:`
 }
 
-export function agentCompose(url: string, token: string, appVersion: string): string {
+export function agentCompose(address: string, appVersion: string): string {
   const tag = PUBLISHED_VERSION.exec(appVersion)?.[1] ?? 'latest'
+  const port = /:(\d+)$/.exec(address)?.[1] ?? '9002'
 
   return [
     'services:',
     '  dockvmap-agent:',
     `    image: ${AGENT_IMAGE}:${tag}`,
     '    restart: unless-stopped',
-    '    environment:',
-    `      DOCKVMAP_URL: ${url}`,
-    `      DOCKVMAP_AGENT_TOKEN: ${token}`,
+    '    ports:',
+    `      - "${port}:9002"`,
     '    volumes:',
     '      - /var/run/docker.sock:/var/run/docker.sock:ro',
+    '      - dockvmap-agent:/data',
+    '',
+    'volumes:',
+    '  dockvmap-agent:',
   ].join('\n')
 }

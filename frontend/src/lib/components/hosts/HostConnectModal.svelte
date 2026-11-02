@@ -30,11 +30,8 @@
       (host.agentUpdateNeeded || host.lastSeenAt !== connection?.lastSeenAt),
   );
 
-  let compose = $derived(
-    connection
-      ? agentCompose(window.location.origin, connection.token, appVersion)
-      : "",
-  );
+  let address = $derived(host?.address ?? connection?.address ?? "");
+  let compose = $derived(connection ? agentCompose(address, appVersion) : "");
 
   const poller = createPoller(async () => {
     if (!connection) return false;
@@ -65,27 +62,14 @@
 
 <Modal open={connection !== null} {onClose} title="Connect {connection?.name ?? ''}" size="lg">
   {#if connection}
-    <p class="warning-text token-warning">
-      <TriangleAlert size={16} strokeWidth={2} />
-      Copy this token now. It won't be shown again.
-    </p>
-
-    <div class="command-row">
-      <code class="command">{connection.token}</code>
-      <CopyButton
-        text={connection.token}
-        label="Copy token"
-        copiedMessage="Token copied to clipboard."
-      />
-    </div>
-
     <h3>Run the agent on {connection.name}</h3>
     <p class="section-hint muted">
       Save this as <code class="inline-code">compose.yaml</code> on the host and
-      run <code class="inline-code">docker compose up -d</code>.
-      <code class="inline-code">DOCKVMAP_URL</code> is the address of this page;
-      change it if the host reaches DockVMap another way. Other options, like a
-      CA file or a read-only socket proxy, are in the
+      run <code class="inline-code">docker compose up -d</code>. DockVMap
+      connects to it at <code class="inline-code">{address}</code>, so allow
+      that port from DockVMap in the host's firewall. The agent keeps its
+      identity in the <code class="inline-code">dockvmap-agent</code> volume.
+      Other options, like a read-only socket proxy, are in the
       <a
         class="link"
         href="https://github.com/septi0/dockvmap#hosts-and-the-agent"
@@ -105,7 +89,10 @@
 
     <div class="connection-status">
       {#if !connected || !host}
-        <RefreshingIndicator text="Waiting for the agent to connect…" />
+        <RefreshingIndicator text="Waiting for DockVMap to reach the agent…" />
+        {#if host?.pollError}
+          <p class="muted last-try">Last try: {host.pollError}</p>
+        {/if}
       {:else if host.agentUpdateNeeded}
         <p class="warning-text">
           <TriangleAlert size={16} strokeWidth={2} />
@@ -133,13 +120,15 @@
 </Modal>
 
 <style>
-  .token-warning {
-    margin-bottom: var(--space-3);
+  h3 {
+    margin: 0 0 var(--space-2);
+    font-size: 0.9375rem;
   }
 
-  h3 {
-    margin: var(--space-5) 0 var(--space-2);
-    font-size: 0.9375rem;
+  .last-try {
+    margin: var(--space-2) 0 0;
+    font-size: 0.8125rem;
+    overflow-wrap: anywhere;
   }
 
   .connection-status {

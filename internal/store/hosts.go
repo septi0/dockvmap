@@ -6,16 +6,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
 )
 
-var ErrHostNameConflict = errors.New("host name already exists")
+var (
+	ErrHostNameConflict    = errors.New("host name already exists")
+	ErrHostAddressConflict = errors.New("host address already exists")
+)
 
 const hostSelect = `
-	SELECT h.id, h.name, h.created_at, h.last_seen_at, h.agent_version, h.protocol_version,
-		h.hostname, h.docker_version, h.os, h.architecture, h.cpus, h.memory_bytes, h.docker_error, h.fingerprint,
+	SELECT h.id, h.name, h.address, h.agent_fingerprint, h.created_at, h.last_seen_at, h.poll_error, h.poll_error_kind,
+		h.agent_version, h.protocol_version, h.hostname, h.docker_version, h.os, h.architecture, h.cpus, h.memory_bytes,
+		h.docker_error, h.report_fingerprint,
 		(SELECT COUNT(*) FROM host_containers c WHERE c.host_id = h.id AND c.state = 'running'),
 		(SELECT COUNT(*) FROM host_containers c WHERE c.host_id = h.id AND c.state <> 'running'),
 		(SELECT COUNT(DISTINCT c.compose_project) FROM host_containers c WHERE c.host_id = h.id)
@@ -31,10 +36,10 @@ const hostContainerSelect = `
 
 func scanHost(row rowScanner, host *model.Host) error {
 	return row.Scan(
-		&host.ID, &host.Name, &host.CreatedAt, &host.LastSeenAt, &host.AgentVersion, &host.ProtocolVersion,
-		&host.Info.Hostname, &host.Info.DockerVersion, &host.Info.OS, &host.Info.Architecture, &host.Info.CPUs,
-		&host.Info.MemoryBytes, &host.DockerError, &host.Fingerprint, &host.RunningContainers, &host.StoppedContainers,
-		&host.Stacks,
+		&host.ID, &host.Name, &host.Address, &host.AgentFingerprint, &host.CreatedAt, &host.LastSeenAt, &host.PollError,
+		&host.PollErrorKind, &host.AgentVersion, &host.ProtocolVersion, &host.Info.Hostname, &host.Info.DockerVersion,
+		&host.Info.OS, &host.Info.Architecture, &host.Info.CPUs, &host.Info.MemoryBytes, &host.DockerError,
+		&host.ReportFingerprint, &host.RunningContainers, &host.StoppedContainers, &host.Stacks,
 	)
 }
 
@@ -81,12 +86,12 @@ func marshalList[T any](items []T) string {
 	return string(encoded)
 }
 
-func (s *Store) CreateHost(ctx context.Context, name, tokenHash string) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `INSERT INTO hosts (name, token_hash) VALUES (?, ?)`, name, tokenHash)
+func (s *Store) CreateHost(ctx context.Context, name, address string) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `INSERT INTO hosts (name, address) VALUES (?, ?)`, name, address)
 
 	if err != nil {
 		if isUniqueConstraintErr(err) {
-			return 0, ErrHostNameConflict
+			return 0, hostConflict(err)
 		}
 
 		return 0, fmt.Errorf("creating host: %w", err)
@@ -99,6 +104,14 @@ func (s *Store) CreateHost(ctx context.Context, name, tokenHash string) (int64, 
 	}
 
 	return id, nil
+}
+
+func hostConflict(err error) error {
+	if strings.Contains(err.Error(), "hosts.address") {
+		return ErrHostAddressConflict
+	}
+
+	return ErrHostNameConflict
 }
 
 func (s *Store) ListHosts(ctx context.Context) ([]model.Host, error) {
@@ -145,27 +158,15 @@ func (s *Store) GetHostByID(ctx context.Context, id int64) (*model.Host, error) 
 	return &host, nil
 }
 
-func (s *Store) HostIDByTokenHash(ctx context.Context, tokenHash string) (int64, bool, error) {
-	var id int64
-
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM hosts WHERE token_hash = ?`, tokenHash).Scan(&id)
-
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, false, nil
-	}
+func (s *Store) UpdateHost(ctx context.Context, id int64, name, address string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE hosts SET name = ?, address = ? WHERE id = ?`, name, address, id)
 
 	if err != nil {
-		return 0, false, fmt.Errorf("looking up host by token: %w", err)
-	}
+		if isUniqueConstraintErr(err) {
+			return false, hostConflict(err)
+		}
 
-	return id, true, nil
-}
-
-func (s *Store) UpdateHostToken(ctx context.Context, id int64, tokenHash string) (bool, error) {
-	result, err := s.db.ExecContext(ctx, `UPDATE hosts SET token_hash = ? WHERE id = ?`, tokenHash, id)
-
-	if err != nil {
-		return false, fmt.Errorf("updating host %d token: %w", id, err)
+		return false, fmt.Errorf("updating host %d: %w", id, err)
 	}
 
 	updated, err := result.RowsAffected()
@@ -175,6 +176,28 @@ func (s *Store) UpdateHostToken(ctx context.Context, id int64, tokenHash string)
 	}
 
 	return updated != 0, nil
+}
+
+func (s *Store) SetHostAgent(ctx context.Context, id int64, fingerprint *string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE hosts SET agent_fingerprint = ?, poll_error = NULL, poll_error_kind = NULL WHERE id = ?
+	`, fingerprint, id)
+
+	if err != nil {
+		return fmt.Errorf("setting host %d agent: %w", id, err)
+	}
+
+	return nil
+}
+
+func (s *Store) RecordHostPollError(ctx context.Context, id int64, kind, message string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE hosts SET poll_error_kind = ?, poll_error = ? WHERE id = ?`, kind, message, id)
+
+	if err != nil {
+		return fmt.Errorf("recording host %d poll error: %w", id, err)
+	}
+
+	return nil
 }
 
 func (s *Store) DeleteHost(ctx context.Context, id int64) (bool, error) {
@@ -195,7 +218,9 @@ func (s *Store) DeleteHost(ctx context.Context, id int64) (bool, error) {
 
 func (s *Store) TouchHost(ctx context.Context, id int64, agentVersion string, protocolVersion int, seenAt *time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE hosts SET last_seen_at = COALESCE(?, last_seen_at), agent_version = ?, protocol_version = ? WHERE id = ?
+		UPDATE hosts
+		SET last_seen_at = COALESCE(?, last_seen_at), agent_version = ?, protocol_version = ?, poll_error = NULL, poll_error_kind = NULL
+		WHERE id = ?
 	`, seenAt, agentVersion, protocolVersion, id)
 
 	if err != nil {
@@ -207,7 +232,10 @@ func (s *Store) TouchHost(ctx context.Context, id int64, agentVersion string, pr
 
 func (s *Store) RecordHostDockerError(ctx context.Context, id int64, snapshot model.HostSnapshot, seenAt time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE hosts SET last_seen_at = ?, agent_version = ?, protocol_version = ?, docker_error = ?, fingerprint = ? WHERE id = ?
+		UPDATE hosts
+		SET last_seen_at = ?, agent_version = ?, protocol_version = ?, docker_error = ?, report_fingerprint = ?,
+			poll_error = NULL, poll_error_kind = NULL
+		WHERE id = ?
 	`, seenAt, snapshot.AgentVersion, snapshot.ProtocolVersion, snapshot.DockerError, snapshot.Fingerprint, id)
 
 	if err != nil {
@@ -231,7 +259,8 @@ func (s *Store) ReplaceHostSnapshot(ctx context.Context, id int64, snapshot mode
 	result, err := tx.ExecContext(ctx, `
 		UPDATE hosts
 		SET last_seen_at = ?, agent_version = ?, protocol_version = ?, hostname = ?, docker_version = ?,
-			os = ?, architecture = ?, cpus = ?, memory_bytes = ?, docker_error = ?, fingerprint = ?
+			os = ?, architecture = ?, cpus = ?, memory_bytes = ?, docker_error = ?, report_fingerprint = ?,
+			poll_error = NULL, poll_error_kind = NULL
 		WHERE id = ?
 	`, seenAt, snapshot.AgentVersion, snapshot.ProtocolVersion, info.Hostname, info.DockerVersion,
 		info.OS, info.Architecture, info.CPUs, info.MemoryBytes, snapshot.DockerError, snapshot.Fingerprint, id)

@@ -2,13 +2,16 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/septi0/dockvmap/internal/agentapi"
 	"github.com/septi0/dockvmap/internal/blobcache"
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/service"
@@ -18,6 +21,8 @@ import (
 )
 
 const credentialEncryptionKeyFile = "credential_encryption.key"
+
+const agentClientIdentityFile = "agent_client.pem"
 
 func resolveCredentialEncryptionKey(cfg *config.Config, dataPath string) (string, error) {
 	if cfg.CredentialEncryptionKey != "" {
@@ -51,6 +56,34 @@ func resolveCredentialEncryptionKey(cfg *config.Config, dataPath string) (string
 	slog.Info("generated credential encryption key", "path", keyPath)
 
 	return encoded, nil
+}
+
+func loadAgentClientIdentity(dataPath string) (tls.Certificate, error) {
+	path := filepath.Join(dataPath, agentClientIdentityFile)
+
+	data, err := os.ReadFile(path)
+
+	if errors.Is(err, os.ErrNotExist) {
+		if data, err = agentapi.NewIdentity("dockvmap"); err != nil {
+			return tls.Certificate{}, fmt.Errorf("creating the agent client identity: %w", err)
+		}
+
+		if err := writeFileAtomic(path, data, 0o600); err != nil {
+			return tls.Certificate{}, fmt.Errorf("writing the agent client identity: %w", err)
+		}
+
+		slog.Info("generated the agent client identity", "path", path)
+	} else if err != nil {
+		return tls.Certificate{}, fmt.Errorf("reading the agent client identity: %w", err)
+	}
+
+	identity, err := agentapi.ParseIdentity(data)
+
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("reading the agent client identity %s: %w", path, err)
+	}
+
+	return identity, nil
 }
 
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {

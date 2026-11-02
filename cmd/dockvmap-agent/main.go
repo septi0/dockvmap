@@ -13,9 +13,11 @@ import (
 )
 
 var version = "0.0.0-dev"
+var defaultDataPath = "./data"
 
 func main() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	dataPath := flag.String("data-path", defaultDataPath, "path to the data directory (agent identity and pairing)")
 	flag.Parse()
 
 	if *showVersion {
@@ -32,6 +34,13 @@ func main() {
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel})))
 
+	if err := os.MkdirAll(*dataPath, 0o700); err != nil {
+		slog.Error("failed to create data directory", "error", err)
+		os.Exit(2)
+	}
+
+	cfg.DataPath = *dataPath
+
 	a, err := agent.New(cfg, version)
 
 	if err != nil {
@@ -39,14 +48,14 @@ func main() {
 		os.Exit(2)
 	}
 
-	slog.Info("starting dockvmap agent", "version", version, "dockvmap", cfg.URL.Redacted(), "docker", cfg.DockerHost, "proxyOnly", cfg.ProxyOnly)
-
-	if cfg.URL.Scheme == "http" {
-		slog.Warn("DOCKVMAP_URL uses plain http; the agent token travels unencrypted, use https outside a trusted network")
-	}
+	slog.Info("starting dockvmap agent", "version", version, "listen", cfg.Listen, "docker", cfg.DockerHost, "proxyOnly", cfg.ProxyOnly, "fingerprint", a.Fingerprint())
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	err = a.Run(ctx)
+	stop()
 
-	a.Run(ctx)
+	if err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
+	}
 }

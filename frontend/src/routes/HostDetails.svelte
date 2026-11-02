@@ -1,9 +1,11 @@
 <script lang="ts">
   import { link, push } from "svelte-spa-router";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
+  import FileCode from "@lucide/svelte/icons/file-code";
   import HardDrive from "@lucide/svelte/icons/hard-drive";
-  import KeyRound from "@lucide/svelte/icons/key-round";
   import Layers from "@lucide/svelte/icons/layers";
+  import Pencil from "@lucide/svelte/icons/pencil";
+  import ShieldCheck from "@lucide/svelte/icons/shield-check";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import AppShell from "../lib/components/AppShell.svelte";
@@ -15,11 +17,12 @@
   import FilterBar from "../lib/components/FilterBar.svelte";
   import HostStatus from "../lib/components/hosts/HostStatus.svelte";
   import HostConnectModal from "../lib/components/hosts/HostConnectModal.svelte";
+  import HostModal from "../lib/components/hosts/HostModal.svelte";
   import ContainerState from "../lib/components/hosts/ContainerState.svelte";
-  import { deleteHost, getHost, regenerateHostToken } from "../lib/api/hosts";
+  import { deleteHost, getHost, trustHostAgent } from "../lib/api/hosts";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
-  import { capitalize, formatBytes, formatDate, formatRelativeTime, imageParts } from "../lib/utils/format";
+  import { capitalize, formatBytes, formatDate, formatRelativeTime, imageParts, shortDigest } from "../lib/utils/format";
   import { formatPorts } from "../lib/utils/hosts";
   import { createVisibilityPoller } from "../lib/utils/visibilityPoller";
   import type { HostConnection, HostContainer, HostDetails } from "../lib/api/types/hosts";
@@ -49,7 +52,8 @@
   let search = $state("");
   let show = $state("");
   let stack = $state("");
-  let showTokenConfirm = $state(false);
+  let showEditModal = $state(false);
+  let showTrustConfirm = $state(false);
   let showDeleteConfirm = $state(false);
   let actionError = $state<string | null>(null);
   let submitting = $state(false);
@@ -75,6 +79,7 @@
   let hostFacts = $derived(
     host
       ? [
+          host.address,
           host.info.hostname !== host.name ? host.info.hostname : null,
           host.info.os,
           host.info.dockerVersion ? `Docker ${host.info.dockerVersion}` : null,
@@ -82,6 +87,7 @@
           host.info.cpus ? `${host.info.cpus} CPUs` : null,
           host.info.memoryBytes ? formatBytes(host.info.memoryBytes) : null,
           host.agentVersion ? `agent ${host.agentVersion}` : null,
+          host.agentFingerprint ? shortDigest(host.agentFingerprint) : null,
         ].filter((fact): fact is string => !!fact)
       : [],
   );
@@ -112,28 +118,39 @@
   }
 
   function cancelAction() {
-    showTokenConfirm = false;
+    showTrustConfirm = false;
     showDeleteConfirm = false;
     actionError = null;
   }
 
-  async function handleRegenerate() {
+  function showCompose() {
     if (!host) return;
 
-    const { id, name, lastSeenAt } = host;
+    const { id, name, address, lastSeenAt } = host;
+    connection = { id, name, address, lastSeenAt };
+  }
+
+  async function handleTrust() {
+    if (!host) return;
+
     actionError = null;
     submitting = true;
 
     try {
-      const { token } = await regenerateHostToken(id);
-      const fresh = await getHost(id).catch(() => null);
-      showTokenConfirm = false;
-      connection = { id, name, token, lastSeenAt: fresh ? fresh.host.lastSeenAt : lastSeenAt };
+      await trustHostAgent(host.id);
+      showTrustConfirm = false;
+      toast.success("Trusted the new agent.");
+      load();
     } catch (err) {
-      actionError = errorMessage(err, "Failed to regenerate the token");
+      actionError = errorMessage(err, "Failed to trust the new agent");
     } finally {
       submitting = false;
     }
+  }
+
+  function handleSaved() {
+    toast.success("Host saved.");
+    load();
   }
 
   async function handleDelete() {
@@ -255,18 +272,47 @@
             {#if hasContainers}This list is from when it was last online.{/if}</span
           >
         </p>
+      {:else if host.pollErrorKind === "identityChanged"}
+        <p class="notice warning">
+          <TriangleAlert size={16} strokeWidth={2} />
+          <span class="notice-text"
+            >The agent at {host.address} isn't the one DockVMap adopted, so
+            DockVMap stopped reading it. If you reset or reinstalled the agent,
+            trust the new one.
+            {#if hasContainers}This list is from before the change.{/if}</span
+          >
+          <Button variant="secondary" size="sm" onclick={() => (showTrustConfirm = true)}>
+            <ShieldCheck size={14} strokeWidth={2} />
+            Trust new agent
+          </Button>
+        </p>
+      {:else if host.pollErrorKind === "pairedElsewhere"}
+        <p class="notice warning">
+          <TriangleAlert size={16} strokeWidth={2} />
+          <span class="notice-text"
+            >The agent at {host.address} is paired with another DockVMap. To pair
+            it with this one, delete the agent's data volume and start it again.</span
+          >
+        </p>
       {:else if !host.lastSeenAt}
         <p class="notice">
           <span class="notice-text"
-            >The agent hasn't connected yet. Run it on this host with its token,
-            or regenerate the token below if you no longer have it.</span
+            >DockVMap hasn't reached the agent at {host.address} yet. Start the
+            agent on this host and allow that port from DockVMap; it's adopted on
+            the next check.
+            {#if host.pollError}<br />Last try: {host.pollError}{/if}</span
           >
+          <Button variant="secondary" size="sm" onclick={showCompose}>
+            <FileCode size={14} strokeWidth={2} />
+            Compose file
+          </Button>
         </p>
       {:else if !host.online}
         <p class="notice warning">
           <TriangleAlert size={16} strokeWidth={2} />
           <span class="notice-text"
             >This host went offline {formatRelativeTime(host.lastSeenAt)}.
+            {#if host.pollError}Last try: {host.pollError}.{/if}
             {#if hasContainers}This list is from when it was last online.{/if}</span
           >
         </p>
@@ -392,15 +438,15 @@
 
         <div class="danger-action">
           <div class="danger-text">
-            <strong>Regenerate token</strong>
+            <strong>Edit host</strong>
             <p class="muted">
-              The current token stops working right away, and the agent goes
-              offline until it runs with the new one.
+              Change its name, or the address DockVMap uses to reach the agent.
+              The agent stays paired.
             </p>
           </div>
-          <Button variant="secondary" size="sm" onclick={() => (showTokenConfirm = true)}>
-            <KeyRound size={14} strokeWidth={2} />
-            Regenerate
+          <Button variant="secondary" size="sm" onclick={() => (showEditModal = true)}>
+            <Pencil size={14} strokeWidth={2} />
+            Edit
           </Button>
         </div>
 
@@ -408,8 +454,8 @@
           <div class="danger-text">
             <strong>Delete host</strong>
             <p class="muted">
-              Its token stops working and it disappears from DockVMap. The agent
-              keeps running until you remove it on the host.
+              It disappears from DockVMap. The agent keeps running until you
+              remove it on the host, and stays paired with this DockVMap.
             </p>
           </div>
           <Button variant="danger" size="sm" onclick={() => (showDeleteConfirm = true)}>
@@ -423,20 +469,20 @@
 </AppShell>
 
 <ConfirmDialog
-  open={showTokenConfirm}
-  title="Regenerate token"
-  message={`Regenerate the token for "${host?.name ?? ""}"? The current token stops working immediately, so the agent on this host goes offline until it runs with the new one.`}
-  confirmLabel="Regenerate"
+  open={showTrustConfirm}
+  title="Trust new agent"
+  message={`Trust the agent now running at ${host?.address ?? ""}? Do this only if you reset or reinstalled the agent on "${host?.name ?? ""}". DockVMap adopts whichever agent answers at that address.`}
+  confirmLabel="Trust"
   error={actionError}
   {submitting}
-  onConfirm={handleRegenerate}
+  onConfirm={handleTrust}
   onCancel={cancelAction}
 />
 
 <ConfirmDialog
   open={showDeleteConfirm}
   title="Delete host"
-  message={`Delete "${host?.name ?? ""}"? Its token stops working and its containers disappear from DockVMap. The agent on the host keeps running until you remove it there.`}
+  message={`Delete "${host?.name ?? ""}"? Its containers disappear from DockVMap. The agent on the host keeps running until you remove it there.`}
   confirmLabel="Delete"
   danger
   error={actionError}
@@ -446,6 +492,13 @@
 />
 
 <HostConnectModal {connection} onClose={closeConnection} />
+
+<HostModal
+  open={showEditModal}
+  {host}
+  onClose={() => (showEditModal = false)}
+  onSaved={handleSaved}
+/>
 
 <style>
   .host-status {

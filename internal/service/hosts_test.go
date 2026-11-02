@@ -1,16 +1,19 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/septi0/dockvmap/internal/agentapi"
+	"github.com/septi0/dockvmap/internal/agentclient"
 	"github.com/septi0/dockvmap/internal/model"
 )
 
@@ -18,37 +21,172 @@ const proxyHost = "proxy.test:5050"
 
 var testProxy = ProxyTarget{Host: proxyHost, VirtualTag: "current"}
 
+type fakeAgent struct {
+	fingerprint     string
+	report          *agentapi.Report
+	err             error
+	pairedElsewhere bool
+	adopted         bool
+	calls           int
+	adoptions       int
+	snapshots       int
+	notModified     int
+	proxyHost       string
+}
+
+type fakeAgents struct {
+	mu     sync.Mutex
+	agents map[string]*fakeAgent
+}
+
+func (f *fakeAgents) get(address, pinned string) (*fakeAgent, error) {
+	agent, ok := f.agents[address]
+
+	if !ok {
+		return nil, errors.New("dial tcp " + address + ": no such host")
+	}
+
+	agent.calls++
+
+	switch {
+	case agent.err != nil:
+		return nil, agent.err
+	case pinned != "" && pinned != agent.fingerprint:
+		return nil, agentclient.ErrIdentityChanged
+	case agent.pairedElsewhere:
+		return nil, agentclient.ErrPairedElsewhere
+	}
+
+	return agent, nil
+}
+
+func (f *fakeAgents) Adopt(_ context.Context, address, pinned string) (agentapi.Adoption, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	agent, err := f.get(address, pinned)
+
+	if err != nil {
+		return agentapi.Adoption{}, "", err
+	}
+
+	agent.adopted = true
+	agent.adoptions++
+
+	return agentapi.Adoption{ProtocolVersion: agentapi.ProtocolVersion, AgentVersion: "v1.9.0"}, agent.fingerprint, nil
+}
+
+func (f *fakeAgents) Snapshot(_ context.Context, address, pinned, fingerprint, proxyHost string) (*agentapi.Report, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	agent, err := f.get(address, pinned)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if !agent.adopted {
+		return nil, agentclient.ErrNotAdopted
+	}
+
+	agent.snapshots++
+	agent.proxyHost = proxyHost
+
+	if fingerprint != "" && agent.report.Fingerprint == fingerprint {
+		agent.notModified++
+		return nil, nil
+	}
+
+	report := *agent.report
+
+	return &report, nil
+}
+
+func (f *fakeAgents) agent(address string) *fakeAgent {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.agents[address]
+}
+
+func (f *fakeAgents) change(address string, change func(*fakeAgent)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	change(f.agents[address])
+}
+
 type hostFixture struct {
 	*groupFixture
-	hosts *Hosts
-	clock *stepClock
+	hosts  *Hosts
+	agents *fakeAgents
+	clock  *stepClock
 }
 
 func newHostFixture(t *testing.T) *hostFixture {
 	f := newGroupFixture(t)
 	clock := &stepClock{at: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}
-	hosts := NewHosts(f.store, f.audit)
+	agents := &fakeAgents{agents: make(map[string]*fakeAgent)}
+	hosts := NewHosts(HostsDeps{Store: f.store, Audit: f.audit, Agents: agents, PollInterval: time.Minute, ProxyHost: proxyHost})
 	hosts.now = clock.now
 
-	return &hostFixture{groupFixture: f, hosts: hosts, clock: clock}
+	return &hostFixture{groupFixture: f, hosts: hosts, agents: agents, clock: clock}
 }
 
 func (f *hostFixture) addHost(name string) (int64, string) {
 	f.t.Helper()
 
-	id, token, err := f.hosts.Create(f.ctx, name)
+	address := strings.TrimSpace(name) + ".lan:9002"
+
+	id, err := f.hosts.Create(f.ctx, name, strings.TrimSpace(name)+".lan")
 
 	if err != nil {
 		f.t.Fatalf("creating host %q: %v", name, err)
 	}
 
-	return id, token
+	f.agents.mu.Lock()
+	f.agents.agents[address] = &fakeAgent{fingerprint: "sha256:" + name, report: &agentapi.Report{}, err: errors.New("dial tcp " + address + ": connect: connection refused")}
+	f.agents.mu.Unlock()
+
+	return id, address
+}
+
+func (f *hostFixture) host(id int64) *model.Host {
+	f.t.Helper()
+
+	host, err := f.hosts.getHost(f.ctx, id)
+
+	if err != nil {
+		f.t.Fatalf("getting host %d: %v", id, err)
+	}
+
+	return host
+}
+
+func (f *hostFixture) poll(id int64) {
+	f.t.Helper()
+
+	if err := f.hosts.poll(f.ctx, id, 0, time.Second); err != nil {
+		f.t.Fatalf("poll host %d: %v", id, err)
+	}
+}
+
+func (f *hostFixture) send(id int64, report agentapi.Report) {
+	f.t.Helper()
+
+	f.agents.change(f.host(id).Address, func(a *fakeAgent) { a.report, a.err = &report, nil })
+	f.poll(id)
+
+	if host := f.host(id); host.PollError != nil {
+		f.t.Fatalf("poll host %d failed: %s", id, *host.PollError)
+	}
 }
 
 func (f *hostFixture) report(id int64, containers []agentapi.Container, images []agentapi.Image) {
 	f.t.Helper()
 
-	err := f.hosts.Report(f.ctx, id, agentapi.Report{
+	f.send(id, agentapi.Report{
 		ProtocolVersion: agentapi.ProtocolVersion,
 		AgentVersion:    "v1.9.0",
 		Fingerprint:     testFingerprint(containers, images),
@@ -56,10 +194,25 @@ func (f *hostFixture) report(id int64, containers []agentapi.Container, images [
 		Containers:      containers,
 		Images:          images,
 	})
+}
 
-	if err != nil {
-		f.t.Fatalf("report for host %d: %v", id, err)
-	}
+func (f *hostFixture) dockerError(id int64) {
+	f.t.Helper()
+
+	f.send(id, agentapi.Report{
+		ProtocolVersion: agentapi.ProtocolVersion,
+		AgentVersion:    "v1.9.0",
+		Fingerprint:     "docker-error",
+		DockerError:     "cannot read Docker at unix:///var/run/docker.sock: permission denied",
+	})
+}
+
+func (f *hostFixture) apply(id int64, report agentapi.Report) error {
+	return f.hosts.apply(f.ctx, f.host(id), &report)
+}
+
+func (f *hostFixture) unreachable(id int64) {
+	f.agents.change(f.host(id).Address, func(a *fakeAgent) { a.err = errors.New("i/o timeout") })
 }
 
 func (f *hostFixture) setDigest(imageID int64, tag, digest string) {
@@ -84,32 +237,48 @@ func container(id, name, image, imageID string) agentapi.Container {
 
 func repoDigest(repo, c string) string { return repo + "@" + testDigest(c) }
 
-func TestHostCreateValidatesAndAuthenticates(t *testing.T) {
+func TestHostCreateValidatesNameAndAddress(t *testing.T) {
 	f := newHostFixture(t)
 
-	id, token := f.addHost("  server2  ")
+	id, _ := f.addHost("  server2  ")
 
-	if host, err := f.hosts.getHost(f.ctx, id); err != nil || host.Name != "server2" {
-		t.Fatalf("host = %+v, err = %v", host, err)
+	if host := f.host(id); host.Name != "server2" || host.Address != "server2.lan:9002" || host.AgentFingerprint != nil {
+		t.Fatalf("host = %+v", host)
 	}
 
-	if got, found, err := f.hosts.Authenticate(f.ctx, token); err != nil || !found || got != id {
-		t.Fatalf("authenticate = %d %v %v", got, found, err)
-	}
-
-	for _, bad := range []string{"wrong", ""} {
-		if _, found, _ := f.hosts.Authenticate(f.ctx, bad); found {
-			t.Fatalf("token %q authenticated", bad)
-		}
-	}
-
-	if _, _, err := f.hosts.Create(f.ctx, "server2"); !errors.Is(err, ErrHostAlreadyExists) {
+	if _, err := f.hosts.Create(f.ctx, "server2", "other.lan"); !errors.Is(err, ErrHostAlreadyExists) {
 		t.Fatalf("duplicate name err = %v", err)
 	}
 
+	if _, err := f.hosts.Create(f.ctx, "server2-again", "server2.lan:9002"); !errors.Is(err, ErrHostAddressInUse) {
+		t.Fatalf("duplicate address err = %v", err)
+	}
+
 	for _, bad := range []string{" ", strings.Repeat("a", 101)} {
-		if _, _, err := f.hosts.Create(f.ctx, bad); !errors.Is(err, ErrInvalidHost) {
+		if _, err := f.hosts.Create(f.ctx, bad, "srv.lan"); !errors.Is(err, ErrInvalidHost) {
 			t.Fatalf("name %q err = %v", bad, err)
+		}
+	}
+
+	addresses := map[string]string{
+		"10.0.0.5":             "10.0.0.5:9002",
+		" nas.lan:9100 ":       "nas.lan:9100",
+		"nas.lan:":             "nas.lan:9002",
+		"fd00::5":              "[fd00::5]:9002",
+		"[fd00::5]":            "[fd00::5]:9002",
+		"[fd00::5]:9100":       "[fd00::5]:9100",
+		"core1.uscrib.ro:9002": "core1.uscrib.ro:9002",
+	}
+
+	for raw, want := range addresses {
+		if got, err := normalizeAgentAddress(raw); err != nil || got != want {
+			t.Errorf("address %q = %q, %v, want %q", raw, got, err, want)
+		}
+	}
+
+	for _, bad := range []string{"", "https://nas.lan", "nas.lan/agent", "nas.lan:0", "nas.lan:70000", "nas.lan:http", "user@nas.lan", "nas lan", ":9002"} {
+		if _, err := normalizeAgentAddress(bad); !errors.Is(err, ErrInvalidHost) {
+			t.Errorf("address %q err = %v", bad, err)
 		}
 	}
 
@@ -118,30 +287,206 @@ func TestHostCreateValidatesAndAuthenticates(t *testing.T) {
 	}
 }
 
-func TestHostRegenerateTokenReplacesTheOldOne(t *testing.T) {
+func TestHostUpdateChangesNameAndAddress(t *testing.T) {
 	f := newHostFixture(t)
-	id, oldToken := f.addHost("server2")
+	id, _ := f.addHost("server2")
+	f.addHost("server3")
+	f.report(id, nil, nil)
 
-	newToken, err := f.hosts.RegenerateToken(f.ctx, id)
-
-	if err != nil || newToken == oldToken {
-		t.Fatalf("regenerate = %q, %v", newToken, err)
+	if err := f.hosts.Update(f.ctx, id, "server2", "server2.lan"); err != nil || f.audit.count(AuditTypeHostUpdated) != 0 {
+		t.Fatalf("an unchanged update = %v, audited %d times", err, f.audit.count(AuditTypeHostUpdated))
 	}
 
-	if _, found, _ := f.hosts.Authenticate(f.ctx, oldToken); found {
-		t.Fatal("old token still works")
+	if err := f.hosts.Update(f.ctx, id, "web", "10.0.0.7:9100"); err != nil {
+		t.Fatalf("update: %v", err)
 	}
 
-	if got, found, _ := f.hosts.Authenticate(f.ctx, newToken); !found || got != id {
-		t.Fatal("new token does not work")
+	if host := f.host(id); host.Name != "web" || host.Address != "10.0.0.7:9100" || host.AgentFingerprint == nil {
+		t.Fatalf("host = %+v, want the new name and address and the same agent", host)
 	}
 
-	if _, err := f.hosts.RegenerateToken(f.ctx, 999); !errors.Is(err, ErrHostNotFound) {
+	if err := f.hosts.Update(f.ctx, id, "server3", "srv.lan"); !errors.Is(err, ErrHostAlreadyExists) {
+		t.Fatalf("taken name err = %v", err)
+	}
+
+	if err := f.hosts.Update(f.ctx, id, "web", "server3.lan"); !errors.Is(err, ErrHostAddressInUse) {
+		t.Fatalf("taken address err = %v", err)
+	}
+
+	if err := f.hosts.Update(f.ctx, id, "web", "https://srv"); !errors.Is(err, ErrInvalidHost) {
+		t.Fatalf("bad address err = %v", err)
+	}
+
+	if err := f.hosts.Update(f.ctx, 999, "x", "x.lan"); !errors.Is(err, ErrHostNotFound) {
 		t.Fatalf("missing host err = %v", err)
 	}
 
-	if f.audit.count(AuditTypeHostTokenRegenerated) != 1 {
-		t.Fatal("regeneration not audited")
+	if f.audit.count(AuditTypeHostUpdated) != 1 {
+		t.Fatal("update not audited")
+	}
+}
+
+func TestHostPollAdoptsThenOnlyAsksForChanges(t *testing.T) {
+	f := newHostFixture(t)
+	id, address := f.addHost("server2")
+
+	f.report(id, []agentapi.Container{container("c1", "web-1", "nginx", "img1")}, nil)
+
+	agent := f.agents.agent(address)
+	host := f.host(id)
+
+	if agent.adoptions != 1 || host.AgentFingerprint == nil || *host.AgentFingerprint != "sha256:server2" || agent.proxyHost != proxyHost {
+		t.Fatalf("first poll should adopt and pin the agent: adoptions %d, host %+v, proxy %q", agent.adoptions, host.AgentFingerprint, agent.proxyHost)
+	}
+
+	seen := *host.LastSeenAt
+
+	f.clock.advance(time.Minute)
+	f.poll(id)
+
+	if agent.adoptions != 1 || agent.notModified != 1 || !f.host(id).LastSeenAt.After(seen) {
+		t.Fatalf("a repeat poll should ask only for changes: adoptions %d, not modified %d", agent.adoptions, agent.notModified)
+	}
+
+	f.agents.change(address, func(a *fakeAgent) { a.adopted = false })
+	f.poll(id)
+
+	if agent.adoptions != 2 || f.host(id).PollError != nil {
+		t.Fatalf("an agent that lost its pairing but kept its identity is adopted again: adoptions %d, error %v", agent.adoptions, f.host(id).PollError)
+	}
+}
+
+func TestHostPollRefusesAChangedIdentityUntilTrusted(t *testing.T) {
+	f := newHostFixture(t)
+	id, address := f.addHost("server2")
+	f.report(id, []agentapi.Container{container("c1", "web-1", "nginx", "img1")}, nil)
+
+	if err := f.hosts.TrustNewAgent(f.ctx, id); !errors.Is(err, ErrInvalidHost) {
+		t.Fatalf("trust without an identity change err = %v", err)
+	}
+
+	f.agents.change(address, func(a *fakeAgent) { a.fingerprint, a.adopted = "sha256:impostor", false })
+	f.poll(id)
+
+	host := f.host(id)
+
+	if host.PollErrorKind == nil || *host.PollErrorKind != model.HostPollIdentityChanged || host.Online || *host.AgentFingerprint != "sha256:server2" {
+		t.Fatalf("host = %+v, want the old pin kept, the change flagged and the host not online", host)
+	}
+
+	if details, err := f.hosts.Get(f.ctx, id, testProxy); err != nil || len(details.Containers) != 1 {
+		t.Fatalf("the last known containers stay visible: %+v, %v", details, err)
+	}
+
+	if err := f.hosts.TrustNewAgent(f.ctx, id); err != nil {
+		t.Fatalf("trust: %v", err)
+	}
+
+	host = f.host(id)
+
+	if host.AgentFingerprint == nil || *host.AgentFingerprint != "sha256:impostor" || host.PollError != nil || !host.Online {
+		t.Fatalf("host = %+v, want the new agent adopted and polled", host)
+	}
+
+	if f.audit.count(AuditTypeHostAgentTrusted) != 1 {
+		t.Fatal("trust not audited")
+	}
+}
+
+func TestHostPollFailuresAreRecordedOnTheHost(t *testing.T) {
+	f := newHostFixture(t)
+	id, address := f.addHost("server2")
+
+	f.poll(id)
+
+	if host := f.host(id); host.PollError == nil || !strings.Contains(*host.PollError, "connection refused") || *host.PollErrorKind != model.HostPollFailed || host.Online {
+		t.Fatalf("an unreachable new host = %+v", host)
+	}
+
+	f.report(id, nil, nil)
+	f.unreachable(id)
+	f.clock.advance(time.Minute)
+	f.poll(id)
+
+	if host := f.host(id); !host.Online || host.PollError == nil {
+		t.Fatalf("one failed poll keeps the host online until the offline window: %+v", host)
+	}
+
+	f.agents.change(address, func(a *fakeAgent) { a.err, a.pairedElsewhere = nil, true })
+	f.poll(id)
+
+	if host := f.host(id); *host.PollErrorKind != model.HostPollPairedElsewhere || host.Online {
+		t.Fatalf("an agent paired elsewhere = %+v", host)
+	}
+
+	f.agents.change(address, func(a *fakeAgent) { a.pairedElsewhere = false })
+	f.poll(id)
+
+	if host := f.host(id); host.PollError != nil || host.PollErrorKind != nil || !host.Online {
+		t.Fatalf("a good poll clears the error: %+v", host)
+	}
+}
+
+func TestHostPollAllPollsEveryHost(t *testing.T) {
+	f := newHostFixture(t)
+	up, _ := f.addHost("up")
+	down, _ := f.addHost("down")
+	f.unreachable(down)
+
+	f.agents.change(f.host(up).Address, func(a *fakeAgent) {
+		a.report, a.err = &agentapi.Report{ProtocolVersion: agentapi.ProtocolVersion, AgentVersion: "v1.9.0", Fingerprint: "fp"}, nil
+	})
+
+	polled, err := f.hosts.PollAll(f.ctx)
+
+	if err != nil || polled != 2 {
+		t.Fatalf("poll all = %d, %v; an unreachable host is recorded on the host, not returned", polled, err)
+	}
+
+	if !f.host(up).Online || f.host(down).PollError == nil {
+		t.Fatalf("up = %+v, down = %+v", f.host(up), f.host(down))
+	}
+}
+
+func TestHostGetPollsLiveUnlessTheHostIsFailing(t *testing.T) {
+	f := newHostFixture(t)
+	id, address := f.addHost("server2")
+	f.report(id, nil, nil)
+	agent := f.agents.agent(address)
+
+	calls := agent.calls
+
+	if _, err := f.hosts.Get(f.ctx, id, testProxy); err != nil || agent.calls != calls {
+		t.Fatalf("a poll a moment ago is fresh enough: calls %d, %v", agent.calls-calls, err)
+	}
+
+	f.clock.advance(livePollMaxAge)
+
+	if _, err := f.hosts.Get(f.ctx, id, testProxy); err != nil || agent.calls != calls+1 {
+		t.Fatalf("opening the host polls it: calls %d, %v", agent.calls-calls, err)
+	}
+
+	f.clock.advance(livePollMaxAge)
+	busy := f.hosts.pollLock(id)
+	busy.Lock()
+
+	if _, err := f.hosts.Get(f.ctx, id, testProxy); err != nil || agent.calls != calls+1 {
+		t.Fatalf("opening the host while it is being polled doesn't wait for that poll: calls %d, %v", agent.calls-calls, err)
+	}
+
+	busy.Unlock()
+
+	f.unreachable(id)
+	f.clock.advance(livePollMaxAge)
+
+	if _, err := f.hosts.Get(f.ctx, id, testProxy); err != nil || agent.calls != calls+2 || f.host(id).PollError == nil {
+		t.Fatalf("a failed live poll is recorded: calls %d, %v", agent.calls-calls, err)
+	}
+
+	f.clock.advance(livePollMaxAge)
+
+	if _, err := f.hosts.Get(f.ctx, id, testProxy); err != nil || agent.calls != calls+2 {
+		t.Fatalf("a failing host is left to the background poll: calls %d, %v", agent.calls-calls, err)
 	}
 }
 
@@ -181,15 +526,15 @@ func TestHostReportStoresSnapshotAndSkipsUnchangedOnes(t *testing.T) {
 	}
 
 	firstSeen := *details.Host.LastSeenAt
-	fingerprint := *details.Host.Fingerprint
+	fingerprint := *details.Host.ReportFingerprint
 
 	f.clock.advance(time.Minute)
 	f.report(id, containers, nil)
 
 	again, _ := f.hosts.getHost(f.ctx, id)
 
-	if *again.Fingerprint != fingerprint || !again.LastSeenAt.After(firstSeen) {
-		t.Fatalf("an unchanged report should only touch the host: fingerprint %v, seen %v", *again.Fingerprint, again.LastSeenAt)
+	if *again.ReportFingerprint != fingerprint || !again.LastSeenAt.After(firstSeen) {
+		t.Fatalf("an unchanged report should only touch the host: fingerprint %v, seen %v", *again.ReportFingerprint, again.LastSeenAt)
 	}
 
 	containers[0].State, containers[0].ExitCode = "exited", 137
@@ -197,22 +542,23 @@ func TestHostReportStoresSnapshotAndSkipsUnchangedOnes(t *testing.T) {
 
 	changed, _ := f.hosts.Get(f.ctx, id, testProxy)
 
-	if *changed.Host.Fingerprint == fingerprint || changed.Host.RunningContainers != 0 || changed.Host.StoppedContainers != 2 {
+	if *changed.Host.ReportFingerprint == fingerprint || changed.Host.RunningContainers != 0 || changed.Host.StoppedContainers != 2 {
 		t.Fatalf("changed report not stored: %+v", changed.Host)
 	}
 }
 
-func TestHostGoesDownAfterThreeMinutes(t *testing.T) {
+func TestHostGoesDownAfterThreeMissedPolls(t *testing.T) {
 	f := newHostFixture(t)
 	id, _ := f.addHost("server2")
 
 	if details, _ := f.hosts.Get(f.ctx, id, testProxy); details.Host.Online {
-		t.Fatal("a host that never reported is online")
+		t.Fatal("a host that never answered is online")
 	}
 
 	f.report(id, []agentapi.Container{container("c1", "web-1", "nginx", "img1")}, nil)
+	f.unreachable(id)
 
-	f.clock.advance(HostOfflineAfter - time.Second)
+	f.clock.advance(f.hosts.offlineAfter - time.Second)
 
 	if details, _ := f.hosts.Get(f.ctx, id, testProxy); !details.Host.Online || len(details.Containers) != 1 {
 		t.Fatalf("host should still be online: %+v", details)
@@ -231,7 +577,7 @@ func TestHostReportRejectsUnsupportedProtocol(t *testing.T) {
 	f := newHostFixture(t)
 	id, _ := f.addHost("server2")
 
-	err := f.hosts.Report(f.ctx, id, agentapi.Report{ProtocolVersion: agentapi.ProtocolVersion + 1, AgentVersion: "v9.0.0"})
+	err := f.apply(id, agentapi.Report{ProtocolVersion: agentapi.ProtocolVersion + 1, AgentVersion: "v9.0.0"})
 
 	if !errors.Is(err, ErrUnsupportedAgentProtocol) {
 		t.Fatalf("err = %v", err)
@@ -300,7 +646,7 @@ func TestHostReportValidation(t *testing.T) {
 			report.Fingerprint = ""
 		}
 
-		if err := f.hosts.Report(f.ctx, id, report); !errors.Is(err, ErrInvalidAgentReport) {
+		if err := f.apply(id, report); !errors.Is(err, ErrInvalidAgentReport) {
 			t.Errorf("%s: err = %v", name, err)
 		}
 	}
@@ -312,17 +658,13 @@ func TestHostReportValidation(t *testing.T) {
 
 func TestHostDeleteRemovesContainers(t *testing.T) {
 	f := newHostFixture(t)
-	id, token := f.addHost("server2")
+	id, _ := f.addHost("server2")
 	webID := f.addImage("web", "v2", "v1", "v2")
 
 	f.report(id, []agentapi.Container{container("c1", "web-1", proxyHost+"/web:current", "img1")}, nil)
 
 	if err := f.hosts.Delete(f.ctx, id); err != nil {
 		t.Fatalf("delete: %v", err)
-	}
-
-	if _, found, _ := f.hosts.Authenticate(f.ctx, token); found {
-		t.Fatal("token of a deleted host still works")
 	}
 
 	if result, _ := f.hosts.ImageContainers(f.ctx, webID, testProxy); len(result.Hosts) != 0 {
@@ -491,7 +833,7 @@ func TestImageContainersGroupsByHost(t *testing.T) {
 	idle, _ := f.addHost("idle")
 
 	f.report(down, []agentapi.Container{container("d1", "web", web+":current", "new")}, images)
-	f.clock.advance(HostOfflineAfter + time.Minute)
+	f.clock.advance(f.hosts.offlineAfter + time.Minute)
 
 	f.report(beta, []agentapi.Container{
 		container("b2", "web-2", web+":current", "new"),
@@ -531,16 +873,7 @@ func TestHostReportCarriesDockerErrors(t *testing.T) {
 
 	f.report(id, []agentapi.Container{container("c1", "web-1", "nginx", "img1")}, nil)
 
-	err := f.hosts.Report(f.ctx, id, agentapi.Report{
-		ProtocolVersion: agentapi.ProtocolVersion,
-		AgentVersion:    "v1.9.0",
-		Fingerprint:     "docker-error",
-		DockerError:     "cannot read Docker at unix:///var/run/docker.sock: permission denied",
-	})
-
-	if err != nil {
-		t.Fatal(err)
-	}
+	f.dockerError(id)
 
 	details, _ := f.hosts.Get(f.ctx, id, testProxy)
 
@@ -560,48 +893,6 @@ func TestHostReportCarriesDockerErrors(t *testing.T) {
 
 	if details, _ := f.hosts.Get(f.ctx, id, testProxy); details.Host.DockerError != nil || len(details.Containers) != 1 {
 		t.Fatalf("a good report must clear the error: %+v", details.Host.DockerError)
-	}
-}
-
-func TestHostHeartbeat(t *testing.T) {
-	f := newHostFixture(t)
-	id, _ := f.addHost("server2")
-
-	heartbeat := func(fingerprint string, protocol int) error {
-		return f.hosts.Heartbeat(f.ctx, id, agentapi.Heartbeat{ProtocolVersion: protocol, AgentVersion: "v1.9.0", Fingerprint: fingerprint})
-	}
-
-	if err := heartbeat("anything", agentapi.ProtocolVersion); !errors.Is(err, ErrFullReportNeeded) {
-		t.Fatalf("a host without a snapshot must ask for a full report: %v", err)
-	}
-
-	containers := []agentapi.Container{container("c1", "web-1", "nginx", "img1")}
-	f.report(id, containers, nil)
-	fingerprint := testFingerprint(containers, nil)
-	before, _ := f.hosts.getHost(f.ctx, id)
-
-	f.clock.advance(time.Minute)
-
-	if err := heartbeat(fingerprint, agentapi.ProtocolVersion); err != nil {
-		t.Fatalf("matching heartbeat: %v", err)
-	}
-
-	after, _ := f.hosts.Get(f.ctx, id, testProxy)
-
-	if !after.Host.LastSeenAt.After(*before.LastSeenAt) || len(after.Containers) != 1 {
-		t.Fatalf("a heartbeat should only move last seen: %+v", after)
-	}
-
-	if err := heartbeat("different", agentapi.ProtocolVersion); !errors.Is(err, ErrFullReportNeeded) {
-		t.Fatalf("a different fingerprint must ask for a full report: %v", err)
-	}
-
-	if err := heartbeat(fingerprint, agentapi.ProtocolVersion+1); !errors.Is(err, ErrUnsupportedAgentProtocol) {
-		t.Fatalf("protocol mismatch: %v", err)
-	}
-
-	if err := heartbeat("", agentapi.ProtocolVersion); !errors.Is(err, ErrInvalidAgentReport) {
-		t.Fatalf("missing fingerprint: %v", err)
 	}
 }
 
@@ -634,7 +925,7 @@ func TestHostListCountsStacksHealthAndNeededActions(t *testing.T) {
 
 	gone, _ := f.addHost("gone")
 	f.report(gone, []agentapi.Container{container("g1", "web-old", web+":current", "old")}, images)
-	f.clock.advance(HostOfflineAfter + time.Minute)
+	f.clock.advance(f.hosts.offlineAfter + time.Minute)
 	f.report(busy, []agentapi.Container{
 		inStack(container("c1", "web-current", web+":current", "new"), "shop"),
 		inStack(container("c2", "web-old", web+":current", "old"), "shop"),
@@ -752,7 +1043,7 @@ func TestImageRolloutsCountKnownVersionsOnOnlineHosts(t *testing.T) {
 
 	gone, _ := f.addHost("gone")
 	f.report(gone, []agentapi.Container{container("g1", "web-old", web+":current", "old")}, images)
-	f.clock.advance(HostOfflineAfter + time.Minute)
+	f.clock.advance(f.hosts.offlineAfter + time.Minute)
 
 	stopped := container("c8", "web-stopped", web+":current", "old")
 	stopped.State = "exited"
@@ -776,14 +1067,7 @@ func TestImageRolloutsCountKnownVersionsOnOnlineHosts(t *testing.T) {
 	blind, _ := f.addHost("blind")
 	f.report(blind, []agentapi.Container{container("d1", "web-blind", web+":current", "new")}, images)
 
-	if err := f.hosts.Report(f.ctx, blind, agentapi.Report{
-		ProtocolVersion: agentapi.ProtocolVersion,
-		AgentVersion:    "v1.9.0",
-		Fingerprint:     "docker-error",
-		DockerError:     "cannot read Docker at unix:///var/run/docker.sock: permission denied",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	f.dockerError(blind)
 
 	rollouts, err := f.hosts.ImageRollouts(f.ctx, testProxy)
 

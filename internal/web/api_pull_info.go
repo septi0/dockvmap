@@ -46,13 +46,7 @@ func (w *Web) proxyAddress(r *http.Request) (host, port string, configured bool)
 	}
 
 	if port == "" {
-		_, p, err := net.SplitHostPort(w.cfg.ProxyServerListen)
-
-		if err != nil {
-			port = w.cfg.ProxyServerListen
-		} else {
-			port = p
-		}
+		port = w.cfg.ProxyListenPort()
 	}
 
 	return host, port, configured
