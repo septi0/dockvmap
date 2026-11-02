@@ -91,6 +91,7 @@
       <StatStrip
         summary={sections.summary}
         metrics={sections.metrics}
+        hosts={sections.hosts}
         tagRefresh={$tagRefreshStatus}
       />
     </section>
@@ -123,13 +124,6 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: var(--space-3);
-  }
-
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    flex-shrink: 0;
   }
 
   .updated {

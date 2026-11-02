@@ -2,7 +2,6 @@
   import { onMount } from "svelte";
   import Play from "@lucide/svelte/icons/play";
   import AsyncState from "../AsyncState.svelte";
-  import Button from "../Button.svelte";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { getSystemTasks, runSystemTask } from "../../api/system";
   import { errorMessage } from "../../api/client";
@@ -124,15 +123,16 @@
             </td>
             <td class="actions-cell">
               {#if task.enabled && task.triggerable}
-                <Button
-                  variant="secondary"
-                  size="sm"
+                <button
+                  type="button"
+                  class="icon-button"
                   disabled={running.has(task.name) || task.running}
                   onclick={() => triggerTask(task)}
+                  title="Run now"
+                  aria-label={`Run ${task.name} now`}
                 >
-                  <Play size={13} strokeWidth={2} />
-                  Run now
-                </Button>
+                  <Play size={16} strokeWidth={1.75} />
+                </button>
               {/if}
             </td>
           </tr>

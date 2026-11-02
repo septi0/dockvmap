@@ -28,6 +28,6 @@
   </span>
   <Button variant="secondary" size="sm" {disabled} onclick={onRevert}>
     <Undo2 size={14} strokeWidth={2} />
-    {groupSize > 0 ? `Revert ${allCount(groupSize)}` : "Revert"}
+    {groupSize > 0 ? `Roll back ${allCount(groupSize)}` : "Roll back"}
   </Button>
 </p>

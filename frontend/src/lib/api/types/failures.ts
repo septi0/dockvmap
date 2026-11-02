@@ -2,6 +2,7 @@ export interface Failure {
   occurredAt: string
   source: string
   message: string
+  occurrences: number
 }
 
 export interface FailureList {
@@ -26,7 +27,6 @@ export const FAILURE_SOURCES = [
   'digest',
 ] as const
 
-export type FailureSource = (typeof FAILURE_SOURCES)[number]
 
 export const FAILURE_SOURCE_LABELS: Record<string, string> = {
   webhook: 'Webhook delivery',

@@ -38,6 +38,10 @@ const (
 
 	AuditTypeProxyTokenCreated = "PROXY_TOKEN_CREATED"
 	AuditTypeProxyTokenDeleted = "PROXY_TOKEN_DELETED"
+
+	AuditTypeHostCreated          = "HOST_CREATED"
+	AuditTypeHostDeleted          = "HOST_DELETED"
+	AuditTypeHostTokenRegenerated = "HOST_TOKEN_REGENERATED"
 )
 
 var AuditTypes = []string{
@@ -69,6 +73,10 @@ var AuditTypes = []string{
 
 	AuditTypeProxyTokenCreated,
 	AuditTypeProxyTokenDeleted,
+
+	AuditTypeHostCreated,
+	AuditTypeHostDeleted,
+	AuditTypeHostTokenRegenerated,
 }
 
 func IsValidAuditType(t string) bool {

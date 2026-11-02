@@ -17,19 +17,7 @@ func (s *Store) RecordProxyUsage(ctx context.Context, images []model.ImageUsage,
 	defer tx.Rollback()
 
 	for _, usage := range images {
-		var pulledTag *string
-
-		if usage.PulledAt != nil {
-			pulledTag = &usage.PulledTag
-		}
-
-		_, err := tx.ExecContext(ctx, `
-			UPDATE images
-			SET last_requested_at = ?,
-				last_pulled_at = COALESCE(?, last_pulled_at),
-				last_pulled_tag = COALESCE(?, last_pulled_tag)
-			WHERE id = ?
-		`, usage.RequestedAt, usage.PulledAt, pulledTag, usage.ImageID)
+		_, err := tx.ExecContext(ctx, "UPDATE images SET last_pulled_at = ?, last_pulled_tag = ? WHERE id = ?", usage.PulledAt, usage.PulledTag, usage.ImageID)
 
 		if err != nil {
 			return fmt.Errorf("recording usage for image %d: %w", usage.ImageID, err)

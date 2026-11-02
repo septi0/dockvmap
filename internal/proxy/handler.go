@@ -32,7 +32,7 @@ type tokenVerifier interface {
 }
 
 type usageRecorder interface {
-	RecordImageRequest(imageID int64, tag string, pulled bool)
+	RecordImagePull(imageID int64, tag string)
 }
 
 type Proxy struct {
@@ -208,7 +208,7 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 			p.metrics.cacheHits.Add(1)
 			setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "hit" })
 			slog.Debug("manifest served from cache", "method", r.Method, "name", name, "reference", reference)
-			p.recordManifestRequest(r, img, upstreamRef)
+			p.recordPull(r, img, upstreamRef)
 			return
 		}
 
@@ -219,18 +219,22 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 	slog.Debug("manifest fetched from upstream", "method", r.Method, "name", name, "reference", reference)
 
 	if p.proxyRequest(w, r, upstreamURL, upstreamRef, "manifest", img.Registry, path) {
-		p.recordManifestRequest(r, img, upstreamRef)
+		p.recordPull(r, img, upstreamRef)
 	}
 }
 
-func (p *Proxy) recordManifestRequest(r *http.Request, img *model.Image, upstreamRef string) {
+func (p *Proxy) recordPull(r *http.Request, img *model.Image, upstreamRef string) {
+	if r.Method != http.MethodGet {
+		return
+	}
+
 	tag := upstreamRef
 
 	if oci.IsDigest(upstreamRef) {
 		tag = img.Tag
 	}
 
-	p.usage.RecordImageRequest(img.ID, tag, r.Method == http.MethodGet)
+	p.usage.RecordImagePull(img.ID, tag)
 }
 
 func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest string) {
@@ -271,6 +275,7 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest 
 			p.metrics.cacheHits.Add(1)
 			setAccess(r, func(f *httpmw.AccessFields) { f.Cache = "hit" })
 			slog.Debug("blob served from cache", "method", r.Method, "name", name, "digest", digest)
+			p.recordPull(r, img, digest)
 			return
 		}
 
@@ -280,7 +285,9 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest 
 
 	slog.Debug("blob fetched from upstream", "method", r.Method, "name", name, "digest", digest, "registry", img.Registry, "repository", path)
 
-	p.proxyRequest(w, r, upstreamURL, digest, "blob", img.Registry, path)
+	if p.proxyRequest(w, r, upstreamURL, digest, "blob", img.Registry, path) {
+		p.recordPull(r, img, digest)
+	}
 }
 
 func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL, digest, resource, registryName, repository string) bool {

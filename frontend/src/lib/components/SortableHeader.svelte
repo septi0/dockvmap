@@ -63,7 +63,14 @@
     color: var(--color-text);
   }
 
+  @media (hover: hover) {
+    .sort-icon {
+      opacity: 0;
+    }
+  }
+
   .sort-button:hover .sort-icon,
+  .sort-button:focus-visible .sort-icon,
   .sort-button.active .sort-icon {
     color: inherit;
     opacity: 1;

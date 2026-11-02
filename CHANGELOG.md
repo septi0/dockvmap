@@ -2,10 +2,24 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
-## Unreleased
+## v1.9.0 (unreleased)
 
+- **Hosts**: see the containers on each of your Docker hosts. Add a host on the new Hosts page and run the DockVMap agent on it (`ghcr.io/septi0/dockvmap-agent`, sample in `compose.agent.sample.yaml`). The agent only connects out to DockVMap and only reads from Docker. Each host shows whether it's online, its containers with state, health, stack, image and published ports, and which containers pulled through DockVMap are up to date, outdated, or pulled but not recreated. See "Hosts and the agent" in the README.
+- **Running on**: Image details lists the containers running that image on every host, with what needs attention first, and how many are up to date.
+- **Deployed column**: the Virtual Images and Hosts lists show how many containers run the current version, like "5/8", once hosts report containers pulled through DockVMap. Numbers refresh by themselves, and hosts that are offline or can't read Docker are counted separately.
+- **Crashes at a glance**: the Hosts list flags containers that keep restarting or crashed in the last 7 days. A host that goes offline, or can't read Docker, keeps showing its last known containers.
+- **Lighter Image details**: the pull command and the Tag history and Upstream tag activity buttons sit under the image name, the rest is split into Version and Activity, repeated rows are gone, and the Danger zone is more compact. With `proxy_public_host` on port 443, pull commands leave out `:443`.
+- **Hosts on the dashboard**: a tile with how many hosts are online, how many need attention, and how many containers are outdated. Every dashboard tile now opens the matching page (Image pulls opens Virtual Images sorted by last pull, Tag checks opens System > Tasks), and the tiles sit 3 per row on smaller screens.
+- **One way to work with lists**: rows with something to open are clickable, and row actions are icons with a tooltip. Registries rows open the edit window, with Delete inside it. Sessions and System > Tasks use an icon too, and the Groups review link is an up arrow. On Groups, the failed check icon sits next to the name and the copy button is gone. Sortable column headers show their arrows on hover or when sorted. Blue text is now only for links: tags and group member names in lists are plain text, and status badges are never links.
+- **Small UI fixes**: the Update badge on Virtual Images shows the tag as it is ("v1.2.0", not "V1.2.0"), and image paths wrap at `/` and `.` instead of mid-word. Host details shows proxied images as `name:tag`, with the full reference on hover. Proxy Tokens shows when a token was created like "10d ago". Tag history no longer offers Roll back to the tag you're already on.
 - **Tables on phones**: words in table cells no longer break in the middle ("Usernam/e", "v3.2./3"). Registries hides Username and Options on phones, both still in the edit dialog, and long registry hosts and failure messages wrap where needed.
+- **Recent issues without repeats**: the dashboard shows each failure once, with how many times it happened, like "5h ago · 6 times", so a check that fails every day no longer pushes other problems off the card. System > Failures still lists every occurrence.
+- **Roll back**: Tag history and the notice after a tag change both say Roll back, instead of Restore and Revert.
+- **Fixed**: Last pulled now updates for Docker hosts that use the containerd image store (the default on new installs). They fetch everything through blob requests and never asked for a manifest, so their pulls were not recorded. A pull that downloads nothing new is still not counted.
+- **Removed**: Image details no longer shows when a client last checked for a newer version.
 - **Task times on one line**: System > Tasks shows "Last run" like "52m ago" on one line on wider screens.
+
+**Upgrade note:** this release migrates the database and can't be rolled back without a restore. Run `dockvmap -backup <path>` before upgrading. Set `proxy_public_host` if you haven't, so containers are matched to virtual images by the address clients pull from.
 
 ## v1.8.0 (2026-11-01)
 

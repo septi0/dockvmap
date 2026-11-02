@@ -61,7 +61,6 @@ type imageResponse struct {
 	Pinned             bool       `json:"pinned"`
 	RefreshStatus      string     `json:"refreshStatus"`
 	Group              *imageRef  `json:"group,omitempty"`
-	LastRequestedAt    *time.Time `json:"lastRequestedAt,omitempty"`
 	LastPulledAt       *time.Time `json:"lastPulledAt,omitempty"`
 	LastPulledTag      *string    `json:"lastPulledTag,omitempty"`
 	CurrentDigest      *string    `json:"currentDigest,omitempty"`
@@ -82,12 +81,7 @@ func newImageResponse(image model.Image) imageResponse {
 		group = &imageRef{ID: *image.GroupID, Name: *image.GroupName}
 	}
 
-	var digest *string
-	var digestSince *time.Time
-
-	if image.CurrentDigestTag != nil && *image.CurrentDigestTag == image.Tag {
-		digest, digestSince = image.CurrentDigest, image.CurrentDigestSince
-	}
+	digest, digestSince := image.TagDigest()
 
 	return imageResponse{
 		ID:                 image.ID,
@@ -103,7 +97,6 @@ func newImageResponse(image model.Image) imageResponse {
 		Pinned:             image.Pinned,
 		RefreshStatus:      image.RefreshStatus,
 		Group:              group,
-		LastRequestedAt:    image.LastRequestedAt,
 		LastPulledAt:       image.LastPulledAt,
 		LastPulledTag:      image.LastPulledTag,
 		CurrentDigest:      digest,
@@ -477,16 +470,18 @@ func newTagRefreshStatusResponse(enabled bool, interval string, running bool, la
 }
 
 type failureResponse struct {
-	OccurredAt time.Time `json:"occurredAt"`
-	Source     string    `json:"source"`
-	Message    string    `json:"message"`
+	OccurredAt  time.Time `json:"occurredAt"`
+	Source      string    `json:"source"`
+	Message     string    `json:"message"`
+	Occurrences int       `json:"occurrences"`
 }
 
 func newFailureResponse(failure service.Failure) failureResponse {
 	return failureResponse{
-		OccurredAt: failure.OccurredAt,
-		Source:     string(failure.Source),
-		Message:    failureMessage(failure),
+		OccurredAt:  failure.OccurredAt,
+		Source:      string(failure.Source),
+		Message:     failureMessage(failure),
+		Occurrences: failure.Occurrences,
 	}
 }
 
@@ -513,4 +508,172 @@ func failureMessage(failure service.Failure) string {
 	default:
 		return failure.Error
 	}
+}
+
+type hostResponse struct {
+	ID                  int64            `json:"id"`
+	Name                string           `json:"name"`
+	CreatedAt           time.Time        `json:"createdAt"`
+	LastSeenAt          *time.Time       `json:"lastSeenAt,omitempty"`
+	Online              bool             `json:"online"`
+	Current             bool             `json:"current"`
+	AgentVersion        *string          `json:"agentVersion,omitempty"`
+	AgentUpdateNeeded   bool             `json:"agentUpdateNeeded"`
+	DockerError         *string          `json:"dockerError,omitempty"`
+	Info                hostInfoResponse `json:"info"`
+	RunningContainers   int              `json:"runningContainers"`
+	StoppedContainers   int              `json:"stoppedContainers"`
+	Stacks              int              `json:"stacks"`
+	UnhealthyContainers int              `json:"unhealthyContainers"`
+	CrashedContainers   int              `json:"crashedContainers"`
+	ProxyContainers     int              `json:"proxyContainers"`
+	Rollout             rolloutResponse  `json:"rollout"`
+	LastStartedAt       *time.Time       `json:"lastStartedAt,omitempty"`
+}
+
+type rolloutResponse struct {
+	UpToDate int `json:"upToDate"`
+	Total    int `json:"total"`
+}
+
+type hostInfoResponse struct {
+	Hostname      *string `json:"hostname,omitempty"`
+	DockerVersion *string `json:"dockerVersion,omitempty"`
+	OS            *string `json:"os,omitempty"`
+	Architecture  *string `json:"architecture,omitempty"`
+	CPUs          *int    `json:"cpus,omitempty"`
+	MemoryBytes   *int64  `json:"memoryBytes,omitempty"`
+}
+
+type hostContainerResponse struct {
+	ID              string                     `json:"id"`
+	Name            string                     `json:"name"`
+	Image           string                     `json:"image"`
+	State           string                     `json:"state"`
+	Health          *string                    `json:"health,omitempty"`
+	ExitCode        int                        `json:"exitCode"`
+	Crashed         bool                       `json:"crashed"`
+	RecentlyCrashed bool                       `json:"recentlyCrashed"`
+	ComposeProject  *string                    `json:"composeProject,omitempty"`
+	ComposeService  *string                    `json:"composeService,omitempty"`
+	CreatedAt       *time.Time                 `json:"createdAt,omitempty"`
+	StartedAt       *time.Time                 `json:"startedAt,omitempty"`
+	FinishedAt      *time.Time                 `json:"finishedAt,omitempty"`
+	Ports           []model.ContainerPort      `json:"ports"`
+	Tracking        *containerTrackingResponse `json:"tracking,omitempty"`
+}
+
+type containerTrackingResponse struct {
+	ImageID     *int64  `json:"imageId,omitempty"`
+	ImageName   string  `json:"imageName"`
+	Status      string  `json:"status"`
+	PinnedTag   *string `json:"pinnedTag,omitempty"`
+	NeedsUpdate bool    `json:"needsUpdate"`
+}
+
+type hostDetailsResponse struct {
+	Host       hostResponse            `json:"host"`
+	Containers []hostContainerResponse `json:"containers"`
+}
+
+type imageRolloutResponse struct {
+	ImageID int64 `json:"imageId"`
+	rolloutResponse
+	HostsOffline     int `json:"hostsOffline"`
+	HostsDockerError int `json:"hostsDockerError"`
+}
+
+type imageContainersResponse struct {
+	Hosts           []hostDetailsResponse `json:"hosts"`
+	Rollout         rolloutResponse       `json:"rollout"`
+	ConfiguredHosts int                   `json:"configuredHosts"`
+}
+
+type createHostRequest struct {
+	Name string `json:"name"`
+}
+
+type hostTokenResponse struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Token string `json:"token"`
+}
+
+func newHostResponse(host model.Host) hostResponse {
+	return hostResponse{
+		ID:                host.ID,
+		Name:              host.Name,
+		CreatedAt:         host.CreatedAt,
+		LastSeenAt:        host.LastSeenAt,
+		Online:            host.Online,
+		Current:           host.Current(),
+		AgentVersion:      host.AgentVersion,
+		AgentUpdateNeeded: host.AgentUpdateNeeded,
+		DockerError:       host.DockerError,
+		Info: hostInfoResponse{
+			Hostname:      host.Info.Hostname,
+			DockerVersion: host.Info.DockerVersion,
+			OS:            host.Info.OS,
+			Architecture:  host.Info.Architecture,
+			CPUs:          host.Info.CPUs,
+			MemoryBytes:   host.Info.MemoryBytes,
+		},
+		RunningContainers:   host.RunningContainers,
+		StoppedContainers:   host.StoppedContainers,
+		Stacks:              host.Stacks,
+		UnhealthyContainers: host.UnhealthyContainers,
+		CrashedContainers:   host.CrashedContainers,
+		ProxyContainers:     host.ProxyContainers,
+		Rollout:             newRolloutResponse(host.Rollout),
+		LastStartedAt:       host.LastStartedAt,
+	}
+}
+
+func newRolloutResponse(rollout model.Rollout) rolloutResponse {
+	return rolloutResponse{UpToDate: rollout.UpToDate, Total: rollout.Total}
+}
+
+func newHostContainerResponses(containers []model.HostContainer) []hostContainerResponse {
+	if containers == nil {
+		return nil
+	}
+
+	responses := make([]hostContainerResponse, 0, len(containers))
+
+	for _, c := range containers {
+		response := hostContainerResponse{
+			ID:              c.ContainerID,
+			Name:            c.Name,
+			Image:           c.Image,
+			State:           c.State,
+			Health:          c.Health,
+			ExitCode:        c.ExitCode,
+			Crashed:         c.Crashed(),
+			RecentlyCrashed: c.RecentlyCrashed,
+			ComposeProject:  c.ComposeProject,
+			ComposeService:  c.ComposeService,
+			CreatedAt:       c.CreatedAt,
+			StartedAt:       c.StartedAt,
+			FinishedAt:      c.FinishedAt,
+			Ports:           c.Ports,
+		}
+
+		if response.Ports == nil {
+			response.Ports = []model.ContainerPort{}
+		}
+
+		if c.Tracking != nil {
+			response.Tracking = &containerTrackingResponse{
+				ImageID:     c.Tracking.ImageID,
+				ImageName:   c.Tracking.ImageName,
+				Status:      string(c.Tracking.Status),
+				PinnedTag:   c.Tracking.PinnedTag,
+				NeedsUpdate: c.Tracking.NeedsUpdate(),
+			}
+		}
+
+		responses = append(responses, response)
+	}
+
+	return responses
 }

@@ -33,10 +33,17 @@ export interface DashboardIssues {
   total: number
 }
 
+export interface DashboardHosts {
+  online: number
+  total: number
+  outdated: number
+}
+
 export interface Dashboard {
   summary: DashboardSection<DashboardSummary>
   updates: DashboardSection<DashboardUpdates>
   issues: DashboardSection<DashboardIssues>
   activity: DashboardSection<DashboardActivity>
   metrics: DashboardSection<ProxyMetrics>
+  hosts: DashboardSection<DashboardHosts>
 }

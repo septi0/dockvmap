@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/model"
 	"github.com/septi0/dockvmap/internal/service"
 )
@@ -39,6 +40,15 @@ func (f fakeImages) StatusCounts(context.Context) (model.ImageStatusCounts, erro
 	return model.ImageStatusCounts{Total: int64(len(f.list))}, f.err
 }
 
+type fakeHosts struct {
+	hostService
+	list []model.Host
+}
+
+func (f fakeHosts) List(context.Context, service.ProxyTarget) ([]model.Host, error) {
+	return f.list, nil
+}
+
 type fakeEvents struct {
 	list []model.ImageEvent
 	err  error
@@ -58,6 +68,10 @@ type fakeFailures struct {
 }
 
 func (f fakeFailures) List(context.Context, model.BackgroundFailureListFilters) ([]service.Failure, error) {
+	return f.list, f.err
+}
+
+func (f fakeFailures) LatestDistinct(context.Context, int) ([]service.Failure, error) {
 	return f.list, f.err
 }
 
@@ -93,11 +107,15 @@ func dashboardFor(t *testing.T, w *Web) dashboardResponse {
 }
 
 func TestDashboardAllSectionsSucceed(t *testing.T) {
+	dockerFailure := "cannot read Docker"
+
 	w := &Web{
 		images:              fakeImages{list: []model.Image{{ID: 1, Name: "app"}}},
 		events:              fakeEvents{list: []model.ImageEvent{{ID: 7}}},
 		failures:            fakeFailures{list: []service.Failure{{Error: "boom"}}},
 		proxyMetricsHistory: fakeMetrics{},
+		hosts:               fakeHosts{list: []model.Host{{ID: 1, Online: true, Rollout: model.Rollout{UpToDate: 2, Total: 5}}, {ID: 2, Online: true, DockerError: &dockerFailure}, {ID: 3}}},
+		cfg:                 &config.Config{ProxyServerListen: ":5000"},
 	}
 
 	resp := dashboardFor(t, w)
@@ -127,6 +145,10 @@ func TestDashboardAllSectionsSucceed(t *testing.T) {
 	if resp.Activity.Data == nil || len(resp.Activity.Data.Events) != 1 {
 		t.Errorf("activity = %+v, want 1 event", resp.Activity.Data)
 	}
+
+	if resp.Hosts.Data == nil || resp.Hosts.Data.Online != 1 || resp.Hosts.Data.Total != 3 || resp.Hosts.Data.Outdated != 3 {
+		t.Errorf("hosts = %+v, want 1 of 3 reporting, with a Docker failure not counted, and 3 outdated containers", resp.Hosts.Data)
+	}
 }
 
 func TestDashboardIsolatesSectionFailure(t *testing.T) {
@@ -135,6 +157,8 @@ func TestDashboardIsolatesSectionFailure(t *testing.T) {
 		events:              fakeEvents{list: []model.ImageEvent{{ID: 7}}},
 		failures:            fakeFailures{err: errors.New("db is down")},
 		proxyMetricsHistory: fakeMetrics{},
+		hosts:               fakeHosts{list: []model.Host{{ID: 1, Online: true}, {ID: 2}}},
+		cfg:                 &config.Config{ProxyServerListen: ":5000"},
 	}
 
 	resp := dashboardFor(t, w)
@@ -166,6 +190,8 @@ func TestDashboardImageFailureIsolatedFromRest(t *testing.T) {
 		events:              fakeEvents{list: []model.ImageEvent{{ID: 7}}},
 		failures:            fakeFailures{},
 		proxyMetricsHistory: fakeMetrics{},
+		hosts:               fakeHosts{list: []model.Host{{ID: 1, Online: true}, {ID: 2}}},
+		cfg:                 &config.Config{ProxyServerListen: ":5000"},
 	}
 
 	resp := dashboardFor(t, w)

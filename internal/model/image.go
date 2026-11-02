@@ -26,7 +26,6 @@ type Image struct {
 	GroupID            *int64     `json:"groupId,omitempty"`
 	GroupName          *string    `json:"groupName,omitempty"`
 	TagSetHash         string     `json:"-"`
-	LastRequestedAt    *time.Time `json:"lastRequestedAt,omitempty"`
 	LastPulledAt       *time.Time `json:"lastPulledAt,omitempty"`
 	LastPulledTag      *string    `json:"lastPulledTag,omitempty"`
 	CurrentDigest      *string    `json:"currentDigest,omitempty"`
@@ -34,6 +33,14 @@ type Image struct {
 	CurrentDigestSince *time.Time `json:"currentDigestSince,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
 	UpdatedAt          time.Time  `json:"updatedAt"`
+}
+
+func (i Image) TagDigest() (*string, *time.Time) {
+	if i.CurrentDigestTag == nil || *i.CurrentDigestTag != i.Tag {
+		return nil, nil
+	}
+
+	return i.CurrentDigest, i.CurrentDigestSince
 }
 
 type ImageStatusFilter string

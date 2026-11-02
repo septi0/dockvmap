@@ -1,11 +1,14 @@
 <script lang="ts">
+  import Trash2 from "@lucide/svelte/icons/trash-2";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
   import Modal from "./Modal.svelte";
   import Field from "./Field.svelte";
   import Button from "./Button.svelte";
   import RegistryOptionsFields from "./RegistryOptionsFields.svelte";
   import {
     createRegistry,
+    deleteRegistry,
     updateRegistry,
     testRegistry,
     testExistingRegistry,
@@ -19,12 +22,14 @@
     registry = null,
     onClose,
     onSaved,
+    onDeleted,
   }: {
     open: boolean;
     mode: "create" | "edit";
     registry?: Registry | null;
     onClose: () => void;
     onSaved: (registry: Registry) => void;
+    onDeleted?: (registry: Registry) => void;
   } = $props();
 
   let registryHost = $state("");
@@ -37,6 +42,9 @@
   let submitting = $state(false);
   let testing = $state(false);
   let testResult = $state<{ ok: boolean; message: string } | null>(null);
+  let showDeleteConfirm = $state(false);
+  let deleting = $state(false);
+  let deleteError = $state<string | null>(null);
 
   const isEdit = $derived(mode === "edit");
   const ready = $derived(mode === "create" || registry !== null);
@@ -59,6 +67,28 @@
       registry: registryHost.trim(),
       options: { insecure, allow_self_signed_certs: allowSelfSignedCerts },
     };
+  }
+
+  function cancelDelete() {
+    showDeleteConfirm = false;
+    deleteError = null;
+  }
+
+  async function confirmDelete() {
+    if (!registry) return;
+
+    deleteError = null;
+    deleting = true;
+
+    try {
+      await deleteRegistry(registry.id);
+      showDeleteConfirm = false;
+      onDeleted?.(registry);
+    } catch (err) {
+      deleteError = errorMessage(err, "Failed to delete registry");
+    } finally {
+      deleting = false;
+    }
   }
 
   async function handleTest() {
@@ -201,14 +231,22 @@
     {/if}
 
     <div class="modal-actions split">
-      <Button
-        type="button"
-        variant="secondary"
-        disabled={testing || submitting || registryHost.trim() === ""}
-        onclick={handleTest}
-      >
-        {testing ? "Testing…" : "Test connection"}
-      </Button>
+      <div class="modal-actions-left">
+        {#if isEdit}
+          <Button type="button" variant="danger" onclick={() => (showDeleteConfirm = true)}>
+            <Trash2 size={16} strokeWidth={1.75} />
+            Delete
+          </Button>
+        {/if}
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={testing || submitting || registryHost.trim() === ""}
+          onclick={handleTest}
+        >
+          {testing ? "Testing…" : "Test connection"}
+        </Button>
+      </div>
       <div class="modal-actions-right">
         <Button type="button" variant="secondary" onclick={handleClose}>
           Cancel
@@ -224,6 +262,18 @@
     </div>
   </form>
 </Modal>
+
+<ConfirmDialog
+  open={showDeleteConfirm}
+  title="Delete registry"
+  message={`Delete "${registry?.registry ?? ""}"? This cannot be undone.`}
+  confirmLabel="Delete"
+  danger
+  error={deleteError}
+  submitting={deleting}
+  onConfirm={confirmDelete}
+  onCancel={cancelDelete}
+/>
 
 <style>
   .auth-status {

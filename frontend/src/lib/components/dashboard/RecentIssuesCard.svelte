@@ -7,6 +7,7 @@
   import CardState from "./CardState.svelte";
   import CardErrorState from "./CardErrorState.svelte";
   import {
+    formatCount,
     formatDate,
     formatNumber,
     formatRelativeTime,
@@ -51,7 +52,9 @@
       {#each shown as failure, i (i)}
         <li>
           <span class="issue-date muted" title={formatDate(failure.occurredAt)}>
-            {formatRelativeTime(failure.occurredAt)}
+            {formatRelativeTime(failure.occurredAt)}{failure.occurrences > 1
+              ? ` · ${formatCount(failure.occurrences, "time")}`
+              : ""}
           </span>
           <span class="issue-message" title={failure.message}>
             {failure.message}

@@ -20,8 +20,15 @@ func apiServiceError(rw http.ResponseWriter, err error) {
 		errors.Is(err, service.ErrInvalidImageGroup),
 		errors.Is(err, service.ErrInvalidRegistry),
 		errors.Is(err, service.ErrInvalidUser),
-		errors.Is(err, service.ErrInvalidProxyToken):
+		errors.Is(err, service.ErrInvalidProxyToken),
+		errors.Is(err, service.ErrInvalidHost):
 		apiError(rw, http.StatusBadRequest, err.Error())
+
+	case errors.Is(err, service.ErrHostAlreadyExists):
+		apiError(rw, http.StatusConflict, "a host with this name already exists")
+
+	case errors.Is(err, service.ErrHostNotFound):
+		apiError(rw, http.StatusNotFound, "host not found")
 
 	case errors.Is(err, service.ErrUpstreamNotFound), errors.Is(err, service.ErrUpstreamUnauthorized):
 		apiError(rw, http.StatusNotFound, "repository does not exist or may require authentication")

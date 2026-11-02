@@ -183,7 +183,7 @@
       updatesCount.refresh();
       await reloadRow();
     } catch (err) {
-      actionError = errorMessage(err, "Failed to revert tag");
+      actionError = errorMessage(err, "Failed to roll back");
     } finally {
       working = false;
     }
@@ -222,7 +222,6 @@
       {#if group}
         <GroupIdentity
           {group}
-          {image}
           {groupSize}
           onOpenGroup={() => (showGroupModal = true)}
         />
@@ -318,7 +317,7 @@
         bind:selectedTag
         currentTag={image.tag}
         dimPrereleases
-        showAge
+        showFirstSeen
       />
       {#if group}
         <p class="group-hint muted">

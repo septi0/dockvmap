@@ -2,6 +2,7 @@
   import UserRound from "@lucide/svelte/icons/user-round";
   import Pencil from "@lucide/svelte/icons/pencil";
   import KeyRound from "@lucide/svelte/icons/key-round";
+  import LogOut from "@lucide/svelte/icons/log-out";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
@@ -101,7 +102,7 @@
       revokingSession = null;
       await loadSessions();
     } catch (err) {
-      revokeError = errorMessage(err, "Failed to revoke session");
+      revokeError = errorMessage(err, "Failed to sign out the session");
     } finally {
       revokeSubmitting = false;
     }
@@ -213,7 +214,7 @@
   <div class="card section-card">
     <h2>Active sessions</h2>
     <p class="section-hint muted">
-      Devices currently signed in to your account. You can revoke any session
+      Devices currently signed in to your account. You can sign out any session
       except the one you're using right now.
     </p>
 
@@ -266,13 +267,15 @@
               {#if session.current}
                 <span class="badge badge-accent">Current</span>
               {:else}
-                <Button
-                  variant="danger"
-                  size="sm"
+                <button
+                  type="button"
+                  class="icon-button danger"
                   onclick={() => confirmRevoke(session)}
+                  title="Sign out this session"
+                  aria-label={`Sign out ${ua.label}`}
                 >
-                  Revoke
-                </Button>
+                  <LogOut size={16} strokeWidth={1.75} />
+                </button>
               {/if}
             </div>
           </li>
@@ -296,9 +299,9 @@
 
 <ConfirmDialog
   open={revokingSession !== null}
-  title="Revoke session"
+  title="Sign out session"
   message="Sign out this session? Whoever is using it will need to log in again."
-  confirmLabel="Revoke"
+  confirmLabel="Sign out"
   danger
   error={revokeError}
   submitting={revokeSubmitting}

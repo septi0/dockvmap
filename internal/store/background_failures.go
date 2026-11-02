@@ -59,9 +59,47 @@ func (s *Store) ListBackgroundFailures(ctx context.Context, filters model.Backgr
 	failures := make([]model.BackgroundFailure, 0)
 
 	for rows.Next() {
-		var f model.BackgroundFailure
+		f := model.BackgroundFailure{Occurrences: 1}
 
 		if err := rows.Scan(&f.ID, &f.Source, &f.Detail, &f.Error, &f.OccurredAt); err != nil {
+			return nil, fmt.Errorf("scanning background failure row: %w", err)
+		}
+
+		failures = append(failures, f)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading background failure rows: %w", err)
+	}
+
+	return failures, nil
+}
+
+func (s *Store) ListLatestDistinctBackgroundFailures(ctx context.Context, limit int) ([]model.BackgroundFailure, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT f.id, f.source, f.detail, f.error, f.occurred_at, latest.occurrences
+		FROM background_failures f
+		JOIN (
+			SELECT MAX(id) AS id, COUNT(*) AS occurrences
+			FROM background_failures
+			GROUP BY source, detail, error
+		) latest ON latest.id = f.id
+		ORDER BY f.occurred_at DESC, f.id DESC
+		LIMIT ?
+	`, limit)
+
+	if err != nil {
+		return nil, fmt.Errorf("listing latest background failures: %w", err)
+	}
+
+	defer rows.Close()
+
+	failures := make([]model.BackgroundFailure, 0)
+
+	for rows.Next() {
+		var f model.BackgroundFailure
+
+		if err := rows.Scan(&f.ID, &f.Source, &f.Detail, &f.Error, &f.OccurredAt, &f.Occurrences); err != nil {
 			return nil, fmt.Errorf("scanning background failure row: %w", err)
 		}
 

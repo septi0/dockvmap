@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/septi0/dockvmap/frontend"
+	"github.com/septi0/dockvmap/internal/agentapi"
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/ipmatch"
 	"github.com/septi0/dockvmap/internal/model"
@@ -92,6 +93,19 @@ type proxyTokenService interface {
 	Delete(ctx context.Context, id int64) (bool, error)
 }
 
+type hostService interface {
+	Create(ctx context.Context, name string) (int64, string, error)
+	List(ctx context.Context, proxy service.ProxyTarget) ([]model.Host, error)
+	Get(ctx context.Context, id int64, proxy service.ProxyTarget) (*model.HostDetails, error)
+	RegenerateToken(ctx context.Context, id int64) (string, error)
+	Delete(ctx context.Context, id int64) error
+	Authenticate(ctx context.Context, token string) (int64, bool, error)
+	Report(ctx context.Context, hostID int64, report agentapi.Report) error
+	Heartbeat(ctx context.Context, hostID int64, heartbeat agentapi.Heartbeat) error
+	ImageContainers(ctx context.Context, imageID int64, proxy service.ProxyTarget) (*model.ImageContainers, error)
+	ImageRollouts(ctx context.Context, proxy service.ProxyTarget) ([]model.ImageRollout, error)
+}
+
 type proxyMetricsHistoryReader interface {
 	Summary(ctx context.Context) (model.ProxyMetricsSummary, error)
 }
@@ -107,6 +121,7 @@ type cacheUsageReader interface {
 
 type failureLister interface {
 	List(ctx context.Context, filters model.BackgroundFailureListFilters) ([]service.Failure, error)
+	LatestDistinct(ctx context.Context, limit int) ([]service.Failure, error)
 	Count(ctx context.Context, filters model.BackgroundFailureListFilters) (int64, error)
 }
 
@@ -128,6 +143,7 @@ type Web struct {
 	sessions             sessionService
 	health               healthChecker
 	proxyTokens          proxyTokenService
+	hosts                hostService
 	proxyMetricsHistory  proxyMetricsHistoryReader
 	proxyUsage           proxyUsageReader
 	cacheUsage           cacheUsageReader
@@ -153,6 +169,7 @@ type Dependencies struct {
 	Sessions             sessionService
 	Health               healthChecker
 	ProxyTokens          proxyTokenService
+	Hosts                hostService
 	ProxyMetricsHistory  proxyMetricsHistoryReader
 	ProxyUsage           proxyUsageReader
 	CacheUsage           cacheUsageReader
@@ -186,6 +203,7 @@ func New(deps Dependencies) (http.Handler, error) {
 		sessions:             deps.Sessions,
 		health:               deps.Health,
 		proxyTokens:          deps.ProxyTokens,
+		hosts:                deps.Hosts,
 		proxyMetricsHistory:  deps.ProxyMetricsHistory,
 		proxyUsage:           deps.ProxyUsage,
 		cacheUsage:           deps.CacheUsage,
@@ -202,12 +220,15 @@ func New(deps Dependencies) (http.Handler, error) {
 
 	mux := http.NewServeMux()
 	apiMux := http.NewServeMux()
+	agentMux := http.NewServeMux()
 
 	w.registerAPIRoutes(apiMux)
+	w.registerAgentRoutes(agentMux)
 
 	mux.HandleFunc("/health", w.apiHealth)
 
 	mux.Handle("/api/", http.StripPrefix("/api", w.withRequestInfo(w.requireAuth(apiMux))))
+	mux.Handle("/api/agent/", http.StripPrefix("/api/agent", w.withRequestInfo(w.requireAgent(agentMux))))
 
 	w.registerFrontendRoutes(mux)
 

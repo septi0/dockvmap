@@ -24,7 +24,8 @@
   import GroupRow from "../lib/components/imageDetails/GroupRow.svelte";
   import CurrentTagRow from "../lib/components/imageDetails/CurrentTagRow.svelte";
   import UpdateTrackingRow from "../lib/components/imageDetails/UpdateTrackingRow.svelte";
-  import PullCommandCard from "../lib/components/imageDetails/PullCommandCard.svelte";
+  import PullCommand from "../lib/components/imageDetails/PullCommand.svelte";
+  import RunningOnCard from "../lib/components/imageDetails/RunningOnCard.svelte";
   import PullActivityRow from "../lib/components/imageDetails/PullActivityRow.svelte";
   import { getImage, deleteImage, setImagePin, updateImageTag } from "../lib/api/images";
   import { getImageGroup } from "../lib/api/imageGroups";
@@ -187,7 +188,7 @@
       updatesCount.refresh();
       await handleTagRestored(from);
     } catch (err) {
-      revertError = errorMessage(err, "Failed to revert tag");
+      revertError = errorMessage(err, "Failed to roll back");
     } finally {
       reverting = false;
     }
@@ -197,8 +198,8 @@
     lastChange = null;
     toast.success(
       group
-        ? `Restored tag to "${tag}" on ${allImages(groupSize)}.`
-        : `Restored tag to "${tag}".`,
+        ? `Rolled back to "${tag}" on ${allImages(groupSize)}.`
+        : `Rolled back to "${tag}".`,
     );
     await refreshAfterTagChange();
   }
@@ -275,30 +276,41 @@
 
   <AsyncState {loading} {error}>
     {#if image}
-      <div class="page-header">
-        <div class="title-row">
-          <Package size={20} strokeWidth={1.75} />
-          <h1>{image.name}</h1>
+      <div class="list-header detail-header">
+        <div>
+          <div class="title-row">
+            <Package size={20} strokeWidth={1.75} />
+            <h1>{image.name}</h1>
+          </div>
+          <p class="subtitle image-source">
+            <span><strong>{image.registry}</strong>/{image.repository}</span>
+            <UpstreamLink registry={image.registry} repository={image.repository} />
+          </p>
         </div>
-        <p class="subtitle">
-          <strong>{image.registry}</strong>/{image.repository}
-        </p>
+        <div class="header-actions">
+          <Button
+            variant="secondary"
+            size="sm"
+            onclick={() => (showHistoryModal = true)}
+          >
+            <History size={14} strokeWidth={2} />
+            Tag history
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onclick={() => (showActivityModal = true)}
+          >
+            <Activity size={14} strokeWidth={2} />
+            Upstream tag activity
+          </Button>
+        </div>
       </div>
 
-      <div class="card section-card details-card">
-        <h2>Details</h2>
-        <DetailRow label="Registry">{image.registry}</DetailRow>
-        <DetailRow label="Repository">
-          <span class="detail-cell-row">
-            {image.repository}
-            <UpstreamLink registry={image.registry} repository={image.repository} />
-          </span>
-        </DetailRow>
-        <GroupRow
-          {group}
-          {groupSize}
-          onManage={() => (showGroupModal = true)}
-        />
+      <PullCommand {pullInfo} imageName={image.name} />
+
+      <div class="card section-card">
+        <h2>Version</h2>
         <CurrentTagRow
           {image}
           {group}
@@ -332,7 +344,6 @@
           {/if}
         </DetailRow>
         <UpdateTrackingRow
-          {image}
           {group}
           {groupSize}
           {pinned}
@@ -340,6 +351,15 @@
           {pinError}
           onTogglePin={togglePin}
         />
+        <GroupRow
+          {group}
+          {groupSize}
+          onManage={() => (showGroupModal = true)}
+        />
+      </div>
+
+      <div class="card section-card">
+        <h2>Activity</h2>
         <DetailRow label="Last checked">
           {#if refreshStatus === "stale"}
             <span class="check-stale">
@@ -348,7 +368,9 @@
           {:else if refreshStatus === "running"}
             <RefreshingIndicator text="Checking upstream for tag changes…" />
           {:else}
-            {formatDate(image.lastChecked, "Never")}
+            <span title={image.lastChecked ? formatDate(image.lastChecked) : undefined}
+              >{formatRelativeTime(image.lastChecked, "Never")}</span
+            >
           {/if}
         </DetailRow>
         <PullActivityRow {image} />
@@ -360,62 +382,56 @@
                 <RefreshTagsButton
                   imageId={image.id}
                   onRefreshed={refreshImageDetails}
-                  variant="button"
                 />
               {/if}
             </div>
           </DetailRow>
         {/if}
-        <DetailRow label="Created">{formatDate(image.createdAt)}</DetailRow>
-        <DetailRow label="Updated">{formatDate(image.updatedAt)}</DetailRow>
-
-        <div class="record-actions">
-          <Button
-            variant="secondary"
-            size="sm"
-            onclick={() => (showHistoryModal = true)}
+        <p class="record-dates muted">
+          Created <span title={formatDate(image.createdAt)}
+            >{formatRelativeTime(image.createdAt)}</span
           >
-            <History size={14} strokeWidth={2} />
-            Tag history
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onclick={() => (showActivityModal = true)}
+          · updated <span title={formatDate(image.updatedAt)}
+            >{formatRelativeTime(image.updatedAt)}</span
           >
-            <Activity size={14} strokeWidth={2} />
-            Upstream tag activity
-          </Button>
-        </div>
+        </p>
       </div>
 
-      <PullCommandCard {pullInfo} imageName={image.name} />
+      <RunningOnCard
+        imageId={image.id}
+        refreshKey={`${image.tag}:${image.currentDigest ?? ""}`}
+      />
 
       <div class="card section-card danger-card">
         <h2>Danger zone</h2>
 
         <div class="danger-action">
-          <p class="section-hint muted">
-            Renaming changes the path clients pull from. Any client currently
-            pulling <code class="inline-code"
-              >{image.name}:{pullInfo?.virtualTag}</code
-            > will stop working immediately once renamed.
-          </p>
-          <Button variant="secondary" onclick={() => (showRenameModal = true)}>
-            <ArrowLeftRight size={16} strokeWidth={1.75} />
-            Rename virtual image
+          <div class="danger-text">
+            <strong>Rename virtual image</strong>
+            <p class="muted">
+              Changes the path clients pull from;
+              <code class="inline-code">{image.name}:{pullInfo?.virtualTag}</code>
+              stops working right away.
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onclick={() => (showRenameModal = true)}>
+            <ArrowLeftRight size={14} strokeWidth={2} />
+            Rename
           </Button>
         </div>
 
         <div class="danger-action">
-          <p class="section-hint muted">
-            Deleting this virtual image stops the proxy from resolving
-            <code class="inline-code">{image.name}:{pullInfo?.virtualTag}</code>
-            and removes its tracked tag history. This cannot be undone.
-          </p>
-          <Button variant="danger" onclick={() => (showDeleteConfirm = true)}>
-            <Trash2 size={16} strokeWidth={1.75} />
-            Delete virtual image
+          <div class="danger-text">
+            <strong>Delete virtual image</strong>
+            <p class="muted">
+              The proxy stops resolving
+              <code class="inline-code">{image.name}:{pullInfo?.virtualTag}</code>
+              and its tag history is removed. This cannot be undone.
+            </p>
+          </div>
+          <Button variant="danger" size="sm" onclick={() => (showDeleteConfirm = true)}>
+            <Trash2 size={14} strokeWidth={2} />
+            Delete
           </Button>
         </div>
       </div>
@@ -486,31 +502,16 @@
 
 
 <style>
-  .back-link {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    margin-bottom: var(--space-4);
-    font-size: 0.8125rem;
-    color: var(--color-text-muted);
-    text-decoration: none;
-  }
-
-  .back-link:hover {
-    color: var(--color-text);
-  }
-
-  .details-card :global(.detail-row:has(+ .record-actions)) {
-    border-bottom: none;
-  }
-
-  .record-actions {
+  .image-source {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-2);
-    margin-top: var(--space-3);
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--color-border);
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+  }
+
+  .record-dates {
+    margin: var(--space-3) 0 0;
+    font-size: 0.8125rem;
   }
 
   .check-error-cell {
@@ -532,23 +533,5 @@
 
   .digest {
     font-family: monospace;
-  }
-
-  .danger-card {
-    margin-bottom: 0;
-    border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
-  }
-
-  .danger-action {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-2);
-  }
-
-  .danger-action + .danger-action {
-    margin-top: var(--space-4);
-    padding-top: var(--space-4);
-    border-top: 1px solid var(--color-border);
   }
 </style>

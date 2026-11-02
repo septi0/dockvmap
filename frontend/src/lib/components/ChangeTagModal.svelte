@@ -196,7 +196,7 @@
         layout="stack"
         dimPrereleases
         searchable
-        showAge
+        showFirstSeen
         emptyMessage="No tags discovered yet. Try refreshing."
       />
     </div>

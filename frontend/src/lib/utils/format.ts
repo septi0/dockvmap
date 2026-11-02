@@ -96,6 +96,14 @@ export function toRfc3339DayEnd(date: string): string | undefined {
   return date ? new Date(`${date}T23:59:59`).toISOString() : undefined
 }
 
+export function capitalize(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
+}
+
+export function formatCount(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`
+}
+
 export function allCount(count: number): string {
   return count === 2 ? 'both' : `all ${count}`
 }
@@ -108,4 +116,8 @@ export function shortDigest(digest: string): string {
   const [algorithm, hex] = digest.split(':')
 
   return hex ? `${algorithm}:${hex.slice(0, 12)}` : digest
+}
+
+export function imageParts(image: string): string[] {
+  return image.split(/(?<=[/:@.])/)
 }

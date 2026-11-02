@@ -41,7 +41,7 @@
 <DetailRow label="Current tag">
   <div class="detail-cell">
     <span class="detail-cell-row">
-      <span class="tag-value">{image.tag}</span>
+      <span class="tag-value current-tag">{image.tag}</span>
       {#if updateAvailable && !updateBlocked}
         <Button variant="warning" size="sm" onclick={onChangeTag}>
           <ArrowUp size={14} strokeWidth={2.5} />
@@ -79,27 +79,21 @@
           Update blocked: no newer tag is available on {allImages(groupSize)}.
         {/if}
       </p>
-    {:else if updateAvailable}
+    {:else if updateAvailable && !updateAvailableTag}
       <p class="warning-text">
         <TriangleAlert size={14} strokeWidth={2} />
-        {#if updateAvailableTag}
-          Update available: {image.tag} &rarr; {updateAvailableTag}
-        {:else}
-          A newer tag is available in this tag's family.
-        {/if}
-      </p>
-    {/if}
-    {#if group}
-      <p class="tracking-hint muted">
-        Shared by {allImages(groupSize)} in this group.
+        A newer tag is available in this tag's family.
       </p>
     {/if}
   </div>
 </DetailRow>
 
 <style>
-  .tracking-hint {
-    margin: 0;
-    font-size: 0.8125rem;
+  .current-tag {
+    padding: 2px var(--space-3);
+    border-radius: 999px;
+    background: var(--color-accent-muted-bg);
+    color: var(--color-accent);
+    font-size: 0.9375rem;
   }
 </style>

@@ -109,6 +109,34 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/proxy-tokens/{id}", apiMethod(http.MethodDelete, w.apiDeleteProxyToken))
 
+	mux.HandleFunc("/hosts", func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.apiListHosts(rw, r)
+
+		case http.MethodPost:
+			w.apiCreateHost(rw, r)
+
+		default:
+			apiError(rw, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+
+	mux.HandleFunc("/hosts/{id}", func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.apiGetHost(rw, r)
+
+		case http.MethodDelete:
+			w.apiDeleteHost(rw, r)
+
+		default:
+			apiError(rw, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+
+	mux.HandleFunc("/hosts/{id}/token", apiMethod(http.MethodPost, w.apiRegenerateHostToken))
+
 	mux.HandleFunc("/images", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -123,6 +151,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("/images/inspect", apiMethod(http.MethodPost, w.apiInspectRepository))
+
+	mux.HandleFunc("/images/rollouts", apiMethod(http.MethodGet, w.apiListImageRollouts))
 
 	mux.HandleFunc("/discoveries/{id}", apiMethod(http.MethodGet, w.apiGetDiscovery))
 
@@ -142,6 +172,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/images/{id}/tags", apiMethod(http.MethodGet, w.apiGetImageTags))
 
 	mux.HandleFunc("/images/{id}/tag-history", apiMethod(http.MethodGet, w.apiGetImageTagHistory))
+
+	mux.HandleFunc("/images/{id}/hosts", apiMethod(http.MethodGet, w.apiGetImageHosts))
 
 	mux.HandleFunc("/images/{id}/refresh-tags", apiMethod(http.MethodPost, w.apiRefreshImageTags))
 

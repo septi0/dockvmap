@@ -29,25 +29,7 @@
   }
 </script>
 
-<div class="card section-card">
-  <h2>Pull command</h2>
-  <p class="section-hint muted">
-    Clients pull this virtual image using a stable tag that always
-    resolves to the version you choose above.
-  </p>
-
-  <p class="field-hint muted">
-    {#if pullInfo?.hostConfigured}
-      Host pinned via the <code class="inline-code"
-        >proxy_public_host</code
-      > config option.
-    {:else}
-      Host based on the address used to reach this page. Set <code
-        class="inline-code">proxy_public_host</code
-      > in config if clients reach the registry through a different hostname.
-    {/if}
-  </p>
-
+<div class="pull-command">
   <div class="command-row">
     <code class="command">{pullCommand}</code>
     <button
@@ -55,10 +37,19 @@
       class="icon-button bordered"
       onclick={copyPullCommand}
       aria-label="Copy pull command"
+      title="Copy pull command"
     >
       <Copy size={16} strokeWidth={1.75} />
     </button>
   </div>
+
+  {#if pullInfo && !pullInfo.hostConfigured}
+    <p class="field-hint muted">
+      Host based on the address used to reach this page. Set <code
+        class="inline-code">proxy_public_host</code
+      > in config if clients reach the registry through a different hostname.
+    </p>
+  {/if}
 
   {#if copyError}
     <p class="error">
@@ -69,8 +60,12 @@
 </div>
 
 <style>
+  .pull-command {
+    margin-bottom: var(--space-6);
+  }
+
   .field-hint {
-    margin: var(--space-1) 0 var(--space-4);
+    margin: var(--space-2) 0 0;
     font-size: 0.8125rem;
   }
 </style>

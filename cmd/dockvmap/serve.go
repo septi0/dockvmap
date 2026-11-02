@@ -74,6 +74,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 	health := service.NewHealth(db)
 	proxyUsage := service.NewProxyUsage(db)
 	proxyTokens := service.NewProxyTokens(db, audit, proxyUsage)
+	hosts := service.NewHosts(db, audit)
 	worker := service.NewWorker(db)
 	proxyMetricsHistory := service.NewProxyMetricsHistory(db)
 	metrics := proxy.NewMetrics()
@@ -128,6 +129,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Sessions:             sessions,
 		Health:               health,
 		ProxyTokens:          proxyTokens,
+		Hosts:                hosts,
 		ProxyMetricsHistory:  proxyMetricsHistory,
 		ProxyUsage:           proxyUsage,
 		Failures:             failureLog,

@@ -21,7 +21,9 @@
   import { listImages, IMAGES_PAGE_SIZE } from "../lib/api/images";
   import CopyButton from "../lib/components/CopyButton.svelte";
   import { getPullInfo } from "../lib/api/metrics";
+  import { listImageRollouts } from "../lib/api/hosts";
   import type { PullInfo } from "../lib/api/types/metrics";
+  import type { ImageRollout } from "../lib/api/types/hosts";
   import { pullCommand } from "../lib/utils/pullInfo";
   import { getImageGroup, IMAGE_GROUPS_MAX_LIMIT, listImageGroups } from "../lib/api/imageGroups";
   import { triggerTagRefresh } from "../lib/api/worker";
@@ -36,14 +38,16 @@
     type ImageStatusFilter,
   } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
-  import { formatDate, formatRelativeTime } from "../lib/utils/format";
+  import { formatCount, formatDate, formatRelativeTime, imageParts } from "../lib/utils/format";
   import { writeListQuery } from "../lib/utils/listQuery";
+  import { createVisibilityPoller } from "../lib/utils/visibilityPoller";
   import {
     createListView,
     NO_SORT,
     sortParams,
   } from "../lib/utils/listView.svelte";
   import SortableHeader from "../lib/components/SortableHeader.svelte";
+  import RolloutSummary from "../lib/components/hosts/RolloutSummary.svelte";
 
   const STATUS_OPTIONS: { value: ImageStatusFilter | ""; label: string }[] = [
     { value: "", label: "All images" },
@@ -59,9 +63,11 @@
   let tagRefreshRunning = $derived($tagRefreshStatus.data?.running ?? false);
 
   const NOT_GROUPED = "none";
+  const ROLLOUT_REFRESH_INTERVAL_MS = 15_000;
 
   let groups = $state<ImageGroup[]>([]);
   let pullInfo = $state<PullInfo | null>(null);
+  let rollouts = $state(new Map<number, ImageRollout>());
   let managedGroup = $state<ImageGroup | null>(null);
   let groupError = $state<string | null>(null);
 
@@ -109,6 +115,13 @@
     }
   }
 
+  async function loadRollouts() {
+    try {
+      const result = await listImageRollouts();
+      rollouts = new Map(result.map((r) => [r.imageId, r]));
+    } catch {}
+  }
+
   async function openGroup(id: number) {
     groupError = null;
 
@@ -128,6 +141,12 @@
 
   onMount(view.init);
   onMount(loadGroups);
+  onMount(() =>
+    createVisibilityPoller({
+      tick: loadRollouts,
+      intervalMs: ROLLOUT_REFRESH_INTERVAL_MS,
+    }).start(),
+  );
   onMount(() => {
     getPullInfo()
       .then((info) => (pullInfo = info))
@@ -177,6 +196,22 @@
     }
   }
 </script>
+
+{#snippet rolloutInfo(rollout: ImageRollout, compact: boolean)}
+  {#if rollout.total > 0}
+    <RolloutSummary {rollout} {compact} />
+  {/if}
+  {#if rollout.hostsOffline > 0}
+    <div class="source muted" title="These hosts ran this image when they were last online">
+      {formatCount(rollout.hostsOffline, "host")} offline
+    </div>
+  {/if}
+  {#if rollout.hostsDockerError > 0}
+    <div class="source muted" title="These hosts ran this image when their agent could last read Docker">
+      {formatCount(rollout.hostsDockerError, "host")} can't read Docker
+    </div>
+  {/if}
+{/snippet}
 
 <PageTitle title="Virtual Images" />
 
@@ -291,6 +326,7 @@
               direction={view.sortDirection("lastPulled")}
               onSort={() => view.toggleSort("lastPulled")}
             />
+            {#if rollouts.size > 0}<th class="phone-hidden">Deployed</th>{/if}
             <SortableHeader
               label="Update"
               direction={view.sortDirection("status")}
@@ -301,6 +337,7 @@
         </thead>
         <tbody>
           {#each view.items as image (image.id)}
+            {@const rollout = rollouts.get(image.id)}
             <tr class="clickable" onclick={(event) => openImage(event, image.id)}>
               <td>
                 <span class="name-cell">
@@ -330,8 +367,11 @@
                   {/if}
                 </span>
                 <div class="source muted phone-hidden">
-                  {image.registry}/{image.repository}
+                  {#each imageParts(`${image.registry}/${image.repository}`) as part, index (index)}{part}<wbr />{/each}
                 </div>
+                {#if rollout}
+                  <div class="phone-only source">{@render rolloutInfo(rollout, false)}</div>
+                {/if}
               </td>
               <td>{image.tag}</td>
               <td class="phone-hidden time-cell">
@@ -351,6 +391,13 @@
                   <span class="muted" title="No pull recorded yet">-</span>
                 {/if}
               </td>
+              {#if rollouts.size > 0}
+                <td class="phone-hidden time-cell">
+                  {#if rollout}
+                    {@render rolloutInfo(rollout, true)}
+                  {/if}
+                </td>
+              {/if}
               <td>
                 {#if image.pinned}
                   <span
@@ -368,9 +415,11 @@
                       : undefined}
                   >
                     <TriangleAlert size={12} strokeWidth={2} />
-                    {image.updateAvailableTag
-                      ? `Update to ${image.updateAvailableTag}`
-                      : "Update available"}
+                    {#if image.updateAvailableTag}
+                      <span>Update to <span class="badge-tag">{image.updateAvailableTag}</span></span>
+                    {:else}
+                      Update available
+                    {/if}
                   </span>
                 {:else}
                   <span class="muted">Up to date</span>
@@ -422,50 +471,16 @@
 />
 
 <style>
-  .header-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .name-cell {
-    display: inline-flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-1) var(--space-2);
-  }
-
-  .group-label {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    max-width: 180px;
-    padding: 1px var(--space-2);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-bg);
-    color: var(--color-text-muted);
-    font: inherit;
-    font-size: 0.75rem;
-    cursor: pointer;
-  }
-
-  .group-label:hover {
-    border-color: var(--color-accent);
-    color: var(--color-accent);
-  }
-
-  .group-label-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .source {
     margin-top: 2px;
     font-size: 0.8125rem;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    white-space: normal;
+  }
+
+  .badge-tag {
+    text-transform: none;
+    white-space: nowrap;
   }
 
   .copy-cell {

@@ -46,36 +46,21 @@ func applied(usage *ProxyUsage, id int64) model.Image {
 	return images[0]
 }
 
-func TestProxyUsageSeparatesRequestsFromPulls(t *testing.T) {
+func TestProxyUsageKeepsTheLatestPull(t *testing.T) {
 	usage, clock := newTestProxyUsage(&failingUsageStore{})
-	pulledAt := clock.at
 
-	usage.RecordImageRequest(1, "v2.7", true)
+	usage.RecordImagePull(1, "v2.6")
 	clock.advance(time.Minute)
-	usage.RecordImageRequest(1, "v2.7", false)
+	usage.RecordImagePull(1, "v2.7")
 
 	got := applied(usage, 1)
 
-	if got.LastRequestedAt == nil || !got.LastRequestedAt.Equal(clock.at) {
-		t.Fatalf("requested at = %v, want %v", got.LastRequestedAt, clock.at)
+	if got.LastPulledAt == nil || !got.LastPulledAt.Equal(clock.at) || *got.LastPulledTag != "v2.7" {
+		t.Fatalf("pulled = %v %v, want %v v2.7", got.LastPulledAt, got.LastPulledTag, clock.at)
 	}
 
-	if got.LastPulledAt == nil || !got.LastPulledAt.Equal(pulledAt) || *got.LastPulledTag != "v2.7" {
-		t.Fatalf("pulled = %v %v, want %v v2.7", got.LastPulledAt, got.LastPulledTag, pulledAt)
-	}
-
-	if other := applied(usage, 2); other.LastRequestedAt != nil || other.LastPulledAt != nil {
+	if other := applied(usage, 2); other.LastPulledAt != nil {
 		t.Fatalf("unrecorded image got usage: %+v", other)
-	}
-}
-
-func TestProxyUsageRequestOnlyHasNoPull(t *testing.T) {
-	usage, _ := newTestProxyUsage(&failingUsageStore{})
-
-	usage.RecordImageRequest(1, "v2.7", false)
-
-	if got := applied(usage, 1); got.LastRequestedAt == nil || got.LastPulledAt != nil || got.LastPulledTag != nil {
-		t.Fatalf("got %+v, want a request and no pull", got)
 	}
 }
 
@@ -84,7 +69,7 @@ func TestProxyUsageOverlayKeepsStoredValuesWhenNothingIsPending(t *testing.T) {
 	stored := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	tag := "v2.6"
 
-	images := []model.Image{{ID: 1, LastPulledAt: &stored, LastPulledTag: &tag, LastRequestedAt: &stored}}
+	images := []model.Image{{ID: 1, LastPulledAt: &stored, LastPulledTag: &tag}}
 	usage.ApplyToImages(images)
 
 	if images[0].LastPulledAt != &stored || images[0].LastPulledTag != &tag {
@@ -106,10 +91,9 @@ func TestProxyUsageFlushPersistsAndClears(t *testing.T) {
 	before := f.image(id)
 	usage, clock := newTestProxyUsage(f.store)
 
-	usage.RecordImageRequest(id, "v1", true)
-	usage.RecordImageRequest(other, "v1", false)
+	usage.RecordImagePull(id, "v1")
 	usage.RecordTokenUse(tokenID)
-	usage.RecordImageRequest(999, "gone", true)
+	usage.RecordImagePull(999, "gone")
 
 	if err := usage.Flush(f.ctx); err != nil {
 		t.Fatalf("flush: %v", err)
@@ -117,7 +101,7 @@ func TestProxyUsageFlushPersistsAndClears(t *testing.T) {
 
 	got := f.image(id)
 
-	if got.LastPulledAt == nil || !got.LastPulledAt.Equal(clock.at) || *got.LastPulledTag != "v1" || !got.LastRequestedAt.Equal(clock.at) {
+	if got.LastPulledAt == nil || !got.LastPulledAt.Equal(clock.at) || *got.LastPulledTag != "v1" {
 		t.Fatalf("stored usage = %+v", got)
 	}
 
@@ -125,25 +109,14 @@ func TestProxyUsageFlushPersistsAndClears(t *testing.T) {
 		t.Fatalf("updated_at changed from %v to %v", before.UpdatedAt, got.UpdatedAt)
 	}
 
-	if requestOnly := f.image(other); requestOnly.LastRequestedAt == nil || requestOnly.LastPulledAt != nil {
-		t.Fatalf("request-only image = %+v", requestOnly)
+	if untouched := f.image(other); untouched.LastPulledAt != nil {
+		t.Fatalf("image without a pull = %+v", untouched)
 	}
 
 	tokens, err := f.store.ListProxyTokens(f.ctx)
 
 	if err != nil || len(tokens) != 1 || tokens[0].LastUsedAt == nil || !tokens[0].LastUsedAt.Equal(clock.at) {
 		t.Fatalf("tokens = %+v, err = %v", tokens, err)
-	}
-
-	clock.advance(time.Hour)
-	usage.RecordImageRequest(id, "v1", false)
-
-	if err := usage.Flush(f.ctx); err != nil {
-		t.Fatalf("second flush: %v", err)
-	}
-
-	if kept := f.image(id); kept.LastPulledAt == nil || !kept.LastRequestedAt.Equal(clock.at) || kept.LastRequestedAt.Equal(*kept.LastPulledAt) {
-		t.Fatalf("a request without a pull must keep the earlier pull: %+v", kept)
 	}
 
 	if err := usage.Flush(f.ctx); err != nil {
@@ -154,27 +127,25 @@ func TestProxyUsageFlushPersistsAndClears(t *testing.T) {
 func TestProxyUsageFailedFlushKeepsEntries(t *testing.T) {
 	store := &failingUsageStore{}
 	usage, clock := newTestProxyUsage(store)
-	pulledAt := clock.at
 
-	usage.RecordImageRequest(1, "v2.7", true)
+	usage.RecordImagePull(1, "v2.7")
+	usage.RecordImagePull(2, "v1.0")
 	usage.RecordTokenUse(5)
 
 	store.during = func() {
 		clock.advance(time.Minute)
-		usage.RecordImageRequest(1, "v2.7", false)
+		usage.RecordImagePull(1, "v2.8")
 	}
 
 	if err := usage.Flush(context.Background()); err == nil {
 		t.Fatal("flush should report the store error")
 	}
 
-	got := applied(usage, 1)
-
-	if !got.LastRequestedAt.Equal(clock.at) {
-		t.Fatalf("newer request lost: %v", got.LastRequestedAt)
+	if got := applied(usage, 1); got.LastPulledAt == nil || !got.LastPulledAt.Equal(clock.at) || *got.LastPulledTag != "v2.8" {
+		t.Fatalf("newer pull lost: %+v", got)
 	}
 
-	if got.LastPulledAt == nil || !got.LastPulledAt.Equal(pulledAt) || *got.LastPulledTag != "v2.7" {
+	if got := applied(usage, 2); got.LastPulledAt == nil || *got.LastPulledTag != "v1.0" {
 		t.Fatalf("pull from the failed flush lost: %+v", got)
 	}
 
@@ -206,7 +177,7 @@ func TestProxyUsageIsSafeForConcurrentUse(t *testing.T) {
 			defer wg.Done()
 
 			for range 200 {
-				usage.RecordImageRequest(id, "v1", i%2 == 0)
+				usage.RecordImagePull(id, "v1")
 				usage.RecordTokenUse(int64(i))
 				usage.ApplyToImages([]model.Image{{ID: id}})
 			}
@@ -225,7 +196,7 @@ func TestProxyUsageIsSafeForConcurrentUse(t *testing.T) {
 		t.Fatalf("final flush: %v", err)
 	}
 
-	if got := f.image(id); got.LastRequestedAt == nil || got.LastPulledAt == nil {
+	if got := f.image(id); got.LastPulledAt == nil {
 		t.Fatalf("usage not stored: %+v", got)
 	}
 }

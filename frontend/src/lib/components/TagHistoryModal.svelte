@@ -67,7 +67,7 @@
   function sourceLabel(entry: TagHistoryEntry): string {
     if (entry.source === "created") return "Created";
 
-    const verb = entry.source === "restore" ? "Restored" : "Changed";
+    const verb = entry.source === "restore" ? "Rolled back" : "Changed";
 
     return entry.previousTag ? `${verb} from ${entry.previousTag}` : verb;
   }
@@ -81,7 +81,7 @@
       onRestored(entry.tag);
       onClose();
     } catch (err) {
-      restoreError = errorMessage(err, "Failed to restore tag");
+      restoreError = errorMessage(err, "Failed to roll back");
     } finally {
       restoring = null;
     }
@@ -92,7 +92,7 @@
   <p class="section-hint muted">
     Every tag this virtual image has pointed to, most recent first.
     {#if groupSize > 0}
-      Restoring a tag changes {allImages(groupSize)} in the group.
+      Rolling back changes {allImages(groupSize)} in the group.
     {/if}
   </p>
 
@@ -121,7 +121,7 @@
             <span class="history-source">{sourceLabel(entry)}</span>
             <span class="entry-date">{formatDate(entry.appliedAt)}</span>
           </div>
-          {#if !isCurrent}
+          {#if !isCurrent && entry.tag !== history[0].tag}
             <div class="history-action">
               <Button
                 variant="secondary"
@@ -130,7 +130,7 @@
                 onclick={() => handleRestore(entry)}
               >
                 <RotateCcw size={14} strokeWidth={2} />
-                {restoring === entry.id ? "Restoring…" : "Restore"}
+                {restoring === entry.id ? "Rolling back…" : "Roll back"}
               </Button>
               {#if !isAvailable}
                 <span class="unavailable-note muted"

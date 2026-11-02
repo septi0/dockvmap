@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { link } from "svelte-spa-router";
-  import ArrowUpRight from "@lucide/svelte/icons/arrow-up-right";
+  import ArrowUp from "@lucide/svelte/icons/arrow-up";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Layers from "@lucide/svelte/icons/layers";
   import Pin from "@lucide/svelte/icons/pin";
@@ -12,7 +12,6 @@
   import AppShell from "../lib/components/AppShell.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
-  import CopyButton from "../lib/components/CopyButton.svelte";
   import GroupPullNotice from "../lib/components/GroupPullNotice.svelte";
   import FilterBar from "../lib/components/FilterBar.svelte";
   import ImageGroupModal from "../lib/components/ImageGroupModal.svelte";
@@ -20,9 +19,6 @@
   import Pagination from "../lib/components/Pagination.svelte";
   import SearchInput from "../lib/components/SearchInput.svelte";
   import { listImageGroups } from "../lib/api/imageGroups";
-  import { getPullInfo } from "../lib/api/metrics";
-  import type { PullInfo } from "../lib/api/types/metrics";
-  import { imageReference } from "../lib/utils/pullInfo";
   import { IMAGES_MAX_LIMIT, IMAGES_PAGE_SIZE, listImages } from "../lib/api/images";
   import type { Image } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
@@ -61,7 +57,6 @@
   });
 
   let ungroupedImages = $state<Image[]>([]);
-  let pullInfo = $state<PullInfo | null>(null);
   let dismissed = $state<string[]>(readDismissed());
 
   let modalOpen = $state(false);
@@ -107,11 +102,6 @@
 
   onMount(view.init);
   onMount(loadSuggestions);
-  onMount(() => {
-    getPullInfo()
-      .then((info) => (pullInfo = info))
-      .catch(() => {});
-  });
   onMount(() => tagRefreshStatus.watch());
   onMount(() =>
     tagRefreshStatus.onCompleted(() => {
@@ -158,10 +148,6 @@
     return group.images.filter((image) => image.lastCheckError).length;
   }
 
-  function imagesHref(group: ImageGroup) {
-    return `/images?group=${group.id}`;
-  }
-
   function updatesHref(group: ImageGroup) {
     return `/updates?search=${encodeURIComponent(group.name)}`;
   }
@@ -200,7 +186,7 @@
               <span class="suggestion-name">{suggestion.name}</span>
               <span class="muted suggestion-images">
                 {suggestion.images.map((image) => image.name).join(", ")} on
-                <span class="tag-value">{suggestion.tag}</span>
+                {suggestion.tag}
               </span>
             </div>
             <Button
@@ -282,48 +268,12 @@
             {@const hidden = group.images.length - VISIBLE_MEMBERS}
             <tr class="clickable" onclick={(event) => handleRowClick(event, group)}>
               <td>
-                <button
-                  type="button"
-                  class="group-name"
-                  onclick={() => openGroup(group)}>{group.name}</button
-                >
-              </td>
-              <td class="members phone-hidden">
-                <a class="row-link" href={imagesHref(group)} use:link>
-                  {group.images
-                    .slice(0, VISIBLE_MEMBERS)
-                    .map((image) => image.name)
-                    .join(", ")}{hidden > 0 ? ` +${hidden} more` : ""}
-                </a>
-              </td>
-              <td class="phone-hidden">
-                <span class="tag-value">{group.tag}</span>
-              </td>
-              <td>
-                <span class="status">
-                  {#if group.pinned}
-                    <span class="badge badge-success">
-                      <Pin size={12} strokeWidth={2} />
-                      Pinned
-                    </span>
-                  {:else if group.updateAvailableTag}
-                    <span class="badge badge-warning">
-                      <TriangleAlert size={12} strokeWidth={2} />
-                      Update to {group.updateAvailableTag}
-                    </span>
-                  {:else if group.updateAvailable}
-                    <span
-                      class="badge badge-warning"
-                      title={group.partialTag
-                        ? `${group.partialTag.tag} is missing from ${group.partialTag.missing.join(", ")}`
-                        : undefined}
-                    >
-                      <TriangleAlert size={12} strokeWidth={2} />
-                      Update blocked
-                    </span>
-                  {:else}
-                    <span class="muted">Up to date</span>
-                  {/if}
+                <span class="name-cell">
+                  <button
+                    type="button"
+                    class="group-name"
+                    onclick={() => openGroup(group)}>{group.name}</button
+                  >
                   {#if failed > 0}
                     <span
                       class="check-error-icon"
@@ -334,25 +284,52 @@
                     </span>
                   {/if}
                 </span>
+              </td>
+              <td class="members muted phone-hidden">
+                {group.images
+                  .slice(0, VISIBLE_MEMBERS)
+                  .map((image) => image.name)
+                  .join(", ")}{hidden > 0 ? ` +${hidden} more` : ""}
+              </td>
+              <td class="phone-hidden">{group.tag}</td>
+              <td>
+                {#if group.pinned}
+                  <span class="badge badge-success">
+                    <Pin size={12} strokeWidth={2} />
+                    Pinned
+                  </span>
+                {:else if group.updateAvailableTag}
+                  <span class="badge badge-warning">
+                    <TriangleAlert size={12} strokeWidth={2} />
+                    Update to {group.updateAvailableTag}
+                  </span>
+                {:else if group.updateAvailable}
+                  <span
+                    class="badge badge-warning"
+                    title={group.partialTag
+                      ? `${group.partialTag.tag} is missing from ${group.partialTag.missing.join(", ")}`
+                      : undefined}
+                  >
+                    <TriangleAlert size={12} strokeWidth={2} />
+                    Update blocked
+                  </span>
+                {:else}
+                  <span class="muted">Up to date</span>
+                {/if}
                 <GroupPullNotice {group} />
               </td>
               <td class="actions">
-                <span class="row-tools">
-                  {#if pullInfo}
-                    {@const info = pullInfo}
-                    <span class="row-reveal"><CopyButton
-                      text={group.images.map((image) => imageReference(info, image.name)).join("\n")}
-                      label={`Copy image references for ${group.name}`}
-                      copiedMessage="Image references copied to clipboard."
-                    /></span>
-                  {/if}
-                  {#if group.updateAvailable && !group.pinned}
-                    <a class="review-link" href={updatesHref(group)} use:link>
-                      Review
-                      <ArrowUpRight size={14} strokeWidth={2} />
-                    </a>
-                  {/if}
-                </span>
+                {#if group.updateAvailable && !group.pinned}
+                  <a
+                    class="icon-button"
+                    href={updatesHref(group)}
+                    title="Review update"
+                    aria-label={`Review update for ${group.name}`}
+                    use:link
+                  >
+                    <ArrowUp size={16} strokeWidth={1.75} />
+                  </a>
+                {/if}
               </td>
             </tr>
           {/each}
@@ -444,46 +421,12 @@
     cursor: pointer;
   }
 
-  .group-name:hover {
-    text-decoration: underline;
-  }
-
   .members {
     max-width: 360px;
-  }
-
-  .row-link {
-    color: var(--color-text-muted);
-  }
-
-  .status {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
   }
 
   .actions {
     text-align: right;
     white-space: nowrap;
-  }
-
-  .row-tools {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .review-link {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    color: var(--color-accent);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    text-decoration: none;
-  }
-
-  .review-link:hover {
-    text-decoration: underline;
   }
 </style>

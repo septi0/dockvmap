@@ -1,6 +1,6 @@
 <script lang="ts">
   import Check from "@lucide/svelte/icons/check";
-  import { formatDate, formatRelativeTime } from "../utils/format";
+  import { formatDate } from "../utils/format";
   import type { Tag, TagGroup } from "../api/types/images";
 
   const SEARCH_MIN_TAGS = 12;
@@ -14,7 +14,7 @@
     emptyMessage = "No tags were found.",
     dimPrereleases = false,
     searchable = false,
-    showAge = false,
+    showFirstSeen = false,
   }: {
     tagGroups: TagGroup[];
     selectedTag?: string | null;
@@ -24,7 +24,7 @@
     emptyMessage?: string;
     dimPrereleases?: boolean;
     searchable?: boolean;
-    showAge?: boolean;
+    showFirstSeen?: boolean;
   } = $props();
 
   let expandedFamilies = $state<Set<number>>(new Set());
@@ -69,7 +69,7 @@
     return time !== null && time > firstTrackedAt;
   }
 
-  function ageTitle(tag: Tag): string {
+  function firstSeenTitle(tag: Tag): string {
     return seenSinceTracking(tag)
       ? `First seen ${formatDate(tag.firstSeen)}`
       : "Already published when tracking started";
@@ -134,18 +134,13 @@
               class="tag-chip"
               class:selected={selectedTag === tagInfo.tag}
               class:dimmed={dimPrereleases && tagInfo.prerelease}
-              title={showAge ? ageTitle(tagInfo) : undefined}
+              title={showFirstSeen ? firstSeenTitle(tagInfo) : undefined}
               onclick={() => (selectedTag = tagInfo.tag)}
             >
               {#if tagInfo.tag === currentTag}
                 <Check size={12} strokeWidth={3} />
               {/if}
               {tagInfo.tag}
-              {#if showAge && seenSinceTracking(tagInfo)}
-                <span class="tag-age">
-                  {formatRelativeTime(tagInfo.firstSeen)}
-                </span>
-              {/if}
               {#if tagInfo.new}
                 <span class="new-dot" title="New since last check"></span>
               {/if}
@@ -173,13 +168,6 @@
     z-index: 1;
     margin-bottom: var(--space-3);
     background: var(--color-surface);
-  }
-
-  .tag-age {
-    font-family: inherit;
-    font-size: 0.6875rem;
-    color: var(--color-text-muted);
-    white-space: nowrap;
   }
 
   .families {

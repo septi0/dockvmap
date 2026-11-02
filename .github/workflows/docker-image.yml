@@ -17,6 +17,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        image:
+          - suffix: ""
+            dockerfile: Dockerfile
+          - suffix: "-agent"
+            dockerfile: Dockerfile.agent
+        platform: [linux/amd64, linux/arm64]
         include:
           - platform: linux/amd64
             runner: ubuntu-24.04
@@ -31,10 +37,11 @@ jobs:
       packages: write
 
     steps:
-      - name: Prepare platform pair
+      - name: Prepare image and platform names
         run: |
           platform=${{ matrix.platform }}
           echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
+          echo "IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.image.suffix }}" >> "$GITHUB_ENV"
 
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,7 +52,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v4
@@ -62,11 +69,12 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: ${{ matrix.image.dockerfile }}
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}
-          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}
-          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ env.PLATFORM_PAIR }}${{ matrix.image.suffix }}
+          cache-to: type=gha,mode=max,scope=${{ env.PLATFORM_PAIR }}${{ matrix.image.suffix }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -77,12 +85,17 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests-${{ env.PLATFORM_PAIR }}
+          name: digests${{ matrix.image.suffix }}-${{ env.PLATFORM_PAIR }}
           path: ${{ runner.temp }}/digests/*
           if-no-files-found: error
           retention-days: 1
 
   merge:
+    strategy:
+      fail-fast: false
+      matrix:
+        suffix: ["", "-agent"]
+
     runs-on: ubuntu-24.04
     needs: build
     timeout-minutes: 15
@@ -92,11 +105,14 @@ jobs:
       packages: write
 
     steps:
+      - name: Prepare image name
+        run: echo "IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}${{ matrix.suffix }}" >> "$GITHUB_ENV"
+
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
           path: ${{ runner.temp }}/digests
-          pattern: digests-*
+          pattern: digests${{ matrix.suffix }}-linux-*
           merge-multiple: true
 
       - name: Login to GitHub Container Registry
@@ -113,7 +129,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -123,8 +139,8 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
 
       - name: Inspect image
         run: |
-          docker buildx imagetools inspect ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ${{ env.IMAGE }}:${{ steps.meta.outputs.version }}

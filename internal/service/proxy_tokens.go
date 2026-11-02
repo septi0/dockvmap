@@ -2,9 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,8 +10,6 @@ import (
 )
 
 var ErrInvalidProxyToken = errors.New("invalid proxy token")
-
-const proxyTokenBytes = 32
 
 const maxProxyTokenLabelLength = 100
 
@@ -55,13 +50,13 @@ func (p *ProxyTokens) Create(ctx context.Context, label string) (int64, string, 
 		return 0, "", fmt.Errorf("%w: label must be at most %d characters", ErrInvalidProxyToken, maxProxyTokenLabelLength)
 	}
 
-	token, err := generateProxyToken()
+	token, err := generateSecretToken()
 
 	if err != nil {
 		return 0, "", err
 	}
 
-	id, err := p.store.CreateProxyToken(ctx, label, hashProxyToken(token))
+	id, err := p.store.CreateProxyToken(ctx, label, hashSecretToken(token))
 
 	if err != nil {
 		return 0, "", err
@@ -81,7 +76,7 @@ func (p *ProxyTokens) Verify(ctx context.Context, token string) (bool, error) {
 		return false, nil
 	}
 
-	id, found, err := p.store.ProxyTokenIDByHash(ctx, hashProxyToken(token))
+	id, found, err := p.store.ProxyTokenIDByHash(ctx, hashSecretToken(token))
 
 	if err != nil || !found {
 		return false, err
@@ -120,19 +115,4 @@ func (p *ProxyTokens) Delete(ctx context.Context, id int64) (bool, error) {
 	recordAudit(ctx, p.audit, AuditTypeProxyTokenDeleted, auditProxyTokenData{Label: token.Label})
 
 	return true, nil
-}
-
-func generateProxyToken() (string, error) {
-	buf := make([]byte, proxyTokenBytes)
-
-	if _, err := rand.Read(buf); err != nil {
-		return "", fmt.Errorf("generating proxy token: %w", err)
-	}
-
-	return hex.EncodeToString(buf), nil
-}
-
-func hashProxyToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
 }

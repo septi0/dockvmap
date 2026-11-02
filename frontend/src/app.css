@@ -407,6 +407,11 @@ select.filter-control {
   }
 }
 
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .icon-button.danger:hover {
   color: var(--color-danger);
 }
@@ -440,6 +445,11 @@ select.filter-control {
 .badge-warning {
   background: var(--color-warning-bg);
   color: var(--color-warning);
+}
+
+.badge-danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
 }
 
 .badge-success {
@@ -584,7 +594,6 @@ select.filter-control {
 .tag-value {
   font-family: monospace;
   font-weight: 600;
-  color: var(--color-accent);
 }
 
 .row-link {
@@ -617,6 +626,20 @@ select.filter-control {
   margin: 0;
 }
 
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--color-text);
+}
+
 .page-header {
   margin-bottom: var(--space-6);
 }
@@ -634,6 +657,20 @@ select.filter-control {
   margin-bottom: var(--space-4);
 }
 
+/* detail-page header: title and facts on the left, actions on the right */
+.detail-header {
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.header-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .subtitle {
   margin: 0;
   color: var(--color-text-muted);
@@ -648,6 +685,52 @@ select.filter-control {
   margin: 0 0 var(--space-4);
 }
 
+.heading-with-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.heading-count {
+  font-size: 0.875rem;
+  font-weight: 400;
+}
+
+/* Danger zone card on detail pages: one row per action, button on the right */
+.danger-card {
+  margin-bottom: 0;
+  border-color: color-mix(in srgb, var(--color-danger) 40%, transparent);
+}
+
+.danger-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.danger-action + .danger-action {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.danger-text {
+  font-size: 0.875rem;
+}
+
+.danger-text p {
+  margin: 2px 0 0;
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 768px) {
+  .danger-action {
+    flex-wrap: wrap;
+  }
+}
+
 .section-hint {
   margin: 0 0 var(--space-4);
   font-size: 0.875rem;
@@ -660,6 +743,7 @@ select.filter-control {
 }
 
 .modal-actions.split {
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
 }
@@ -668,8 +752,10 @@ select.filter-control {
   margin-top: var(--space-4);
 }
 
+.modal-actions-left,
 .modal-actions-right {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-2);
 }
 
@@ -761,6 +847,63 @@ select.filter-control {
   cursor: pointer;
 }
 
+.state-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-muted);
+}
+
+.state-dot.running {
+  background: var(--color-success);
+}
+
+.state-dot.warning {
+  background: var(--color-warning);
+}
+
+.state-dot.failed {
+  background: var(--color-danger);
+}
+
+.name-cell {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+}
+
+.host-name {
+  font-weight: 500;
+}
+
+.group-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 180px;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.group-label:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.group-label-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .table .check-error-icon {
   display: inline-flex;
   color: var(--color-danger);
@@ -833,9 +976,17 @@ select.filter-control {
   }
 }
 
+.phone-only {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .phone-hidden {
     display: none;
+  }
+
+  .phone-only {
+    display: block;
   }
 
   .list-header,

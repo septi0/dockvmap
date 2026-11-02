@@ -14,7 +14,6 @@ export interface Image {
   pinned: boolean
   refreshStatus: 'idle' | 'running'
   group?: { id: number; name: string }
-  lastRequestedAt?: string
   lastPulledAt?: string
   lastPulledTag?: string
   currentDigest?: string

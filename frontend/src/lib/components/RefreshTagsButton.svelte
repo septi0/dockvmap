@@ -9,14 +9,12 @@
     imageId,
     onRefreshed,
     label = "Refresh tags",
-    variant = "link",
   }: {
     imageId: number;
     onRefreshed?: (
       status: "refreshed" | "running",
     ) => void | Promise<void>;
     label?: string;
-    variant?: "link" | "button";
   } = $props();
 
   let refreshing = $state(false);
@@ -49,41 +47,16 @@
   }
 </script>
 
-{#if variant === "button"}
-  <Button variant="secondary" size="sm" disabled={refreshing} onclick={refresh}>
-    <span class="icon" class:spin={refreshing}><RefreshCw size={14} strokeWidth={2} /></span>
-    {label}
-  </Button>
-{:else}
-  <button type="button" class="text-button" disabled={refreshing} onclick={refresh}>
-    <span class="icon" class:spin={refreshing}><RefreshCw size={14} strokeWidth={2} /></span>
-    {label}
-  </button>
-{/if}
+<Button variant="secondary" size="sm" disabled={refreshing} onclick={refresh}>
+  <span class="icon" class:spin={refreshing}><RefreshCw size={14} strokeWidth={2} /></span>
+  {label}
+</Button>
 
 {#if error}
   <span class="refresh-error">{error}</span>
 {/if}
 
 <style>
-  .text-button {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-    background: none;
-    border: none;
-    padding: 0;
-    font: inherit;
-    font-size: 0.8125rem;
-    color: var(--color-accent);
-    cursor: pointer;
-  }
-
-  .text-button:disabled {
-    cursor: default;
-    opacity: 0.6;
-  }
-
   .icon {
     display: inline-flex;
   }

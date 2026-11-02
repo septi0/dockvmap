@@ -5,11 +5,9 @@
   import DetailRow from "../DetailRow.svelte";
   import Button from "../Button.svelte";
   import { allImages } from "../../utils/format";
-  import type { Image } from "../../api/types/images";
   import type { ImageGroup } from "../../api/types/imageGroups";
 
   let {
-    image,
     group,
     groupSize,
     pinned,
@@ -17,7 +15,6 @@
     pinError,
     onTogglePin,
   }: {
-    image: Image;
     group: ImageGroup | null;
     groupSize: number;
     pinned: boolean;
@@ -32,14 +29,18 @@
 <DetailRow label="Update tracking">
   <div class="detail-cell">
     <span class="detail-cell-row">
-      <span class="tracking-state" class:is-pinned={pinned}>
-        {#if pinned}
+      {#if pinned}
+        <span class="tracking-state is-pinned">
           <Pin size={14} strokeWidth={2} />
           Pinned to the current tag
-        {:else}
-          Tracking new versions
-        {/if}
-      </span>
+        </span>
+      {:else}
+        <span
+          class="tracking-state"
+          title="Newer tags in this tag's family are flagged as an available update and included in tag notification emails."
+          >Tracking new versions</span
+        >
+      {/if}
       <Button
         variant="secondary"
         size="sm"
@@ -55,18 +56,14 @@
         {/if}
       </Button>
     </span>
-    <p class="tracking-hint muted">
-      {#if group}
-        Pinning applies to {allImages(groupSize)} in this group.
-      {:else if image.pinned}
-        Upstream tags are still fetched, but newer versions aren't
-        flagged as an available update or sent in tag notification
-        emails.
-      {:else}
-        Newer tags in this tag's family are flagged as an available
-        update and included in tag notification emails.
-      {/if}
-    </p>
+    {#if pinned}
+      <p class="tracking-hint muted">
+        Upstream tags are still fetched, but newer versions aren't flagged
+        as an available update or sent in tag notification emails{group
+          ? `, for ${allImages(groupSize)} in this group`
+          : ""}.
+      </p>
+    {/if}
     {#if pinError}
       <p class="error">
         <TriangleAlert size={16} strokeWidth={2} />

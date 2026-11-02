@@ -42,6 +42,14 @@ docker pull dockvmap.local/myapp:current
   <img src="docs/screenshots/image-details.png" width="800" alt="Virtual image details page">
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/updates.png" width="800" alt="Updates page with groups and images that have a newer tag">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/hosts.png" width="800" alt="Hosts page with agent status, containers and deployed counts">
+</p>
+
 ## Features
 
 - **Virtual tag proxying**: OCI Distribution API proxy (`/v2/...`) that transparently resolves a stable tag to whatever real tag an image is currently pinned to.
@@ -55,7 +63,8 @@ docker pull dockvmap.local/myapp:current
 - **Web UI**: Svelte SPA for managing registries, virtual images, and reviewing what changed and when.
 - **Notifications**: digest emails (SMTP) and/or generic webhooks when a tracked image's tags change. Email volume is selectable per account (every tag change / only when an upgrade becomes available / off); webhooks always fire and carry an `updateAvailable` flag.
 - **Optional blob cache**: on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.
-- **Pull tracking**: when each image was last pulled through the proxy and which real tag clients got, with a warning when nobody has pulled since the last tag change. Groups show how many members were pulled on the shared tag. Each proxy token shows when it was last used, with a warning once it has gone unused for over 90 days.
+- **Hosts**: a small read-only agent on each Docker host reports its containers, so you see what runs where, with state, health, stacks and ports, and which containers pulled through DockVMap are outdated or pulled but not recreated. See [Hosts and the agent](#hosts-and-the-agent).
+- **Pull tracking**: when each image was last pulled through the proxy and which real tag clients got, with a warning when nobody has pulled since the last tag change. A pull that downloads nothing new isn't recorded, so after rolling back to a version your hosts already have, the warning stays until the next real download. Groups show how many members were pulled on the shared tag. Each proxy token shows when it was last used, with a warning once it has gone unused for over 90 days.
 - **Proxy authentication**: optional HTTP Basic Auth (via issued tokens) in front of the registry proxy itself.
 - **Audit log**: every state-changing action recorded, with resolved client IP and actor.
 
@@ -66,6 +75,8 @@ One binary, one SQLite database, three things running inside it:
 - a **proxy server** implementing the OCI Distribution API,
 - a **web server** serving the REST management API and the embedded frontend,
 - a **background worker** doing tag refresh, notifications, and cleanup on independent schedules.
+
+The optional host agent is a separate binary and image, run on each Docker host you want to see.
 
 ## Quick start
 
@@ -82,7 +93,7 @@ Open the web UI at `http://localhost:8080`. The first visit walks you through cr
 
 Pass any config as `DOCKVMAP_*` environment variables (`-e DOCKVMAP_TRUSTED_PROXIES=gateway`, etc.; see [Configuration](#configuration) for the keys). A credential encryption key is generated and persisted to the volume on first run, so registries that require auth work with no upfront setup.
 
-Images for `linux/amd64` and `linux/arm64` are published to `ghcr.io/septi0/dockvmap` on every `v*.*.*` tag, as `latest`, `MAJOR.MINOR`, and the full version.
+Images for `linux/amd64` and `linux/arm64` are published to `ghcr.io/septi0/dockvmap` and, for the host agent, `ghcr.io/septi0/dockvmap-agent` on every `v*.*.*` tag, as `latest`, `MAJOR.MINOR`, and the full version.
 
 ### Docker Compose
 
@@ -95,7 +106,7 @@ Run without Docker. Requires Go 1.25+ and Node.js for the frontend build.
 ```bash
 git clone https://github.com/septi0/dockvmap.git
 cd dockvmap
-make build          # builds the frontend, embeds it, builds bin/dockvmap
+make build          # builds the frontend, embeds it, builds bin/dockvmap and bin/dockvmap-agent
 mkdir -p data
 cp config.sample.yaml data/config.yaml
 ./bin/dockvmap -config data/config.yaml
@@ -113,6 +124,64 @@ When a reverse proxy terminates TLS and forwards to the web UI on `:8080`:
 - Stop publishing `:8080` to the host, so the proxy is the only route in.
 
 Skip both and anything that can reach `:8080` directly can forge `X-Forwarded-For`, defeating client-IP logging and login rate limiting.
+
+## Hosts and the agent
+
+See which containers run on each Docker host, and whether the ones pulled through DockVMap run the version it points to. A small agent on each host reads Docker and reports to DockVMap. The agent only connects out, so DockVMap never needs access to your hosts, and it never changes anything on them.
+
+### Setup
+
+1. On the **Hosts** page, click **Add host** and give it a name. DockVMap shows the host's token once, with a ready-to-use compose file.
+2. Run the agent on that host: copy `compose.agent.sample.yaml` to `compose.yaml`, set `DOCKVMAP_URL` and the token, and `docker compose up -d`.
+3. The host shows as Online within seconds. Lost the token? **Regenerate token** on the host's page replaces it, and the old one stops working right away.
+
+### Agent settings
+
+All settings are environment variables on the agent.
+
+| Variable | Default | Description |
+|---|---|---|
+| `DOCKVMAP_URL` | none | Required. DockVMap's web UI address, the same one you open in a browser (not the registry proxy port). |
+| `DOCKVMAP_AGENT_TOKEN` | none | The host's token from the Hosts page. Required unless `DOCKVMAP_AGENT_TOKEN_FILE` is set. |
+| `DOCKVMAP_AGENT_TOKEN_FILE` | none | Read the token from a file instead, e.g. a Docker secret. Set this or `DOCKVMAP_AGENT_TOKEN`, not both. |
+| `DOCKVMAP_CA_FILE` | none | PEM certificate to trust in addition to the system ones, for DockVMap behind a private CA or a self-signed certificate. |
+| `DOCKVMAP_AGENT_PROXY_ONLY` | `false` | Report only containers whose image comes through DockVMap's proxy. |
+| `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker to read: a `unix://` socket, or `tcp://` to a socket proxy. |
+| `DOCKVMAP_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. |
+
+Use `https://` whenever the agent reaches DockVMap over a network you don't trust. `http://` works for a DockVMap without TLS, but the token travels unencrypted, and the agent logs a warning at startup.
+
+### Docker access
+
+The agent only reads from Docker: containers, images, system info and events. Mounting the socket with `:ro` doesn't limit what can be done through it, so for strictly read-only access put a socket proxy in front, for example [tecnativa/docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) with `CONTAINERS=1 IMAGES=1 INFO=1 EVENTS=1 VERSION=1`, then set `DOCKER_HOST: tcp://socket-proxy:2375` and drop the socket mount. The sample compose file shows where.
+
+### What it reports
+
+- **The host**: hostname, OS, architecture, CPUs, memory and Docker version.
+- **Each container**: name, image, state and health, exit code, compose project and service, when it was created, started and stopped, and its published ports.
+
+Never environment variables, mounts, other labels or logs. The agent sends a full report only when something changed, seconds after a Docker event, and otherwise a small heartbeat every minute. A host not heard from for 3 minutes shows as Offline, with the containers it had when it was last online.
+
+### Versions
+
+A container whose image comes through DockVMap's proxy, like `dockvmap.local:5000/myapp:current`, is matched to its virtual image by digest and shows as **Up to date**, **Outdated**, or **Pulled, not recreated** (the new version is on the host, but the container still runs the old one). A container using another tag through the proxy shows which tag it is pinned to.
+
+Image details lists every host and container running that image. The Virtual Images and Hosts lists show how many containers run the current version in a Deployed column, like "5/8", and the dashboard counts what is outdated. Numbers refresh by themselves, so you can watch a deploy reach every host. Only running or crash-looping containers that use the virtual tag count: a pinned or stopped container stays visible but never holds the number back. Hosts that are offline or can't read Docker can't be checked, so Virtual Images shows how many were left out, and why.
+
+A host's crashed badge counts containers that keep restarting or crashed in the last 7 days. Exit codes 137 and 143 come from a normal `docker stop`, so they don't count.
+
+Matching uses the proxy address clients pull from, so set [`proxy_public_host`](#networking); without it, DockVMap guesses from the address you opened the web UI on.
+
+### Limits
+
+- Docker Engine 20.10 or newer (API 1.41). Podman is untested.
+- Docker over TLS with client certificates isn't supported; use the local socket, or a socket proxy over `tcp://`.
+- Up to 1000 containers and 2000 images per host.
+- Agents don't need updating on every DockVMap release. If a new release can't work with an older agent, that host shows as **Update agent** until you update it.
+
+### Build from source
+
+`make build-agent` builds `bin/dockvmap-agent`, one static binary with no dependencies, configured by the same environment variables. `Dockerfile.agent` builds the agent image.
 
 ## Configuration
 
@@ -144,7 +213,7 @@ Bind addresses are where DockVMap listens; `proxy_public_host` is only what the 
 | Key | Default | Description |
 |---|---|---|
 | `proxy_server_listen` | `:5000` | Registry proxy bind address. Serves HTTPS in place when `tls.enabled` is true. |
-| `proxy_public_host` | none | Host clients use in `docker pull`, shown in the web UI's pull instructions. May include a port (`registry.example.com:5050`) to override `proxy_server_listen`'s port too, for when the publicly reachable port differs from the bind port. Unset lets the web UI guess from the browser's request host, which can be wrong behind a reverse proxy. |
+| `proxy_public_host` | none | Host clients use in `docker pull`, shown in the web UI's pull instructions. May include a port (`registry.example.com:5050`) to override `proxy_server_listen`'s port too, for when the publicly reachable port differs from the bind port. Port 443 is left out of pull commands. Unset lets the web UI guess from the browser's request host, which can be wrong behind a reverse proxy. |
 | `proxy_access_log` | `true` | Write one structured log line per `/v2/...` request (method, path, status, bytes, duration, client address, resolved virtual image and upstream registry/repo/tag, cache hit or miss). Lines carry `component=proxy` for filtering. Set `false` to silence per-request logging without changing the global log level. |
 | `web_server_http_listen` | `:8080` | Web UI/API bind address, used when `tls.enabled` is false. |
 | `web_server_https_listen` | `:8443` | Web UI/API bind address, used when `tls.enabled` is true. |

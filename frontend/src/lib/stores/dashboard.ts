@@ -43,5 +43,6 @@ export const dashboardSections = derived(dashboardStore, (state) => {
     issues: view(state.data?.issues),
     activity: view(state.data?.activity),
     metrics: view(state.data?.metrics),
+    hosts: view(state.data?.hosts),
   }
 })

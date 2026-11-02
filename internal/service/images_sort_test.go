@@ -33,9 +33,9 @@ func TestImageListSorting(t *testing.T) {
 	}
 
 	usage, clock := newTestProxyUsage(f.store)
-	usage.RecordImageRequest(bravo, "1.0.0", true)
+	usage.RecordImagePull(bravo, "1.0.0")
 	clock.advance(time.Hour)
-	usage.RecordImageRequest(delta, "1.0.0", true)
+	usage.RecordImagePull(delta, "1.0.0")
 
 	if err := usage.Flush(f.ctx); err != nil {
 		t.Fatalf("flush: %v", err)

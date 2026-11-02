@@ -34,15 +34,17 @@ func IsValidFailureSource(s string) bool {
 }
 
 type Failure struct {
-	Source     FailureSource
-	Detail     string
-	Error      string
-	OccurredAt time.Time
+	Source      FailureSource
+	Detail      string
+	Error       string
+	OccurredAt  time.Time
+	Occurrences int
 }
 
 type failureLogStore interface {
 	InsertBackgroundFailure(ctx context.Context, source, detail, errText string) error
 	ListBackgroundFailures(ctx context.Context, filters model.BackgroundFailureListFilters) ([]model.BackgroundFailure, error)
+	ListLatestDistinctBackgroundFailures(ctx context.Context, limit int) ([]model.BackgroundFailure, error)
 	CountBackgroundFailures(ctx context.Context, filters model.BackgroundFailureListFilters) (int64, error)
 	DeleteBackgroundFailuresBefore(ctx context.Context, cutoff time.Time) (int64, error)
 }
@@ -75,18 +77,33 @@ func (l *FailureLog) List(ctx context.Context, filters model.BackgroundFailureLi
 		return nil, err
 	}
 
+	return failuresFromRows(rows), nil
+}
+
+func (l *FailureLog) LatestDistinct(ctx context.Context, limit int) ([]Failure, error) {
+	rows, err := l.store.ListLatestDistinctBackgroundFailures(ctx, limit)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return failuresFromRows(rows), nil
+}
+
+func failuresFromRows(rows []model.BackgroundFailure) []Failure {
 	failures := make([]Failure, len(rows))
 
 	for i, row := range rows {
 		failures[i] = Failure{
-			Source:     FailureSource(row.Source),
-			Detail:     row.Detail,
-			Error:      row.Error,
-			OccurredAt: row.OccurredAt,
+			Source:      FailureSource(row.Source),
+			Detail:      row.Detail,
+			Error:       row.Error,
+			OccurredAt:  row.OccurredAt,
+			Occurrences: row.Occurrences,
 		}
 	}
 
-	return failures, nil
+	return failures
 }
 
 func (l *FailureLog) Count(ctx context.Context, filters model.BackgroundFailureListFilters) (int64, error) {

@@ -15,6 +15,8 @@ import Groups from './routes/Groups.svelte'
 import TagActivity from './routes/TagActivity.svelte'
 import System from './routes/System.svelte'
 import ProxyTokens from './routes/ProxyTokens.svelte'
+import Hosts from './routes/Hosts.svelte'
+import HostDetails from './routes/HostDetails.svelte'
 import Profile from './routes/Profile.svelte'
 import NotFound from './routes/NotFound.svelte'
 
@@ -61,6 +63,8 @@ export default {
   '/images/:id': wrap({ component: ImageDetails, conditions: [requireAuth] }),
   '/updates': wrap({ component: Updates, conditions: [requireAuth] }),
   '/groups': wrap({ component: Groups, conditions: [requireAuth] }),
+  '/hosts': wrap({ component: Hosts, conditions: [requireAuth] }),
+  '/hosts/:id': wrap({ component: HostDetails, conditions: [requireAuth] }),
   '/tag-activity': wrap({ component: TagActivity, conditions: [requireAuth] }),
   '/system': wrap({ component: System, conditions: [requireAuth] }),
   '/system/:tab': wrap({ component: System, conditions: [requireAuth] }),

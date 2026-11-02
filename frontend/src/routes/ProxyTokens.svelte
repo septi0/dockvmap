@@ -151,7 +151,9 @@
           {#each tokens as token (token.id)}
             <tr>
               <td>{token.label}</td>
-              <td>{formatDate(token.createdAt)}</td>
+              <td class="time-cell">
+                <span title={formatDate(token.createdAt)}>{formatRelativeTime(token.createdAt)}</span>
+              </td>
               {#if proxyAuthEnabled}
                 <td>
                   {#if token.lastUsedAt}

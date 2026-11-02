@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
+	"github.com/septi0/dockvmap/internal/service"
 )
 
 const (
@@ -52,12 +53,19 @@ type dashboardIssuesData struct {
 	Total    int64             `json:"total"`
 }
 
+type dashboardHostsData struct {
+	Online   int `json:"online"`
+	Total    int `json:"total"`
+	Outdated int `json:"outdated"`
+}
+
 type dashboardResponse struct {
 	Summary  dashboardSection[dashboardSummaryData]  `json:"summary"`
 	Updates  dashboardSection[dashboardUpdatesData]  `json:"updates"`
 	Issues   dashboardSection[dashboardIssuesData]   `json:"issues"`
 	Activity dashboardSection[dashboardActivityData] `json:"activity"`
 	Metrics  dashboardSection[proxyMetricsResponse]  `json:"metrics"`
+	Hosts    dashboardSection[dashboardHostsData]    `json:"hosts"`
 }
 
 func (w *Web) apiDashboard(rw http.ResponseWriter, r *http.Request) {
@@ -66,17 +74,38 @@ func (w *Web) apiDashboard(rw http.ResponseWriter, r *http.Request) {
 	var resp dashboardResponse
 	var wg sync.WaitGroup
 
-	wg.Add(5)
+	wg.Add(6)
 
 	go func() { defer wg.Done(); resp.Summary = w.dashboardSummary(ctx) }()
 	go func() { defer wg.Done(); resp.Updates = w.dashboardUpdates(ctx) }()
 	go func() { defer wg.Done(); resp.Issues = w.dashboardIssues(ctx) }()
 	go func() { defer wg.Done(); resp.Activity = w.dashboardActivity(ctx) }()
 	go func() { defer wg.Done(); resp.Metrics = w.dashboardMetrics(ctx) }()
+	go func() { defer wg.Done(); resp.Hosts = w.dashboardHosts(ctx, w.proxyTarget(r)) }()
 
 	wg.Wait()
 
 	apiJSON(rw, http.StatusOK, resp)
+}
+
+func (w *Web) dashboardHosts(ctx context.Context, proxy service.ProxyTarget) dashboardSection[dashboardHostsData] {
+	hosts, err := w.hosts.List(ctx, proxy)
+
+	if err != nil {
+		return dashboardError[dashboardHostsData]("failed to load hosts")
+	}
+
+	data := dashboardHostsData{Total: len(hosts)}
+
+	for _, host := range hosts {
+		if host.Current() {
+			data.Online++
+		}
+
+		data.Outdated += host.Rollout.Outdated()
+	}
+
+	return dashboardData(data)
 }
 
 func (w *Web) dashboardSummary(ctx context.Context) dashboardSection[dashboardSummaryData] {
@@ -152,7 +181,7 @@ func (w *Web) dashboardIssues(ctx context.Context) dashboardSection[dashboardIss
 		Pagination: model.Pagination{Offset: 0, Limit: dashboardIssuesLimit},
 	}
 
-	failures, err := w.failures.List(ctx, filters)
+	failures, err := w.failures.LatestDistinct(ctx, dashboardIssuesLimit)
 
 	if err != nil {
 		return dashboardError[dashboardIssuesData]("failed to load recent issues")

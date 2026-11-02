@@ -30,22 +30,13 @@ func NewProxyUsage(store proxyUsageStore) *ProxyUsage {
 	}
 }
 
-func (u *ProxyUsage) RecordImageRequest(imageID int64, tag string, pulled bool) {
+func (u *ProxyUsage) RecordImagePull(imageID int64, tag string) {
 	now := u.now().UTC()
 
 	u.mu.Lock()
 	defer u.mu.Unlock()
 
-	usage := u.images[imageID]
-	usage.ImageID = imageID
-	usage.RequestedAt = now
-
-	if pulled {
-		usage.PulledAt = &now
-		usage.PulledTag = tag
-	}
-
-	u.images[imageID] = usage
+	u.images[imageID] = model.ImageUsage{ImageID: imageID, PulledAt: now, PulledTag: tag}
 }
 
 func (u *ProxyUsage) RecordTokenUse(tokenID int64) {
@@ -94,19 +85,9 @@ func (u *ProxyUsage) restore(images map[int64]model.ImageUsage, tokens map[int64
 	defer u.mu.Unlock()
 
 	for id, older := range images {
-		newer, ok := u.images[id]
-
-		if !ok {
+		if _, ok := u.images[id]; !ok {
 			u.images[id] = older
-			continue
 		}
-
-		if newer.PulledAt == nil {
-			newer.PulledAt = older.PulledAt
-			newer.PulledTag = older.PulledTag
-		}
-
-		u.images[id] = newer
 	}
 
 	for id, usedAt := range tokens {
@@ -121,19 +102,9 @@ func (u *ProxyUsage) ApplyToImages(images []model.Image) {
 	defer u.mu.Unlock()
 
 	for i := range images {
-		usage, ok := u.images[images[i].ID]
-
-		if !ok {
-			continue
-		}
-
-		requestedAt := usage.RequestedAt
-		images[i].LastRequestedAt = &requestedAt
-
-		if usage.PulledAt != nil {
-			pulledAt, pulledTag := *usage.PulledAt, usage.PulledTag
-			images[i].LastPulledAt = &pulledAt
-			images[i].LastPulledTag = &pulledTag
+		if usage, ok := u.images[images[i].ID]; ok {
+			images[i].LastPulledAt = &usage.PulledAt
+			images[i].LastPulledTag = &usage.PulledTag
 		}
 	}
 }

@@ -1,0 +1,20 @@
+name: dockvmap-agent
+
+services:
+  dockvmap-agent:
+    image: ghcr.io/septi0/dockvmap-agent:latest
+    restart: unless-stopped
+
+    # add the host on the Hosts page in dockvmap first; it shows this host's token once
+    environment:
+      DOCKVMAP_URL: https://dockvmap.example.com
+      DOCKVMAP_AGENT_TOKEN: paste-the-token-here
+      # DOCKVMAP_AGENT_TOKEN_FILE: /run/secrets/dockvmap_agent_token   # instead of the token itself
+      # DOCKVMAP_CA_FILE: /certs/ca.pem                                  # private CA or self-signed certificate
+      # DOCKVMAP_AGENT_PROXY_ONLY: "true"                                # report only containers pulled through the proxy
+
+    # the agent only reads from Docker; for a strictly read-only setup, run a docker socket proxy
+    # (e.g. tecnativa/docker-socket-proxy with CONTAINERS=1 IMAGES=1 INFO=1 EVENTS=1 VERSION=1),
+    # set DOCKER_HOST: tcp://socket-proxy:2375 and drop this mount
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro

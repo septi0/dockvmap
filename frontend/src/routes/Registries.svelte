@@ -2,15 +2,12 @@
   import { onMount } from "svelte";
   import Plus from "@lucide/svelte/icons/plus";
   import Server from "@lucide/svelte/icons/server";
-  import Pencil from "@lucide/svelte/icons/pencil";
-  import Trash2 from "@lucide/svelte/icons/trash-2";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
   import RegistryModal from "../lib/components/RegistryModal.svelte";
-  import ConfirmDialog from "../lib/components/ConfirmDialog.svelte";
-  import { listRegistries, deleteRegistry } from "../lib/api/registries";
+  import { listRegistries } from "../lib/api/registries";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
   import type { Registry } from "../lib/api/types/registries";
@@ -21,9 +18,6 @@
   let error = $state<string | null>(null);
   let showCreateModal = $state(false);
   let editingRegistry = $state<Registry | null>(null);
-  let deletingRegistry = $state<Registry | null>(null);
-  let deleteError = $state<string | null>(null);
-  let deleting = $state(false);
   let loadToken = 0;
 
   async function load() {
@@ -53,28 +47,15 @@
     toast.success(`Registry "${registry.registry}" ${action}.`);
   }
 
-  function cancelDelete() {
-    deletingRegistry = null;
-    deleteError = null;
+  function handleRowClick(event: MouseEvent, registry: Registry) {
+    if ((event.target as HTMLElement).closest("a, button")) return;
+    editingRegistry = registry;
   }
 
-  async function handleDelete() {
-    if (!deletingRegistry) return;
-
-    deleteError = null;
-    deleting = true;
-
-    try {
-      const deletedName = deletingRegistry.registry;
-      await deleteRegistry(deletingRegistry.id);
-      deletingRegistry = null;
-      await load();
-      toast.success(`Registry "${deletedName}" deleted.`);
-    } catch (err) {
-      deleteError = errorMessage(err, "Failed to delete registry");
-    } finally {
-      deleting = false;
-    }
+  async function handleDeleted(registry: Registry) {
+    editingRegistry = null;
+    await load();
+    toast.success(`Registry "${registry.registry}" deleted.`);
   }
 </script>
 
@@ -98,7 +79,7 @@
     {error}
     empty={registries.length === 0}
     emptyMessage="No registries yet. Add one to start tracking virtual images."
-    columns={5}
+    columns={4}
   >
     {#snippet emptyAction()}
       <Button onclick={() => (showCreateModal = true)}>
@@ -115,13 +96,18 @@
             <th class="phone-hidden">Username</th>
             <th>Authentication</th>
             <th class="phone-hidden">Options</th>
-            <th></th>
           </tr>
         </thead>
         <tbody>
           {#each registries as registry (registry.id)}
-            <tr>
-              <td class="host-cell">{registry.registry}</td>
+            <tr class="clickable" onclick={(event) => handleRowClick(event, registry)}>
+              <td class="host-cell">
+                <button
+                  type="button"
+                  class="registry-name"
+                  onclick={() => (editingRegistry = registry)}>{registry.registry}</button
+                >
+              </td>
               <td class="phone-hidden">{registry.username ?? "-"}</td>
               <td>
                 {#if registry.authenticationConfigured}
@@ -140,26 +126,6 @@
                 {#if !registry.options.insecure && !registry.options.allow_self_signed_certs}
                   <span class="muted">-</span>
                 {/if}
-              </td>
-              <td>
-                <div class="table-actions">
-                  <button
-                    type="button"
-                    class="icon-button"
-                    onclick={() => (editingRegistry = registry)}
-                    aria-label="Edit {registry.registry}"
-                  >
-                    <Pencil size={16} strokeWidth={1.75} />
-                  </button>
-                  <button
-                    type="button"
-                    class="icon-button danger"
-                    onclick={() => (deletingRegistry = registry)}
-                    aria-label="Delete {registry.registry}"
-                  >
-                    <Trash2 size={16} strokeWidth={1.75} />
-                  </button>
-                </div>
               </td>
             </tr>
           {/each}
@@ -182,23 +148,23 @@
   registry={editingRegistry}
   onClose={() => (editingRegistry = null)}
   onSaved={(registry) => handleSaved(registry, "updated")}
+  onDeleted={handleDeleted}
 />
-
-<ConfirmDialog
-  open={deletingRegistry !== null}
-  title="Delete registry"
-  message={`Delete "${deletingRegistry?.registry ?? ""}"? This cannot be undone.`}
-  confirmLabel="Delete"
-  danger
-  error={deleteError}
-  submitting={deleting}
-  onConfirm={handleDelete}
-  onCancel={cancelDelete}
-/>
-
 
 <style>
   .host-cell {
     overflow-wrap: anywhere;
+  }
+
+  .registry-name {
+    padding: 0;
+    overflow-wrap: anywhere;
+    border: none;
+    background: none;
+    color: inherit;
+    font: inherit;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
   }
 </style>
