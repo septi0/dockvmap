@@ -9,6 +9,7 @@ export interface Registry {
   username?: string
   authenticationConfigured: boolean
   options: RegistryOptions
+  internal: boolean
 }
 
 export interface CreateRegistryParams {

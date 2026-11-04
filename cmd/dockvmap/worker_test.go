@@ -204,7 +204,7 @@ func TestProxyMetricsFlushSavesUsageWithoutCounterChanges(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 
 	ctx := context.Background()
-	tokenID, err := db.CreateProxyToken(ctx, "ci", "hash")
+	tokenID, err := db.CreateProxyToken(ctx, "ci", "hash", false)
 
 	if err != nil {
 		t.Fatalf("creating token: %v", err)

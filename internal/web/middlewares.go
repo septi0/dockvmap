@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 
+	"github.com/septi0/dockvmap/internal/httpmw"
 	"github.com/septi0/dockvmap/internal/service"
 )
 
@@ -19,7 +20,7 @@ func securityHeaders(next http.Handler) http.Handler {
 func (w *Web) withRequestInfo(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		ctx := service.WithRequestInfo(r.Context(), service.RequestInfo{
-			IP:        resolveClientIP(r, w.trustedProxies),
+			IP:        httpmw.ClientIP(r, w.trustedProxies),
 			UserAgent: r.UserAgent(),
 		})
 

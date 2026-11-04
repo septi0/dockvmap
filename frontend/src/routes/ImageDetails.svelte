@@ -46,6 +46,7 @@
   import type { Image } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
   import type { PullInfo } from "../lib/api/types/metrics";
+  import { imageSourceParts } from "../lib/utils/registries";
 
   let { params }: { params: { id: string } } = $props();
   const imageId = $derived(Number(params.id));
@@ -283,7 +284,10 @@
             <h1>{image.name}</h1>
           </div>
           <p class="subtitle image-source">
-            <span><strong>{image.registry}</strong>/{image.repository}</span>
+            <span
+              ><strong>{imageSourceParts(image).registry}</strong
+              >{imageSourceParts(image).separator}{image.repository}</span
+            >
             <UpstreamLink registry={image.registry} repository={image.repository} />
           </p>
         </div>

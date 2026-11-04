@@ -11,7 +11,8 @@
   import SourceStep from "../lib/components/createImage/SourceStep.svelte";
   import TagSelectionStep from "../lib/components/createImage/TagSelectionStep.svelte";
   import RegistryModal from "../lib/components/RegistryModal.svelte";
-  import { listRegistries } from "../lib/api/registries";
+  import { listInternalRepositories, listRegistries } from "../lib/api/registries";
+  import { INTERNAL_REGISTRY_LABEL } from "../lib/utils/registries";
   import { createImage } from "../lib/api/images";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
@@ -45,6 +46,7 @@
   let creating = $state(false);
   let createError = $state<string | null>(null);
   let addingAnother = $state(false);
+  let internalRepositories = $state<string[]>([]);
 
   async function loadRegistries() {
     loadingRegistries = true;
@@ -52,6 +54,12 @@
 
     try {
       registries = await listRegistries();
+
+      if (registries.some((registry) => registry.internal)) {
+        listInternalRepositories()
+          .then((names) => (internalRepositories = names))
+          .catch(() => {});
+      }
     } catch (err) {
       registriesError = errorMessage(err, "Failed to load registries");
     } finally {
@@ -71,10 +79,12 @@
   onDestroy(discovery.destroy);
 
   const registryOptions = $derived(
-    registries.map((registry) => ({
-      value: String(registry.id),
-      label: registry.registry,
-    })),
+    [...registries]
+      .sort((a, b) => Number(b.internal) - Number(a.internal))
+      .map((registry) => ({
+        value: String(registry.id),
+        label: registry.internal ? `${INTERNAL_REGISTRY_LABEL} (${registry.registry})` : registry.registry,
+      })),
   );
   const selectedRegistry = $derived(
     registries.find((r) => r.id === Number(registryId)),
@@ -218,6 +228,7 @@
             bind:repository
             {registryOptions}
             registryLabel={selectedRegistry?.registry}
+            repositorySuggestions={selectedRegistry?.internal ? internalRepositories : []}
             focusRepository={addingAnother}
             discovery={$discovery}
             onSubmit={handleInspect}

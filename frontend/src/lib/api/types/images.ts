@@ -5,6 +5,7 @@ export interface Image {
   name: string
   registryId: number
   registry: string
+  registryInternal: boolean
   repository: string
   tag: string
   lastChecked?: string

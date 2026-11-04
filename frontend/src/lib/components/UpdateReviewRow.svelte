@@ -30,6 +30,7 @@
   import { updatesCount } from "../services/updatesCount";
   import type { Image, TagGroup } from "../api/types/images";
   import type { ImageGroup } from "../api/types/imageGroups";
+  import { imageSource } from "../utils/registries";
 
   let {
     image,
@@ -229,7 +230,7 @@
         <a class="row-link" href={`#/images/${image.id}${detailsQuery}`}
           >{image.name}</a
         >
-        <span class="muted source">{image.registry}/{image.repository}</span>
+        <span class="muted source">{imageSource(image)}</span>
         <UpstreamLink registry={image.registry} repository={image.repository} />
       {/if}
     </div>

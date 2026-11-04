@@ -56,4 +56,7 @@ export const AUDIT_TYPES = [
   'HOST_UPDATED',
   'HOST_AGENT_TRUSTED',
   'HOST_DELETED',
+
+  'IMAGE_PUSHED',
+  'MANIFEST_DELETED',
 ] as const

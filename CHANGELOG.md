@@ -2,6 +2,16 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.10.0 (unreleased)
+
+- **Internal registry**: run the official `registry:2` next to DockVMap, with only DockVMap exposed, and push and pull every image through one address. Names that aren't virtual images pass straight through to the registry; virtual tags work as before. Turn it on with `internal_registry.enabled`; `compose.registry.sample.yaml` is a ready stack. At startup DockVMap adds the registry on the Registries page (marked Internal), or takes over an existing entry with that address, so virtual images on it keep working. A new tag pushed to a repository shows as an update within seconds, and every pushed tag and deleted manifest is in the audit log with the token that made the change. A virtual image built on a repository of the same name (`myapp` on `myapp`) still takes pushes to that repository. See "Internal registry" in the README.
+- **Can push on proxy tokens**: with `proxy_auth` on, pushes need a token with Can push, chosen when you create it (the option shows while the internal registry is on). Hosts keep pull-only tokens. With `proxy_auth` off, pushes are open, and DockVMap warns about it in the log, on Proxy Tokens and on Registries.
+- **Real client address in the proxy**: `trusted_proxies` now also applies to the registry proxy, so the access log (`client_ip`) and the push audit show the real client behind a reverse proxy.
+- **Repository suggestions**: New virtual image suggests the repositories already in the internal registry.
+- **Clearer errors**: a virtual image whose tag was removed from its registry shows "tag v1 no longer exists in the registry; pick another tag" on the image and in Recent issues, instead of a failed digest lookup. A pull through a registry that doesn't answer gets an error naming that registry instead of a plain "bad gateway".
+
+**Upgrade note:** this release migrates the database (migration 035). Run `dockvmap -backup <path>` before upgrading. Existing proxy tokens can't push; create a token with Can push for anything that pushes through DockVMap. Nothing changes until you turn on `internal_registry.enabled`.
+
 ## v1.9.0 (2026-11-04)
 
 - **Hosts**: see the containers on each of your Docker hosts. Add a host with its address on the new Hosts page and run the DockVMap agent on it (`ghcr.io/septi0/dockvmap-agent`, sample in `compose.agent.sample.yaml`). DockVMap connects to the agent on port 9002 and adopts it on its first check, so hosts never need a route back to DockVMap and there are no tokens to copy. The agent only reads from Docker. Each host shows whether it's online, its containers with state, health, stack, image and published ports, and which containers pulled through DockVMap are up to date, outdated, or pulled but not recreated. DockVMap checks every host every 30 seconds (`agents_poll_interval`), and opening a host checks it right away. See "Hosts and the agent" in the README.

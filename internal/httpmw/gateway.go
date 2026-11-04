@@ -1,4 +1,4 @@
-package web
+package httpmw
 
 import (
 	"errors"
@@ -8,9 +8,27 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/septi0/dockvmap/internal/ipmatch"
 )
 
 const gatewayProxySentinel = "gateway"
+
+func ParseTrustedProxies(values []string) ([]string, ipmatch.Set, error) {
+	proxies, err := expandGatewayProxies(values)
+
+	if err != nil {
+		return nil, ipmatch.Set{}, fmt.Errorf("resolving trusted_proxies: %w", err)
+	}
+
+	trusted, err := ipmatch.Parse(proxies)
+
+	if err != nil {
+		return nil, ipmatch.Set{}, fmt.Errorf("parsing trusted_proxies: %w", err)
+	}
+
+	return proxies, trusted, nil
+}
 
 func expandGatewayProxies(values []string) ([]string, error) {
 	out := make([]string, 0, len(values))

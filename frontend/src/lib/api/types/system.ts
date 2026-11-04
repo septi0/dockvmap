@@ -8,6 +8,7 @@ export interface SMTPStatus {
 
 export interface ProxyAuthStatus {
   enabled: boolean
+  internalRegistry: boolean
 }
 
 export interface SystemDatabaseStatus {

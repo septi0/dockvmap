@@ -28,6 +28,7 @@ type registryResponse struct {
 	Username                 string                `json:"username,omitempty"`
 	AuthenticationConfigured bool                  `json:"authenticationConfigured"`
 	Options                  model.RegistryOptions `json:"options"`
+	Internal                 bool                  `json:"internal"`
 }
 
 func newRegistryResponse(info model.RegistryInfo) registryResponse {
@@ -37,6 +38,7 @@ func newRegistryResponse(info model.RegistryInfo) registryResponse {
 		Username:                 info.Username,
 		AuthenticationConfigured: info.AuthenticationConfigured,
 		Options:                  info.Options,
+		Internal:                 info.Internal,
 	}
 }
 
@@ -52,6 +54,7 @@ type imageResponse struct {
 	Name               string     `json:"name"`
 	RegistryID         int64      `json:"registryId"`
 	Registry           string     `json:"registry"`
+	RegistryInternal   bool       `json:"registryInternal"`
 	Repository         string     `json:"repository"`
 	Tag                string     `json:"tag"`
 	LastChecked        *time.Time `json:"lastChecked,omitempty"`
@@ -88,6 +91,7 @@ func newImageResponse(image model.Image) imageResponse {
 		Name:               image.Name,
 		RegistryID:         image.RegistryID,
 		Registry:           image.Registry,
+		RegistryInternal:   image.RegistryInternal,
 		Repository:         image.Repository,
 		Tag:                image.Tag,
 		LastChecked:        image.LastChecked,
@@ -415,7 +419,8 @@ func newSessionResponse(session model.Session) sessionResponse {
 }
 
 type createProxyTokenRequest struct {
-	Label string `json:"label"`
+	Label   string `json:"label"`
+	CanPush bool   `json:"canPush"`
 }
 
 type proxyTokenResponse struct {
@@ -423,6 +428,7 @@ type proxyTokenResponse struct {
 	Label      string     `json:"label"`
 	CreatedAt  time.Time  `json:"createdAt"`
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty"`
+	CanPush    bool       `json:"canPush"`
 }
 
 func newProxyTokenResponse(token model.ProxyToken) proxyTokenResponse {
@@ -431,13 +437,15 @@ func newProxyTokenResponse(token model.ProxyToken) proxyTokenResponse {
 		Label:      token.Label,
 		CreatedAt:  token.CreatedAt,
 		LastUsedAt: token.LastUsedAt,
+		CanPush:    token.CanPush,
 	}
 }
 
 type createProxyTokenResponse struct {
-	ID    int64  `json:"id"`
-	Label string `json:"label"`
-	Token string `json:"token"`
+	ID      int64  `json:"id"`
+	Label   string `json:"label"`
+	CanPush bool   `json:"canPush"`
+	Token   string `json:"token"`
 }
 
 type proxyCacheUsageResponse struct {
@@ -504,6 +512,9 @@ func failureMessage(failure service.Failure) string {
 
 	case service.FailureSourceDigest:
 		return fmt.Sprintf("Image %q digest lookup failed: %s", failure.Detail, failure.Error)
+
+	case service.FailureSourceInternalRegistry:
+		return fmt.Sprintf("Internal registry %s %s", failure.Detail, failure.Error)
 
 	default:
 		return failure.Error

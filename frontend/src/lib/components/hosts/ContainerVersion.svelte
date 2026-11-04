@@ -19,6 +19,12 @@
       title="The current version is already on this host, but the container still runs the old one. Recreate the container to apply it."
       >Pulled, not recreated</span
     >
+  {:else if tracking.status === "internalRegistry"}
+    <span
+      class="muted"
+      title="Pulled from the internal registry by its real name, so DockVMap doesn't track its version."
+      >Internal registry</span
+    >
   {:else if tracking.status === "unknownImage"}
     <span
       class="muted"

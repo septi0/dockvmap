@@ -28,6 +28,7 @@
   let deleteError = $state<string | null>(null)
   let deleting = $state(false)
   let proxyAuthEnabled = $state(true)
+  let internalRegistry = $state(false)
   let loadToken = 0
 
   const STALE_AFTER_DAYS = 90
@@ -64,6 +65,7 @@
     try {
       const status = await getProxyAuthStatus()
       proxyAuthEnabled = status.enabled
+      internalRegistry = status.internalRegistry
     } catch {}
   })
 
@@ -116,7 +118,7 @@
       <TriangleAlert size={14} strokeWidth={2} />
       <span>
         Proxy authentication is <strong>not enabled</strong> in config.yaml. These
-        tokens exist but nothing is being enforced yet; the proxy accepts pulls
+        tokens exist but nothing is being enforced yet; the proxy accepts pulls{internalRegistry ? " and pushes to the internal registry" : ""}
         with no credential until this is turned on.
       </span>
     </p>
@@ -150,7 +152,12 @@
         <tbody>
           {#each tokens as token (token.id)}
             <tr>
-              <td>{token.label}</td>
+              <td>
+                <span class="name-cell">
+                  {token.label}
+                  {#if token.canPush}<span class="badge badge-accent">Can push</span>{/if}
+                </span>
+              </td>
               <td class="time-cell">
                 <span title={formatDate(token.createdAt)}>{formatRelativeTime(token.createdAt)}</span>
               </td>
@@ -196,6 +203,7 @@
 
 <CreateProxyTokenModal
   open={showCreateModal}
+  {internalRegistry}
   onClose={() => (showCreateModal = false)}
   onCreated={handleCreated}
 />

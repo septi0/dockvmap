@@ -39,7 +39,7 @@ export interface Rollout {
   total: number
 }
 
-export type ContainerVersionStatus = 'upToDate' | 'outdated' | 'pulledNotRecreated' | 'unknown' | 'unknownImage'
+export type ContainerVersionStatus = 'upToDate' | 'outdated' | 'pulledNotRecreated' | 'unknown' | 'unknownImage' | 'internalRegistry'
 
 export interface ContainerPort {
   ip?: string

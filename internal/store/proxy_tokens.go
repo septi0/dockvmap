@@ -7,10 +7,10 @@ import (
 	"github.com/septi0/dockvmap/internal/model"
 )
 
-func (s *Store) CreateProxyToken(ctx context.Context, label, tokenHash string) (int64, error) {
+func (s *Store) CreateProxyToken(ctx context.Context, label, tokenHash string, canPush bool) (int64, error) {
 	result, err := s.db.ExecContext(ctx, `
-		INSERT INTO proxy_tokens (label, token_hash) VALUES (?, ?)
-	`, label, tokenHash)
+		INSERT INTO proxy_tokens (label, token_hash, can_push) VALUES (?, ?, ?)
+	`, label, tokenHash, canPush)
 
 	if err != nil {
 		return 0, fmt.Errorf("creating proxy token: %w", err)
@@ -27,7 +27,7 @@ func (s *Store) CreateProxyToken(ctx context.Context, label, tokenHash string) (
 
 func (s *Store) ListProxyTokens(ctx context.Context) ([]model.ProxyToken, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, label, created_at, last_used_at FROM proxy_tokens ORDER BY created_at DESC
+		SELECT id, label, created_at, last_used_at, can_push FROM proxy_tokens ORDER BY created_at DESC
 	`)
 
 	if err != nil {
@@ -41,7 +41,7 @@ func (s *Store) ListProxyTokens(ctx context.Context) ([]model.ProxyToken, error)
 	for rows.Next() {
 		var token model.ProxyToken
 
-		if err := rows.Scan(&token.ID, &token.Label, &token.CreatedAt, &token.LastUsedAt); err != nil {
+		if err := rows.Scan(&token.ID, &token.Label, &token.CreatedAt, &token.LastUsedAt, &token.CanPush); err != nil {
 			return nil, fmt.Errorf("scanning proxy token row: %w", err)
 		}
 
@@ -59,8 +59,8 @@ func (s *Store) GetProxyTokenByID(ctx context.Context, id int64) (*model.ProxyTo
 	var token model.ProxyToken
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, label, created_at, last_used_at FROM proxy_tokens WHERE id = ?
-	`, id).Scan(&token.ID, &token.Label, &token.CreatedAt, &token.LastUsedAt)
+		SELECT id, label, created_at, last_used_at, can_push FROM proxy_tokens WHERE id = ?
+	`, id).Scan(&token.ID, &token.Label, &token.CreatedAt, &token.LastUsedAt, &token.CanPush)
 
 	if isNoRows(err) {
 		return nil, nil
@@ -73,22 +73,22 @@ func (s *Store) GetProxyTokenByID(ctx context.Context, id int64) (*model.ProxyTo
 	return &token, nil
 }
 
-func (s *Store) ProxyTokenIDByHash(ctx context.Context, tokenHash string) (int64, bool, error) {
-	var id int64
+func (s *Store) ProxyTokenByHash(ctx context.Context, tokenHash string) (*model.ProxyToken, error) {
+	var token model.ProxyToken
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id FROM proxy_tokens WHERE token_hash = ?
-	`, tokenHash).Scan(&id)
+		SELECT id, label, created_at, last_used_at, can_push FROM proxy_tokens WHERE token_hash = ?
+	`, tokenHash).Scan(&token.ID, &token.Label, &token.CreatedAt, &token.LastUsedAt, &token.CanPush)
 
 	if isNoRows(err) {
-		return 0, false, nil
+		return nil, nil
 	}
 
 	if err != nil {
-		return 0, false, fmt.Errorf("checking proxy token: %w", err)
+		return nil, fmt.Errorf("checking proxy token: %w", err)
 	}
 
-	return id, true, nil
+	return &token, nil
 }
 
 func (s *Store) DeleteProxyToken(ctx context.Context, id int64) (bool, error) {

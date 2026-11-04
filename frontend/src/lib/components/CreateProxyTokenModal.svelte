@@ -9,20 +9,24 @@
 
   let {
     open,
+    internalRegistry,
     onClose,
     onCreated,
   }: {
     open: boolean
+    internalRegistry: boolean
     onClose: () => void
     onCreated: (result: CreateProxyTokenResult) => void
   } = $props()
 
   let label = $state('')
+  let canPush = $state(false)
   let error = $state<string | null>(null)
   let submitting = $state(false)
 
   function reset() {
     label = ''
+    canPush = false
     error = null
     submitting = false
   }
@@ -46,7 +50,7 @@
     submitting = true
 
     try {
-      const result = await createProxyToken({ label: trimmedLabel })
+      const result = await createProxyToken({ label: trimmedLabel, canPush })
       onCreated(result)
       reset()
       onClose()
@@ -74,6 +78,18 @@
       required
     />
 
+    {#if internalRegistry}
+      <div>
+        <label class="checkbox">
+          <input type="checkbox" bind:checked={canPush} />
+          <span>Can push</span>
+        </label>
+        <p class="section-hint muted can-push-hint">
+          For build scripts that push to the internal registry. Hosts only need to pull.
+        </p>
+      </div>
+    {/if}
+
     <div class="modal-actions">
       <Button type="button" variant="secondary" onclick={handleClose}>Cancel</Button>
       <Button type="submit" disabled={submitting}>
@@ -83,3 +99,9 @@
   </form>
 </Modal>
 
+<style>
+  .can-push-hint {
+    margin: var(--space-1) 0 0;
+    font-size: 0.8125rem;
+  }
+</style>

@@ -47,6 +47,7 @@
   let deleteError = $state<string | null>(null);
 
   const isEdit = $derived(mode === "edit");
+  const managed = $derived(isEdit && !!registry?.internal);
   const ready = $derived(mode === "create" || registry !== null);
 
   $effect(() => {
@@ -168,7 +169,7 @@
 <Modal
   open={open && ready}
   onClose={handleClose}
-  title={isEdit ? "Edit registry" : "Add registry"}
+  title={managed ? "Internal registry" : isEdit ? "Edit registry" : "Add registry"}
 >
   <form onsubmit={handleSubmit}>
     {#if error}
@@ -183,9 +184,16 @@
       bind:value={registryHost}
       placeholder={isEdit ? undefined : "docker.io"}
       required
+      disabled={managed}
     />
 
-    {#if !editingAuth}
+    {#if managed}
+      <p class="section-hint muted managed-note">
+        The internal registry is set by <code class="inline-code">internal_registry</code> in config;
+        change it there. DockVMap reaches it over plain HTTP on the stack network, and handles
+        logins with proxy tokens.
+      </p>
+    {:else if !editingAuth}
       <div class="auth-status">
         <span class="muted">
           {#if !isEdit}
@@ -222,7 +230,9 @@
       </button>
     {/if}
 
-    <RegistryOptionsFields bind:insecure bind:allowSelfSignedCerts />
+    {#if !managed}
+      <RegistryOptionsFields bind:insecure bind:allowSelfSignedCerts />
+    {/if}
 
     {#if testResult}
       <p class="test-result" class:ok={testResult.ok} class:bad={!testResult.ok}>
@@ -232,7 +242,7 @@
 
     <div class="modal-actions split">
       <div class="modal-actions-left">
-        {#if isEdit}
+        {#if isEdit && !managed}
           <Button type="button" variant="danger" onclick={() => (showDeleteConfirm = true)}>
             <Trash2 size={16} strokeWidth={1.75} />
             Delete
@@ -249,15 +259,17 @@
       </div>
       <div class="modal-actions-right">
         <Button type="button" variant="secondary" onclick={handleClose}>
-          Cancel
+          {managed ? "Close" : "Cancel"}
         </Button>
-        <Button type="submit" disabled={submitting}>
-          {#if isEdit}
-            {submitting ? "Saving…" : "Save changes"}
-          {:else}
-            {submitting ? "Adding…" : "Add registry"}
-          {/if}
-        </Button>
+        {#if !managed}
+          <Button type="submit" disabled={submitting}>
+            {#if isEdit}
+              {submitting ? "Saving…" : "Save changes"}
+            {:else}
+              {submitting ? "Adding…" : "Add registry"}
+            {/if}
+          </Button>
+        {/if}
       </div>
     </div>
   </form>
@@ -276,6 +288,10 @@
 />
 
 <style>
+  .managed-note {
+    margin: var(--space-2) 0 0;
+  }
+
   .auth-status {
     display: flex;
     align-items: center;

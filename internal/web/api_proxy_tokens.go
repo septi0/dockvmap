@@ -30,7 +30,7 @@ func (w *Web) apiCreateProxyToken(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, token, err := w.proxyTokens.Create(r.Context(), request.Label)
+	id, token, err := w.proxyTokens.Create(r.Context(), request.Label, request.CanPush)
 
 	if err != nil {
 		apiServiceError(rw, err)
@@ -38,9 +38,10 @@ func (w *Web) apiCreateProxyToken(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	apiJSON(rw, http.StatusCreated, createProxyTokenResponse{
-		ID:    id,
-		Label: request.Label,
-		Token: token,
+		ID:      id,
+		Label:   request.Label,
+		CanPush: request.CanPush,
+		Token:   token,
 	})
 }
 

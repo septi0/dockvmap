@@ -43,6 +43,9 @@ const (
 	AuditTypeHostUpdated      = "HOST_UPDATED"
 	AuditTypeHostAgentTrusted = "HOST_AGENT_TRUSTED"
 	AuditTypeHostDeleted      = "HOST_DELETED"
+
+	AuditTypeImagePushed     = "IMAGE_PUSHED"
+	AuditTypeManifestDeleted = "MANIFEST_DELETED"
 )
 
 var AuditTypes = []string{
@@ -79,6 +82,9 @@ var AuditTypes = []string{
 	AuditTypeHostUpdated,
 	AuditTypeHostAgentTrusted,
 	AuditTypeHostDeleted,
+
+	AuditTypeImagePushed,
+	AuditTypeManifestDeleted,
 }
 
 func IsValidAuditType(t string) bool {

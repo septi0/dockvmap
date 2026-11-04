@@ -220,7 +220,12 @@
         use:link>{@render imageName(container)}</a
       >
     {:else}
-      <span title={tracking ? `${container.image}, pulled through the DockVMap proxy` : undefined}
+      <span
+        title={tracking?.status === "internalRegistry"
+          ? `${container.image}, pulled from the internal registry by its real name`
+          : tracking
+            ? `${container.image}, pulled through the DockVMap proxy`
+            : undefined}
         >{@render imageName(container)}</span
       >
     {/if}

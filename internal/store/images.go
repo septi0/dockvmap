@@ -13,7 +13,7 @@ import (
 var ErrImageNameConflict = errors.New("image name already exists")
 
 const imageSelect = `
-	SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.group_id, g.name, i.tag_set_hash, i.created_at, i.updated_at, i.last_pulled_at, i.last_pulled_tag, i.current_digest, i.current_digest_tag, i.current_digest_since
+	SELECT i.id, i.name, i.registry_id, r.registry, i.repository, i.tag, i.last_checked, i.last_check_error, i.update_available, i.update_available_tag, i.pinned, i.refresh_status, i.group_id, g.name, i.tag_set_hash, i.created_at, i.updated_at, i.last_pulled_at, i.last_pulled_tag, i.current_digest, i.current_digest_tag, i.current_digest_since, COALESCE(r.internal, 0)
 	FROM images i
 	LEFT JOIN registries r ON r.id = i.registry_id
 	LEFT JOIN image_groups g ON g.id = i.group_id
@@ -45,7 +45,7 @@ func scanImage(row rowScanner, img *model.Image) error {
 		&img.LastChecked, &img.LastCheckError, &img.UpdateAvailable, &img.UpdateAvailableTag,
 		&img.Pinned, &img.RefreshStatus, &img.GroupID, &img.GroupName, &img.TagSetHash, &img.CreatedAt, &img.UpdatedAt,
 		&img.LastPulledAt, &img.LastPulledTag,
-		&img.CurrentDigest, &img.CurrentDigestTag, &img.CurrentDigestSince,
+		&img.CurrentDigest, &img.CurrentDigestTag, &img.CurrentDigestSince, &img.RegistryInternal,
 	)
 }
 
@@ -114,6 +114,36 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 	}
 
 	return images, nil
+}
+
+func (s *Store) ListImageIDsByRegistryRepository(ctx context.Context, registryID int64, repository string) ([]int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id FROM images WHERE registry_id = ? AND repository = ? ORDER BY id ASC
+	`, registryID, repository)
+
+	if err != nil {
+		return nil, fmt.Errorf("listing images of %q: %w", repository, err)
+	}
+
+	defer rows.Close()
+
+	ids := make([]int64, 0)
+
+	for rows.Next() {
+		var id int64
+
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning image row: %w", err)
+		}
+
+		ids = append(ids, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading image rows: %w", err)
+	}
+
+	return ids, nil
 }
 
 func (s *Store) ListImagesAfterID(ctx context.Context, afterID int64, limit int) ([]model.Image, error) {

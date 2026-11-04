@@ -207,6 +207,16 @@ func (r *Registries) UpdateByID(ctx context.Context, registry model.RegistryUpda
 		return false, fmt.Errorf("%w: username and credential must both be provided together when changing authentication", ErrInvalidRegistry)
 	}
 
+	current, err := r.store.GetRegistryInfoByID(ctx, registry.ID)
+
+	if err != nil {
+		return false, err
+	}
+
+	if current != nil && current.Internal {
+		return false, ErrRegistryManagedByConfig
+	}
+
 	if registry.Username != nil {
 		*registry.Username = strings.TrimSpace(*registry.Username)
 	}
@@ -262,6 +272,10 @@ func (r *Registries) DeleteByID(ctx context.Context, registryID int64) (bool, er
 
 	if err != nil {
 		return false, err
+	}
+
+	if info != nil && info.Internal {
+		return false, ErrRegistryManagedByConfig
 	}
 
 	deleted, err := r.store.DeleteRegistryByID(ctx, registryID)

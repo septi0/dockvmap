@@ -12,6 +12,7 @@
   import { formatNumber } from "../../utils/format";
   import type { DashboardUpdates } from "../../api/types/dashboard";
   import type { DashboardCardProps } from "./types";
+  import { imageSource } from "../../utils/registries";
 
   let {
     data,
@@ -107,7 +108,7 @@
             <span class="item-main">
               <span class="item-title">{image.name}</span>
               <span class="item-sub muted">
-                {image.registry}/{image.repository}
+                {imageSource(image)}
               </span>
             </span>
             {#if image.updateAvailableTag}

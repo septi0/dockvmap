@@ -18,28 +18,29 @@ import (
 var virtualTagRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
 
 type Config struct {
-	VirtualTag              string               `yaml:"virtual_tag" env:"DOCKVMAP_VIRTUAL_TAG" default:"current"`
-	TagsCheckInterval       string               `yaml:"tags_check_interval" env:"DOCKVMAP_TAGS_CHECK_INTERVAL" default:"24h"`
-	TagDiscoveryTTL         string               `yaml:"tag_discovery_ttl" env:"DOCKVMAP_TAG_DISCOVERY_TTL" default:"1h"`
-	AgentsPollInterval      string               `yaml:"agents_poll_interval" env:"DOCKVMAP_AGENTS_POLL_INTERVAL" default:"30s"`
-	ProxyServerListen       string               `yaml:"proxy_server_listen" env:"DOCKVMAP_PROXY_SERVER_LISTEN" default:":5000"`
-	ProxyPublicHost         string               `yaml:"proxy_public_host" env:"DOCKVMAP_PROXY_PUBLIC_HOST"`
-	ProxyAccessLog          *bool                `yaml:"proxy_access_log" env:"DOCKVMAP_PROXY_ACCESS_LOG" default:"true"`
-	WebServerHTTPListen     string               `yaml:"web_server_http_listen" env:"DOCKVMAP_WEB_SERVER_HTTP_LISTEN" default:":8080"`
-	WebServerHTTPSListen    string               `yaml:"web_server_https_listen" env:"DOCKVMAP_WEB_SERVER_HTTPS_LISTEN" default:":8443"`
-	LogsPath                string               `yaml:"logs_path" env:"DOCKVMAP_LOGS_PATH"`
-	LogLevel                string               `yaml:"log_level" env:"DOCKVMAP_LOG_LEVEL" default:"info"`
-	TagFiltersPath          string               `yaml:"tag_filters_path" env:"DOCKVMAP_TAG_FILTERS_PATH"`
-	CredentialEncryptionKey string               `yaml:"credential_encryption_key" env:"DOCKVMAP_CREDENTIAL_ENCRYPTION_KEY"`
-	SessionLifetime         string               `yaml:"session_lifetime" env:"DOCKVMAP_SESSION_LIFETIME" default:"168h"`
-	SecureCookies           *bool                `yaml:"secure_cookies" env:"DOCKVMAP_SECURE_COOKIES"`
-	TrustedProxies          []string             `yaml:"trusted_proxies" env:"DOCKVMAP_TRUSTED_PROXIES"`
-	Webhooks                []string             `yaml:"webhooks" env:"DOCKVMAP_WEBHOOKS"`
-	BlobCache               BlobCacheConfig      `yaml:"blob_cache"`
-	SMTP                    SMTPConfig           `yaml:"smtp"`
-	TLS                     TLSConfig            `yaml:"tls"`
-	ProxyAuth               ProxyAuthConfig      `yaml:"proxy_auth"`
-	LoginRateLimit          LoginRateLimitConfig `yaml:"login_rate_limit"`
+	VirtualTag              string                 `yaml:"virtual_tag" env:"DOCKVMAP_VIRTUAL_TAG" default:"current"`
+	TagsCheckInterval       string                 `yaml:"tags_check_interval" env:"DOCKVMAP_TAGS_CHECK_INTERVAL" default:"24h"`
+	TagDiscoveryTTL         string                 `yaml:"tag_discovery_ttl" env:"DOCKVMAP_TAG_DISCOVERY_TTL" default:"1h"`
+	AgentsPollInterval      string                 `yaml:"agents_poll_interval" env:"DOCKVMAP_AGENTS_POLL_INTERVAL" default:"30s"`
+	ProxyServerListen       string                 `yaml:"proxy_server_listen" env:"DOCKVMAP_PROXY_SERVER_LISTEN" default:":5000"`
+	ProxyPublicHost         string                 `yaml:"proxy_public_host" env:"DOCKVMAP_PROXY_PUBLIC_HOST"`
+	ProxyAccessLog          *bool                  `yaml:"proxy_access_log" env:"DOCKVMAP_PROXY_ACCESS_LOG" default:"true"`
+	WebServerHTTPListen     string                 `yaml:"web_server_http_listen" env:"DOCKVMAP_WEB_SERVER_HTTP_LISTEN" default:":8080"`
+	WebServerHTTPSListen    string                 `yaml:"web_server_https_listen" env:"DOCKVMAP_WEB_SERVER_HTTPS_LISTEN" default:":8443"`
+	LogsPath                string                 `yaml:"logs_path" env:"DOCKVMAP_LOGS_PATH"`
+	LogLevel                string                 `yaml:"log_level" env:"DOCKVMAP_LOG_LEVEL" default:"info"`
+	TagFiltersPath          string                 `yaml:"tag_filters_path" env:"DOCKVMAP_TAG_FILTERS_PATH"`
+	CredentialEncryptionKey string                 `yaml:"credential_encryption_key" env:"DOCKVMAP_CREDENTIAL_ENCRYPTION_KEY"`
+	SessionLifetime         string                 `yaml:"session_lifetime" env:"DOCKVMAP_SESSION_LIFETIME" default:"168h"`
+	SecureCookies           *bool                  `yaml:"secure_cookies" env:"DOCKVMAP_SECURE_COOKIES"`
+	TrustedProxies          []string               `yaml:"trusted_proxies" env:"DOCKVMAP_TRUSTED_PROXIES"`
+	Webhooks                []string               `yaml:"webhooks" env:"DOCKVMAP_WEBHOOKS"`
+	BlobCache               BlobCacheConfig        `yaml:"blob_cache"`
+	SMTP                    SMTPConfig             `yaml:"smtp"`
+	TLS                     TLSConfig              `yaml:"tls"`
+	ProxyAuth               ProxyAuthConfig        `yaml:"proxy_auth"`
+	InternalRegistry        InternalRegistryConfig `yaml:"internal_registry"`
+	LoginRateLimit          LoginRateLimitConfig   `yaml:"login_rate_limit"`
 
 	DerivedWarnings []string `yaml:"-"`
 }
@@ -65,6 +66,11 @@ type ProxyAuthConfig struct {
 	Enabled bool `yaml:"enabled" env:"DOCKVMAP_PROXY_AUTH_ENABLED"`
 }
 
+type InternalRegistryConfig struct {
+	Enabled bool   `yaml:"enabled" env:"DOCKVMAP_INTERNAL_REGISTRY_ENABLED"`
+	Address string `yaml:"address" env:"DOCKVMAP_INTERNAL_REGISTRY_ADDRESS" default:"registry:5000"`
+}
+
 type TLSConfig struct {
 	Enabled  bool   `yaml:"enabled" env:"DOCKVMAP_TLS_ENABLED"`
 	CertFile string `yaml:"cert_file" env:"DOCKVMAP_TLS_CERT_FILE"`
@@ -87,6 +93,12 @@ func (c *Config) applyDerivedDefaults() {
 	if c.SecureCookies == nil {
 		secure := c.TLS.Enabled || len(c.TrustedProxies) > 0
 		c.SecureCookies = &secure
+	}
+
+	c.InternalRegistry.Address = strings.TrimSpace(c.InternalRegistry.Address)
+
+	if c.InternalRegistry.Enabled && !c.ProxyAuth.Enabled {
+		c.warn("internal_registry is enabled but proxy_auth is off; the internal registry accepts pushes from anyone who can reach the proxy. Turn on proxy_auth and push with a token that has Can push")
 	}
 
 	if len(c.TrustedProxies) == 0 {

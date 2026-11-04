@@ -116,6 +116,7 @@ const (
 	ContainerPulledNotRecreated ContainerVersionStatus = "pulledNotRecreated"
 	ContainerVersionUnknown     ContainerVersionStatus = "unknown"
 	ContainerUnknownImage       ContainerVersionStatus = "unknownImage"
+	ContainerInternalRegistry   ContainerVersionStatus = "internalRegistry"
 )
 
 type ContainerTracking struct {

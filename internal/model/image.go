@@ -15,6 +15,7 @@ type Image struct {
 	Name               string     `json:"name"`
 	RegistryID         int64      `json:"registryId"`
 	Registry           string     `json:"registry"`
+	RegistryInternal   bool       `json:"registryInternal"`
 	Repository         string     `json:"repository"`
 	Tag                string     `json:"tag"`
 	LastChecked        *time.Time `json:"lastChecked,omitempty"`

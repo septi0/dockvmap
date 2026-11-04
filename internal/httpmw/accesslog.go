@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	"github.com/septi0/dockvmap/internal/ipmatch"
 )
 
 type AccessFields struct {
@@ -29,7 +31,7 @@ func AccessFieldsFrom(ctx context.Context) *AccessFields {
 }
 
 // AccessLog emits one structured slog line per request, tagged with component.
-func AccessLog(component string, next http.Handler) http.Handler {
+func AccessLog(component string, trusted ipmatch.Set, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -47,6 +49,7 @@ func AccessLog(component string, next http.Handler) http.Handler {
 				slog.Int64("bytes", sw.bytes),
 				slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 				slog.String("remote_addr", r.RemoteAddr),
+				slog.String("client_ip", ClientIP(r, trusted)),
 			}
 
 			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
@@ -100,6 +103,11 @@ type accessWriter struct {
 }
 
 func (w *accessWriter) WriteHeader(status int) {
+	if status < http.StatusOK && status != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(status)
+		return
+	}
+
 	if !w.wroteHeader {
 		w.status = status
 		w.wroteHeader = true

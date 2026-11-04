@@ -32,4 +32,5 @@ type RegistryInfo struct {
 	Username                 string          `json:"username,omitempty"`
 	AuthenticationConfigured bool            `json:"authenticationConfigured"`
 	Options                  RegistryOptions `json:"options"`
+	Internal                 bool            `json:"internal"`
 }

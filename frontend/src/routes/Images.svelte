@@ -40,6 +40,7 @@
   import type { ImageGroup } from "../lib/api/types/imageGroups";
   import { formatCount, formatDate, formatRelativeTime, imageParts } from "../lib/utils/format";
   import { writeListQuery } from "../lib/utils/listQuery";
+  import { imageSource } from "../lib/utils/registries";
   import { createVisibilityPoller } from "../lib/utils/visibilityPoller";
   import {
     createListView,
@@ -367,7 +368,7 @@
                   {/if}
                 </span>
                 <div class="source muted phone-hidden">
-                  {#each imageParts(`${image.registry}/${image.repository}`) as part, index (index)}{part}<wbr />{/each}
+                  {#each imageParts(imageSource(image)) as part, index (index)}{part}<wbr />{/each}
                 </div>
                 {#if rollout}
                   <div class="phone-only source">{@render rolloutInfo(rollout, false)}</div>

@@ -12,6 +12,7 @@
     required = false,
     disabled = false,
     autofocus = false,
+    suggestions = [],
   }: {
     label: string;
     type?: string;
@@ -21,7 +22,10 @@
     required?: boolean;
     disabled?: boolean;
     autofocus?: boolean;
+    suggestions?: string[];
   } = $props();
+
+  const suggestionsId = $props.id();
 
   let inputEl: HTMLInputElement | undefined;
 
@@ -49,7 +53,15 @@
       {placeholder}
       {required}
       {disabled}
+      list={suggestions.length > 0 ? suggestionsId : undefined}
     />
+    {#if suggestions.length > 0}
+      <datalist id={suggestionsId}>
+        {#each suggestions as suggestion (suggestion)}
+          <option value={suggestion}></option>
+        {/each}
+      </datalist>
+    {/if}
     {#if isPassword}
       <button
         type="button"

@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -87,7 +86,7 @@ type healthChecker interface {
 }
 
 type proxyTokenService interface {
-	Create(ctx context.Context, label string) (int64, string, error)
+	Create(ctx context.Context, label string, canPush bool) (int64, string, error)
 	List(ctx context.Context) ([]model.ProxyToken, error)
 	Delete(ctx context.Context, id int64) (bool, error)
 }
@@ -101,6 +100,11 @@ type hostService interface {
 	Delete(ctx context.Context, id int64) error
 	ImageContainers(ctx context.Context, imageID int64, proxy service.ProxyTarget) (*model.ImageContainers, error)
 	ImageRollouts(ctx context.Context, proxy service.ProxyTarget) ([]model.ImageRollout, error)
+}
+
+type internalRegistryService interface {
+	Address() string
+	Repositories(ctx context.Context) ([]string, error)
 }
 
 type proxyMetricsHistoryReader interface {
@@ -141,6 +145,7 @@ type Web struct {
 	health               healthChecker
 	proxyTokens          proxyTokenService
 	hosts                hostService
+	internalRegistry     internalRegistryService
 	proxyMetricsHistory  proxyMetricsHistoryReader
 	proxyUsage           proxyUsageReader
 	cacheUsage           cacheUsageReader
@@ -157,6 +162,8 @@ type Web struct {
 
 type Dependencies struct {
 	Config               *config.Config
+	TrustedProxies       ipmatch.Set
+	ResolvedProxies      []string
 	Images               imageService
 	Discoveries          discoveryService
 	Registries           registryService
@@ -167,6 +174,7 @@ type Dependencies struct {
 	Health               healthChecker
 	ProxyTokens          proxyTokenService
 	Hosts                hostService
+	InternalRegistry     internalRegistryService
 	ProxyMetricsHistory  proxyMetricsHistoryReader
 	ProxyUsage           proxyUsageReader
 	CacheUsage           cacheUsageReader
@@ -178,18 +186,6 @@ type Dependencies struct {
 }
 
 func New(deps Dependencies) (http.Handler, error) {
-	proxies, err := expandGatewayProxies(deps.Config.TrustedProxies)
-
-	if err != nil {
-		return nil, fmt.Errorf("resolving trusted_proxies: %w", err)
-	}
-
-	trustedProxies, err := ipmatch.Parse(proxies)
-
-	if err != nil {
-		return nil, fmt.Errorf("parsing trusted_proxies: %w", err)
-	}
-
 	w := &Web{
 		images:               deps.Images,
 		discoveries:          deps.Discoveries,
@@ -201,14 +197,15 @@ func New(deps Dependencies) (http.Handler, error) {
 		health:               deps.Health,
 		proxyTokens:          deps.ProxyTokens,
 		hosts:                deps.Hosts,
+		internalRegistry:     deps.InternalRegistry,
 		proxyMetricsHistory:  deps.ProxyMetricsHistory,
 		proxyUsage:           deps.ProxyUsage,
 		cacheUsage:           deps.CacheUsage,
 		failures:             deps.Failures,
 		worker:               deps.Worker,
 		cfg:                  deps.Config,
-		trustedProxies:       trustedProxies,
-		resolvedProxies:      proxies,
+		trustedProxies:       deps.TrustedProxies,
+		resolvedProxies:      deps.ResolvedProxies,
 		version:              deps.Version,
 		loginRateLimitWindow: deps.LoginRateLimitWindow,
 		dataPath:             deps.DataPath,

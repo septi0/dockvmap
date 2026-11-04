@@ -25,6 +25,7 @@ export const FAILURE_SOURCES = [
   'discovery',
   'event_registration',
   'digest',
+  'internal_registry',
 ] as const
 
 export const FAILURE_SOURCE_LABELS: Record<string, string> = {
@@ -34,4 +35,5 @@ export const FAILURE_SOURCE_LABELS: Record<string, string> = {
   discovery: 'Tag discovery',
   event_registration: 'Event registration',
   digest: 'Digest lookup',
+  internal_registry: 'Internal registry',
 }

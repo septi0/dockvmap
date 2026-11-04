@@ -20,6 +20,10 @@ func Recover(next http.Handler) http.Handler {
 				return
 			}
 
+			if recovered == http.ErrAbortHandler {
+				panic(recovered)
+			}
+
 			slog.Error("panic serving request",
 				"method", r.Method,
 				"path", r.URL.Path,
@@ -45,7 +49,10 @@ type recoverWriter struct {
 }
 
 func (w *recoverWriter) WriteHeader(status int) {
-	w.started = true
+	if status >= http.StatusOK || status == http.StatusSwitchingProtocols {
+		w.started = true
+	}
+
 	w.ResponseWriter.WriteHeader(status)
 }
 

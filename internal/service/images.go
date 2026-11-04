@@ -423,6 +423,16 @@ func (i *Images) applyTag(ctx context.Context, images []model.Image, tag string,
 
 	i.notifyTagChanged(names...)
 
+	for _, change := range changes {
+		if change.image.LastCheckError == nil {
+			continue
+		}
+
+		if _, err := i.StartBackgroundRefresh(change.image.ID); err != nil {
+			slog.Error("starting a tag check after a tag change failed", "image", change.image.Name, "error", err)
+		}
+	}
+
 	return nil
 }
 
@@ -609,6 +619,10 @@ func (i *Images) auditPinChange(ctx context.Context, image model.Image, pinned b
 		Pinned: pinned,
 		Group:  groupName(image),
 	})
+}
+
+func ValidRepositoryName(name string) bool {
+	return repositoryNameRE.MatchString(name)
 }
 
 func (i *Images) Resolve(ctx context.Context, name string) (*model.Image, error) {

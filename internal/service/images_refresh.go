@@ -303,6 +303,7 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 	checkedAt := time.Now().UTC()
 
 	sourceTags := options.Tags
+	var checkErr *string
 
 	if options.Tags == nil {
 		sourceTags, err = i.tagLister.ListTags(ctx, image.Registry, image.Repository)
@@ -319,15 +320,23 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 			return fmt.Errorf("%w for %q: %w", ErrTagRefreshFailed, image.Name, err)
 		}
 
+		if !slices.Contains(sourceTags, image.Tag) {
+			message := fmt.Sprintf("tag %s no longer exists in the registry; pick another tag", image.Tag)
+			checkErr = &message
+			i.failures.Record(ctx, FailureSourceRefresh, image.Name, errors.New(message))
+		}
+
 		sourceTags = i.tagFilter.Apply(sourceTags)
 	}
 
-	i.refreshDigest(ctx, image)
+	if checkErr == nil {
+		i.refreshDigest(ctx, image)
+	}
 
 	tagsHash := tagSetHash(sourceTags)
 
 	if tagsHash == image.TagSetHash {
-		if _, err := i.store.UpdateImageCheck(ctx, nil, image.ID, nil, checkedAt, tagsHash); err != nil {
+		if _, err := i.store.UpdateImageCheck(ctx, nil, image.ID, checkErr, checkedAt, tagsHash); err != nil {
 			return fmt.Errorf("recording tag check for %q: %w", image.Name, err)
 		}
 
@@ -360,7 +369,7 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 		return fmt.Errorf("deleting not seen tags for %q: %w", image.Name, err)
 	}
 
-	if _, err := i.store.UpdateImageCheck(ctx, tx, image.ID, nil, checkedAt, tagsHash); err != nil {
+	if _, err := i.store.UpdateImageCheck(ctx, tx, image.ID, checkErr, checkedAt, tagsHash); err != nil {
 		return fmt.Errorf("recording tag check for %q: %w", image.Name, err)
 	}
 

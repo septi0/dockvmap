@@ -6,6 +6,7 @@ import (
 
 	"github.com/septi0/dockvmap/internal/agentclient"
 	"github.com/septi0/dockvmap/internal/config"
+	"github.com/septi0/dockvmap/internal/httpmw"
 	"github.com/septi0/dockvmap/internal/oci"
 	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
@@ -21,6 +22,12 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 
 	if err != nil {
 		return fmt.Errorf("failed to configure login rate limiter: %w", err)
+	}
+
+	resolvedProxies, trustedProxies, err := httpmw.ParseTrustedProxies(cfg.TrustedProxies)
+
+	if err != nil {
+		return err
 	}
 
 	audit := service.NewAudit(db)
@@ -52,6 +59,21 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		TagFilter: tagFilter,
 		BgCtx:     workerCtx,
 	})
+
+	internalRegistry := service.NewInternalRegistry(service.InternalRegistryDeps{
+		Store:     db,
+		Audit:     audit,
+		Failures:  failureLog,
+		Refresher: images,
+		Enabled:   cfg.InternalRegistry.Enabled,
+		Address:   cfg.InternalRegistry.Address,
+	})
+
+	if err := internalRegistry.EnsureInternal(ctx); err != nil {
+		return err
+	}
+
+	internalRegistry.StartChecking(ctx)
 
 	discoveries := service.NewDiscoveries(service.DiscoveriesDeps{
 		Store:      db,
@@ -87,6 +109,8 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Agents:       agentclient.New(agentIdentity, version),
 		PollInterval: cfg.AgentsPollIntervalDuration(),
 		ProxyHost:    cfg.ProxyPublicAddress(),
+
+		InternalRegistry: cfg.InternalRegistry.Enabled,
 	})
 	worker := service.NewWorker(db)
 	proxyMetricsHistory := service.NewProxyMetricsHistory(db)
@@ -112,7 +136,19 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		return err
 	}
 
-	proxySrv := newProxyServer(cfg, images, ociClient, cache, metrics, proxyTokens, proxyUsage, tlsConfig)
+	proxySrv := newProxyServer(proxy.Deps{
+		Config:  cfg,
+		Images:  images,
+		Client:  ociClient,
+		Cache:   cache,
+		Metrics: metrics,
+		Tokens:  proxyTokens,
+		Usage:   proxyUsage,
+
+		InternalRegistry: internalRegistry.Address(),
+		Changes:          internalRegistry,
+		TrustedProxies:   trustedProxies,
+	}, tlsConfig)
 
 	wDeps := workerDeps{
 		cfg:                 cfg,
@@ -134,6 +170,8 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 
 	webDeps := web.Dependencies{
 		Config:               cfg,
+		TrustedProxies:       trustedProxies,
+		ResolvedProxies:      resolvedProxies,
 		Images:               images,
 		Discoveries:          discoveries,
 		Registries:           registries,
@@ -144,6 +182,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Health:               health,
 		ProxyTokens:          proxyTokens,
 		Hosts:                hosts,
+		InternalRegistry:     internalRegistry,
 		ProxyMetricsHistory:  proxyMetricsHistory,
 		ProxyUsage:           proxyUsage,
 		Failures:             failureLog,
@@ -176,6 +215,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 	}()
 
 	awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)
+	internalRegistry.Stop()
 
 	return nil
 }

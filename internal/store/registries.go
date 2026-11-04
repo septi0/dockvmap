@@ -156,12 +156,28 @@ func (s *Store) GetRegistryOptions(ctx context.Context, registry string) (*model
 	return &options, nil
 }
 
+const registryInfoSelect = `SELECT id, registry, username, options, internal FROM registries `
+
+func scanRegistryInfo(row rowScanner, info *model.RegistryInfo) error {
+	var username sql.NullString
+	var optionsJSON sql.NullString
+
+	if err := row.Scan(&info.ID, &info.Registry, &username, &optionsJSON, &info.Internal); err != nil {
+		return err
+	}
+
+	if username.Valid {
+		info.Username = username.String
+	}
+
+	info.Options = parseRegistryOptions(optionsJSON.String)
+	info.AuthenticationConfigured = info.Username != ""
+
+	return nil
+}
+
 func (s *Store) ListRegistryInfo(ctx context.Context) ([]model.RegistryInfo, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, registry, username, options
-		FROM registries
-		ORDER BY created_at DESC
-	`)
+	rows, err := s.db.QueryContext(ctx, registryInfoSelect+`ORDER BY created_at DESC`)
 
 	if err != nil {
 		return nil, fmt.Errorf("listing registries: %w", err)
@@ -173,19 +189,11 @@ func (s *Store) ListRegistryInfo(ctx context.Context) ([]model.RegistryInfo, err
 
 	for rows.Next() {
 		var registry model.RegistryInfo
-		var username sql.NullString
-		var optionsJSON sql.NullString
 
-		if err := rows.Scan(&registry.ID, &registry.Registry, &username, &optionsJSON); err != nil {
+		if err := scanRegistryInfo(rows, &registry); err != nil {
 			return nil, fmt.Errorf("scanning registries: %w", err)
 		}
 
-		if username.Valid {
-			registry.Username = username.String
-		}
-
-		registry.Options = parseRegistryOptions(optionsJSON.String)
-		registry.AuthenticationConfigured = registry.Username != ""
 		registries = append(registries, registry)
 	}
 
@@ -196,58 +204,99 @@ func (s *Store) ListRegistryInfo(ctx context.Context) ([]model.RegistryInfo, err
 	return registries, nil
 }
 
-func (s *Store) GetRegistryInfoByID(ctx context.Context, registryID int64) (*model.RegistryInfo, error) {
+func (s *Store) getRegistryInfo(ctx context.Context, where string, arg any) (*model.RegistryInfo, error) {
 	var info model.RegistryInfo
-	var username sql.NullString
-	var optionsJSON sql.NullString
 
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, registry, username, options FROM registries WHERE id = ?
-	`, registryID).Scan(&info.ID, &info.Registry, &username, &optionsJSON)
+	err := scanRegistryInfo(s.db.QueryRowContext(ctx, registryInfoSelect+where, arg), &info)
 
 	if isNoRows(err) {
 		return nil, nil
 	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &info, nil
+}
+
+func (s *Store) GetRegistryInfoByID(ctx context.Context, registryID int64) (*model.RegistryInfo, error) {
+	info, err := s.getRegistryInfo(ctx, `WHERE id = ?`, registryID)
 
 	if err != nil {
 		return nil, fmt.Errorf("getting registry info by id: %w", err)
 	}
 
-	if username.Valid {
-		info.Username = username.String
-	}
-
-	info.Options = parseRegistryOptions(optionsJSON.String)
-	info.AuthenticationConfigured = info.Username != ""
-
-	return &info, nil
+	return info, nil
 }
 
 func (s *Store) GetRegistryInfoByHost(ctx context.Context, registry string) (*model.RegistryInfo, error) {
-	var info model.RegistryInfo
-	var username sql.NullString
-	var optionsJSON sql.NullString
-
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, registry, username, options FROM registries WHERE registry = ?
-	`, registry).Scan(&info.ID, &info.Registry, &username, &optionsJSON)
-
-	if isNoRows(err) {
-		return nil, nil
-	}
+	info, err := s.getRegistryInfo(ctx, `WHERE registry = ?`, registry)
 
 	if err != nil {
 		return nil, fmt.Errorf("getting registry info by host: %w", err)
 	}
 
-	if username.Valid {
-		info.Username = username.String
+	return info, nil
+}
+
+func (s *Store) GetInternalRegistry(ctx context.Context) (*model.RegistryInfo, error) {
+	info, err := s.getRegistryInfo(ctx, `WHERE internal = ?`, 1)
+
+	if err != nil {
+		return nil, fmt.Errorf("getting the internal registry: %w", err)
 	}
 
-	info.Options = parseRegistryOptions(optionsJSON.String)
-	info.AuthenticationConfigured = info.Username != ""
+	return info, nil
+}
 
-	return &info, nil
+func (s *Store) MarkRegistryInternal(ctx context.Context, registryID int64, address string, options model.RegistryOptions) error {
+	optionsJSON, err := json.Marshal(options)
+
+	if err != nil {
+		return fmt.Errorf("marshalling registry options: %w", err)
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+
+	if err != nil {
+		return fmt.Errorf("starting internal registry transaction: %w", err)
+	}
+
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `UPDATE registries SET internal = 0 WHERE internal = 1 AND id <> ?`, registryID); err != nil {
+		return fmt.Errorf("clearing the previous internal registry: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE registries
+		SET registry = ?, options = ?, username = NULL, credential_nonce = NULL, credential_ciphertext = NULL,
+			internal = 1, updated_at = ?
+		WHERE id = ?
+	`, address, string(optionsJSON), time.Now().UTC(), registryID)
+
+	if err != nil {
+		if isUniqueConstraintErr(err) {
+			return ErrRegistryConflict
+		}
+
+		return fmt.Errorf("marking registry %d as internal: %w", registryID, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing internal registry: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Store) ClearInternalRegistry(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE registries SET internal = 0 WHERE internal = 1`); err != nil {
+		return fmt.Errorf("clearing the internal registry: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Store) UpdateRegistryByID(ctx context.Context, registry model.RegistryUpdate) (bool, error) {

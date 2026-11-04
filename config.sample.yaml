@@ -18,3 +18,9 @@ trusted_proxies: []
 #   from: dockvmap@example.com
 #   username: user
 #   password: pass
+
+# Pass pushes and pulls of names that aren't virtual images through to a registry:2
+# on DockVMap's stack network (plain HTTP, no login). See compose.registry.sample.yaml.
+# internal_registry:
+#   enabled: true
+#   address: registry:5000

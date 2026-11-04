@@ -12,8 +12,10 @@ import (
 	"github.com/septi0/dockvmap/internal/blobcache"
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/httpmw"
+	"github.com/septi0/dockvmap/internal/ipmatch"
 	"github.com/septi0/dockvmap/internal/model"
 	"github.com/septi0/dockvmap/internal/oci"
+	"github.com/septi0/dockvmap/internal/service"
 )
 
 func setAccess(r *http.Request, mutate func(*httpmw.AccessFields)) {
@@ -28,11 +30,16 @@ type imageResolver interface {
 }
 
 type tokenVerifier interface {
-	Verify(ctx context.Context, token string) (bool, error)
+	Verify(ctx context.Context, token string) (*model.ProxyToken, error)
 }
 
 type usageRecorder interface {
 	RecordImagePull(imageID int64, tag string)
+}
+
+type changeRecorder interface {
+	Pushed(repository, tag, token string, info service.RequestInfo)
+	Deleted(repository, reference, token string, info service.RequestInfo)
 }
 
 type Proxy struct {
@@ -44,32 +51,69 @@ type Proxy struct {
 	metrics      *Metrics
 	tokens       tokenVerifier
 	usage        usageRecorder
+	internal     *passthrough
+	trusted      ipmatch.Set
 }
 
-func New(cfg *config.Config, images imageResolver, client *oci.Client, cache *blobcache.Cache, metrics *Metrics, tokens tokenVerifier, usage usageRecorder) *Proxy {
+type Deps struct {
+	Config  *config.Config
+	Images  imageResolver
+	Client  *oci.Client
+	Cache   *blobcache.Cache
+	Metrics *Metrics
+	Tokens  tokenVerifier
+	Usage   usageRecorder
+
+	InternalRegistry string
+	Changes          changeRecorder
+	TrustedProxies   ipmatch.Set
+}
+
+func New(deps Deps) *Proxy {
+	metrics := deps.Metrics
+
 	if metrics == nil {
 		metrics = NewMetrics()
 	}
 
 	resolveCache := newResolveCache()
 
-	images.OnTagChanged(resolveCache.invalidate)
+	deps.Images.OnTagChanged(resolveCache.invalidate)
+
+	var internal *passthrough
+
+	if deps.InternalRegistry != "" {
+		internal = newPassthrough(deps.InternalRegistry, deps.Changes)
+	}
 
 	return &Proxy{
-		cfg:          cfg,
-		images:       images,
+		internal:     internal,
+		trusted:      deps.TrustedProxies,
+		cfg:          deps.Config,
+		images:       deps.Images,
 		resolveCache: resolveCache,
-		client:       client,
-		cache:        cache,
+		client:       deps.Client,
+		cache:        deps.Cache,
 		metrics:      metrics,
-		tokens:       tokens,
-		usage:        usage,
+		tokens:       deps.Tokens,
+		usage:        deps.Usage,
 	}
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	p.metrics.totalRequests.Add(1)
+	if p.internal == nil {
+		p.metrics.totalRequests.Add(1)
+		p.serveVirtual(w, r)
 
+		return
+	}
+
+	if !p.serveWithInternal(w, r) {
+		p.metrics.totalRequests.Add(1)
+	}
+}
+
+func (p *Proxy) serveVirtual(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
 	default:
@@ -78,29 +122,14 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if p.cfg.ProxyAuth.Enabled {
-		authenticated := p.authenticate(r)
-
-		setAccess(r, func(f *httpmw.AccessFields) {
-			f.AuthenticateSeen = true
-			f.Authenticated = authenticated
-		})
-
-		if !authenticated {
-			w.Header().Set("Www-Authenticate", `Basic realm="dockvmap"`)
-			writeOCIError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
-
-			return
-		}
+	if _, ok := p.requireAuth(w, r); !ok {
+		return
 	}
 
 	path := r.URL.Path
 
 	if path == "/v2/" || path == "/v2" {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Docker-Distribution-Api-Version", "registry/2.0")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("{}"))
+		writeBaseResponse(w)
 		return
 	}
 
@@ -132,25 +161,160 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (p *Proxy) authenticate(r *http.Request) bool {
-	if !p.cfg.ProxyAuth.Enabled {
-		return true
-	}
+func (p *Proxy) serveWithInternal(w http.ResponseWriter, r *http.Request) (forwarded bool) {
+	controller := setReadDeadline(w)
 
-	_, password, ok := r.BasicAuth()
+	token, ok := p.requireAuth(w, r)
 
 	if !ok {
 		return false
 	}
 
-	valid, err := p.tokens.Verify(r.Context(), password)
-
-	if err != nil {
-		slog.Error("proxy token verification failed", "error", err)
+	if r.URL.Path == "/v2/" || r.URL.Path == "/v2" {
+		writeBaseResponse(w)
 		return false
 	}
 
-	return valid
+	parsed, ok := parseRegistryPath(r.URL.Path)
+
+	if !ok {
+		http.NotFound(w, r)
+		return false
+	}
+
+	write := r.Method != http.MethodGet && r.Method != http.MethodHead
+
+	if parsed.kind != pathCatalog {
+		if !service.ValidRepositoryName(parsed.name) {
+			writeOCIError(w, http.StatusBadRequest, "NAME_INVALID", fmt.Sprintf("%q isn't a valid repository name", parsed.name))
+			return false
+		}
+
+		img, err := p.resolveCache.resolve(r.Context(), parsed.name, p.images.Resolve)
+
+		if err != nil {
+			slog.Error("image lookup failed", "method", r.Method, "name", parsed.name, "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return false
+		}
+
+		if img != nil && !(write && ownRepositoryOnInternal(img)) {
+			p.serveVirtualPath(w, r, img, parsed, write)
+			return false
+		}
+
+		if img != nil && r.Method == http.MethodPut && parsed.kind == pathManifest && parsed.ref == p.cfg.VirtualTag {
+			writeOCIError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", fmt.Sprintf("%s is the virtual tag DockVMap manages for %s; push another tag", parsed.ref, img.Name))
+			return false
+		}
+	}
+
+	if write && p.cfg.ProxyAuth.Enabled && !token.CanPush {
+		writeOCIError(w, http.StatusForbidden, "DENIED", "this token can't push; create a token with Can push on the Proxy Tokens page")
+		return false
+	}
+
+	setAccess(r, func(f *httpmw.AccessFields) {
+		f.Registry = p.internal.address
+		f.Repository = parsed.name
+		f.Reference = parsed.ref
+		f.Resource = "passthrough"
+	})
+
+	if write && r.Body != nil && r.Body != http.NoBody {
+		r.Body = &uploadBody{ReadCloser: r.Body, controller: controller}
+	}
+
+	pushedTag := r.Method == http.MethodPut && parsed.kind == pathManifest && !oci.IsDigest(parsed.ref)
+	deleted := r.Method == http.MethodDelete && parsed.kind == pathManifest
+
+	if pushedTag || deleted {
+		label := ""
+
+		if token != nil {
+			label = token.Label
+		}
+
+		r = r.WithContext(withChange(r.Context(), change{
+			repository: parsed.name,
+			reference:  parsed.ref,
+			token:      label,
+			deleted:    deleted,
+			info:       service.RequestInfo{IP: httpmw.ClientIP(r, p.trusted), UserAgent: r.UserAgent()},
+		}))
+	}
+
+	p.internal.proxy.ServeHTTP(w, r)
+
+	return true
+}
+
+func ownRepositoryOnInternal(img *model.Image) bool {
+	return img.RegistryInternal && img.Repository == img.Name
+}
+
+func (p *Proxy) serveVirtualPath(w http.ResponseWriter, r *http.Request, img *model.Image, parsed registryPath, write bool) {
+	if write {
+		writeOCIError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", fmt.Sprintf("%s is a virtual image and can't be pushed to; push the real repository instead, like %s", img.Name, img.Repository))
+		return
+	}
+
+	switch parsed.kind {
+	case pathManifest:
+		p.metrics.manifestRequests.Add(1)
+		p.handleManifest(w, r, parsed.name, parsed.ref)
+	case pathBlob:
+		p.metrics.blobRequests.Add(1)
+		p.handleBlob(w, r, parsed.name, parsed.ref)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (p *Proxy) requireAuth(w http.ResponseWriter, r *http.Request) (*model.ProxyToken, bool) {
+	if !p.cfg.ProxyAuth.Enabled {
+		return nil, true
+	}
+
+	token := p.authenticate(r)
+
+	setAccess(r, func(f *httpmw.AccessFields) {
+		f.AuthenticateSeen = true
+		f.Authenticated = token != nil
+	})
+
+	if token == nil {
+		w.Header().Set("Www-Authenticate", `Basic realm="dockvmap"`)
+		writeOCIError(w, http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+
+		return nil, false
+	}
+
+	return token, true
+}
+
+func writeBaseResponse(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Docker-Distribution-Api-Version", "registry/2.0")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("{}"))
+}
+
+func (p *Proxy) authenticate(r *http.Request) *model.ProxyToken {
+	_, password, ok := r.BasicAuth()
+
+	if !ok {
+		return nil
+	}
+
+	token, err := p.tokens.Verify(r.Context(), password)
+
+	if err != nil {
+		slog.Error("proxy token verification failed", "error", err)
+		return nil
+	}
+
+	return token
 }
 
 func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, reference string) {
@@ -197,8 +361,10 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 
 	slog.Debug("manifest request", "method", r.Method, "name", name, "reference", reference, "registry", img.Registry, "repository", path, "upstream_reference", upstreamRef)
 
-	if p.cache != nil && oci.IsDigest(upstreamRef) {
-		served, err := p.cache.Serve(r.Context(), w, r, upstreamRef)
+	cache := p.cacheFor(img)
+
+	if cache != nil && oci.IsDigest(upstreamRef) {
+		served, err := cache.Serve(r.Context(), w, r, upstreamRef)
 
 		if err != nil {
 			slog.Warn("manifest cache lookup failed", "digest", upstreamRef, "error", err)
@@ -218,7 +384,7 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 
 	slog.Debug("manifest fetched from upstream", "method", r.Method, "name", name, "reference", reference)
 
-	if p.proxyRequest(w, r, upstreamURL, upstreamRef, "manifest", img.Registry, path) {
+	if p.proxyRequest(w, r, img, cache, upstreamURL, upstreamRef, "manifest", path) {
 		p.recordPull(r, img, upstreamRef)
 	}
 }
@@ -264,8 +430,10 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest 
 		f.Resource = "blob"
 	})
 
-	if p.cache != nil {
-		served, err := p.cache.Serve(r.Context(), w, r, digest)
+	cache := p.cacheFor(img)
+
+	if cache != nil {
+		served, err := cache.Serve(r.Context(), w, r, digest)
 
 		if err != nil {
 			slog.Warn("blob cache lookup failed", "digest", digest, "error", err)
@@ -285,12 +453,20 @@ func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest 
 
 	slog.Debug("blob fetched from upstream", "method", r.Method, "name", name, "digest", digest, "registry", img.Registry, "repository", path)
 
-	if p.proxyRequest(w, r, upstreamURL, digest, "blob", img.Registry, path) {
+	if p.proxyRequest(w, r, img, cache, upstreamURL, digest, "blob", path) {
 		p.recordPull(r, img, digest)
 	}
 }
 
-func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL, digest, resource, registryName, repository string) bool {
+func (p *Proxy) cacheFor(img *model.Image) *blobcache.Cache {
+	if img.RegistryInternal {
+		return nil
+	}
+
+	return p.cache
+}
+
+func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, img *model.Image, cache *blobcache.Cache, upstreamURL, digest, resource, repository string) bool {
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, upstreamURL, nil)
 
 	if err != nil {
@@ -306,12 +482,12 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL
 	}
 
 	p.metrics.upstreamRequests.Add(1)
-	resp, err := p.client.Do(req, registryName, repository)
+	resp, err := p.client.Do(req, img.Registry, repository)
 
 	if err != nil {
 		p.metrics.upstreamFailures.Add(1)
-		slog.Error("upstream request failed", "error", err)
-		http.Error(w, "bad gateway", http.StatusBadGateway)
+		slog.Error("upstream request failed", "registry", img.Registry, "error", err)
+		writeOCIError(w, http.StatusBadGateway, "UNKNOWN", upstreamFailureMessage(img, err))
 		return false
 	}
 
@@ -333,14 +509,14 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL
 		return true
 	}
 
-	if p.cache != nil && resp.StatusCode == http.StatusOK && r.Header.Get("Range") == "" && resp.Header.Get("Content-Encoding") == "" {
+	if cache != nil && resp.StatusCode == http.StatusOK && r.Header.Get("Range") == "" && resp.Header.Get("Content-Encoding") == "" {
 		cacheDigest := resp.Header.Get("Docker-Content-Digest")
 
 		if cacheDigest == "" {
 			cacheDigest = digest
 		}
 
-		outcome := p.cache.StreamAndStore(r.Context(), w, cacheDigest, resp.Header.Get("Content-Type"), resp.Body)
+		outcome := cache.StreamAndStore(r.Context(), w, cacheDigest, resp.Header.Get("Content-Type"), resp.Body)
 
 		if outcome.CacheErr != nil {
 			p.metrics.cacheWriteFailures.Add(1)
@@ -361,6 +537,17 @@ func (p *Proxy) proxyRequest(w http.ResponseWriter, r *http.Request, upstreamURL
 	}
 
 	return true
+}
+
+func upstreamFailureMessage(img *model.Image, err error) string {
+	switch {
+	case !isDialError(err):
+		return fmt.Sprintf("the request to the registry at %s failed; check DockVMap's log", img.Registry)
+	case img.RegistryInternal:
+		return internalRegistryUnreachable(img.Registry)
+	default:
+		return fmt.Sprintf("the registry at %s didn't answer; try again later", img.Registry)
+	}
 }
 
 func (p *Proxy) copyResponseHeaders(w http.ResponseWriter, resp *http.Response) {

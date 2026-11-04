@@ -10,6 +10,10 @@ export function listRegistries() {
   return api.get<Registry[]>('/registries')
 }
 
+export function listInternalRepositories() {
+  return api.get<string[]>('/registries/internal/repositories')
+}
+
 export function createRegistry(params: CreateRegistryParams) {
   return api.post<Registry>('/registries', params)
 }

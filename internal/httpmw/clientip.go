@@ -1,4 +1,4 @@
-package web
+package httpmw
 
 import (
 	"net"
@@ -9,8 +9,8 @@ import (
 	"github.com/septi0/dockvmap/internal/ipmatch"
 )
 
-// resolveClientIP trusts X-Forwarded-For only from a trusted immediate peer; otherwise it's spoofable.
-func resolveClientIP(r *http.Request, trusted ipmatch.Set) string {
+// ClientIP trusts X-Forwarded-For only from a trusted immediate peer; otherwise it's spoofable.
+func ClientIP(r *http.Request, trusted ipmatch.Set) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 
 	if err != nil {

@@ -82,7 +82,7 @@ func TestProxyUsageFlushPersistsAndClears(t *testing.T) {
 	id := f.addImage("nextcloud", "v1", "v1")
 	other := f.addImage("redis", "v1", "v1")
 
-	tokenID, err := f.store.CreateProxyToken(f.ctx, "ci", "hash")
+	tokenID, err := f.store.CreateProxyToken(f.ctx, "ci", "hash", false)
 
 	if err != nil {
 		t.Fatalf("creating token: %v", err)
@@ -210,26 +210,28 @@ func TestProxyTokenVerifyRecordsUseOnlyForValidTokens(t *testing.T) {
 	used := &recordingTokenUsage{}
 	tokens := NewProxyTokens(f.store, f.audit, used)
 
-	id, secret, err := tokens.Create(f.ctx, "ci")
+	id, secret, err := tokens.Create(f.ctx, "ci", true)
 
 	if err != nil {
 		t.Fatalf("creating token: %v", err)
 	}
 
-	if ok, err := tokens.Verify(f.ctx, "wrong"); ok || err != nil {
-		t.Fatalf("wrong token: ok = %v, err = %v", ok, err)
+	if token, err := tokens.Verify(f.ctx, "wrong"); token != nil || err != nil {
+		t.Fatalf("wrong token: token = %v, err = %v", token, err)
 	}
 
-	if ok, err := tokens.Verify(f.ctx, ""); ok || err != nil {
-		t.Fatalf("empty token: ok = %v, err = %v", ok, err)
+	if token, err := tokens.Verify(f.ctx, ""); token != nil || err != nil {
+		t.Fatalf("empty token: token = %v, err = %v", token, err)
 	}
 
 	if len(used.ids) != 0 {
 		t.Fatalf("invalid tokens recorded use: %v", used.ids)
 	}
 
-	if ok, err := tokens.Verify(f.ctx, secret); !ok || err != nil {
-		t.Fatalf("valid token: ok = %v, err = %v", ok, err)
+	token, err := tokens.Verify(f.ctx, secret)
+
+	if err != nil || token == nil || token.ID != id || token.Label != "ci" || !token.CanPush {
+		t.Fatalf("valid token: token = %+v, err = %v", token, err)
 	}
 
 	if len(used.ids) != 1 || used.ids[0] != id {

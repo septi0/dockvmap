@@ -2,12 +2,14 @@
   import { onMount } from "svelte";
   import Plus from "@lucide/svelte/icons/plus";
   import Server from "@lucide/svelte/icons/server";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
   import RegistryModal from "../lib/components/RegistryModal.svelte";
   import { listRegistries } from "../lib/api/registries";
+  import { getProxyAuthStatus } from "../lib/api/system";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
   import type { Registry } from "../lib/api/types/registries";
@@ -18,6 +20,7 @@
   let error = $state<string | null>(null);
   let showCreateModal = $state(false);
   let editingRegistry = $state<Registry | null>(null);
+  let proxyAuthEnabled = $state(true);
   let loadToken = 0;
 
   async function load() {
@@ -40,7 +43,12 @@
     }
   }
 
-  onMount(load);
+  onMount(() => {
+    load();
+    getProxyAuthStatus()
+      .then((status) => (proxyAuthEnabled = status.enabled))
+      .catch(() => {});
+  });
 
   async function handleSaved(registry: Registry, action: "created" | "updated") {
     await load();
@@ -102,11 +110,23 @@
           {#each registries as registry (registry.id)}
             <tr class="clickable" onclick={(event) => handleRowClick(event, registry)}>
               <td class="host-cell">
-                <button
-                  type="button"
-                  class="registry-name"
-                  onclick={() => (editingRegistry = registry)}>{registry.registry}</button
-                >
+                <span class="name-cell">
+                  <button
+                    type="button"
+                    class="registry-name"
+                    onclick={() => (editingRegistry = registry)}>{registry.registry}</button
+                  >
+                  {#if registry.internal}<span class="badge badge-accent">Internal</span>{/if}
+                </span>
+                {#if registry.internal}
+                  <p class="muted registry-note">Set by <code class="inline-code">internal_registry</code> in config</p>
+                  {#if !proxyAuthEnabled}
+                    <p class="warning-text registry-note">
+                      <TriangleAlert size={14} strokeWidth={2} />
+                      <span>Anyone who can reach the proxy can push; turn on <code class="inline-code">proxy_auth</code></span>
+                    </p>
+                  {/if}
+                {/if}
               </td>
               <td class="phone-hidden">{registry.username ?? "-"}</td>
               <td>
@@ -117,13 +137,15 @@
                 {/if}
               </td>
               <td class="phone-hidden">
-                {#if registry.options.insecure}
+                {#if registry.internal}
+                  <span class="muted">Stack network</span>
+                {:else if registry.options.insecure}
                   <span class="badge badge-warning">Insecure</span>
                 {/if}
                 {#if registry.options.allow_self_signed_certs}
                   <span class="badge badge-warning">Self-signed</span>
                 {/if}
-                {#if !registry.options.insecure && !registry.options.allow_self_signed_certs}
+                {#if !registry.internal && !registry.options.insecure && !registry.options.allow_self_signed_certs}
                   <span class="muted">-</span>
                 {/if}
               </td>
@@ -154,6 +176,11 @@
 <style>
   .host-cell {
     overflow-wrap: anywhere;
+  }
+
+  .registry-note {
+    margin: 2px 0 0;
+    font-size: 0.8125rem;
   }
 
   .registry-name {

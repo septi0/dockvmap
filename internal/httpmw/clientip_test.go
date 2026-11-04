@@ -1,4 +1,4 @@
-package web
+package httpmw
 
 import (
 	"net/http"
@@ -106,8 +106,8 @@ func TestResolveClientIP(t *testing.T) {
 				r.Header.Set("X-Forwarded-For", tc.xff)
 			}
 
-			if got := resolveClientIP(r, trusted); got != tc.want {
-				t.Errorf("resolveClientIP(remote=%q, xff=%q) = %q; want %q",
+			if got := ClientIP(r, trusted); got != tc.want {
+				t.Errorf("ClientIP(remote=%q, xff=%q) = %q; want %q",
 					tc.remoteAddr, tc.xff, got, tc.want)
 			}
 		})

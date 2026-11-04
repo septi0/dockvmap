@@ -77,11 +77,12 @@ type auditHostUpdateData struct {
 }
 
 type HostsDeps struct {
-	Store        hostStore
-	Audit        auditRecorder
-	Agents       agentDialer
-	PollInterval time.Duration
-	ProxyHost    string
+	Store            hostStore
+	Audit            auditRecorder
+	Agents           agentDialer
+	PollInterval     time.Duration
+	ProxyHost        string
+	InternalRegistry bool
 }
 
 type Hosts struct {
@@ -90,7 +91,9 @@ type Hosts struct {
 	agents       agentDialer
 	offlineAfter time.Duration
 	proxyHost    string
-	now          func() time.Time
+
+	internalRegistry bool
+	now              func() time.Time
 
 	mu     sync.Mutex
 	polls  map[int64]*sync.Mutex
@@ -104,9 +107,11 @@ func NewHosts(deps HostsDeps) *Hosts {
 		agents:       deps.Agents,
 		offlineAfter: hostOfflineAfterPolls * deps.PollInterval,
 		proxyHost:    deps.ProxyHost,
-		now:          time.Now,
-		polls:        make(map[int64]*sync.Mutex),
-		polled:       make(map[int64]time.Time),
+
+		internalRegistry: deps.InternalRegistry,
+		now:              time.Now,
+		polls:            make(map[int64]*sync.Mutex),
+		polled:           make(map[int64]time.Time),
 	}
 }
 
@@ -555,6 +560,10 @@ func (h *Hosts) track(ctx context.Context, containers []model.HostContainer, pro
 		}
 
 		c.Tracking = trackContainer(*c, image, proxy.VirtualTag)
+
+		if image == nil && h.internalRegistry {
+			c.Tracking.Status = model.ContainerInternalRegistry
+		}
 	}
 
 	return nil

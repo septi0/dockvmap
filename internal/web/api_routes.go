@@ -79,6 +79,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/registries/test", apiMethod(http.MethodPost, w.apiTestRegistry))
 
+	mux.HandleFunc("/registries/internal/repositories", apiMethod(http.MethodGet, w.apiListInternalRepositories))
+
 	mux.HandleFunc("/registries/{id}", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:

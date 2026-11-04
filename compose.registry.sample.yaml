@@ -1,0 +1,42 @@
+name: dockvmap
+
+services:
+  dockvmap:
+    image: ghcr.io/septi0/dockvmap:latest
+    restart: unless-stopped
+
+    # pushes and pulls of names that aren't virtual images go through to the registry below;
+    # set DOCKVMAP_INTERNAL_REGISTRY_ADDRESS only if you rename the registry service
+    environment:
+      DOCKVMAP_INTERNAL_REGISTRY_ENABLED: "true"
+      # DOCKVMAP_PROXY_AUTH_ENABLED: "true"   # require a proxy token; pushes need one with Can push
+
+    volumes:
+      - dockvmap-data:/data
+
+    ports:
+      - "5000:5000"   # the proxy: push and pull here
+      - "8080:8080"   # the web UI
+
+    depends_on:
+      - registry
+
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  registry:
+    image: registry:2
+    restart: unless-stopped
+
+    # plain HTTP and no login: only DockVMap reaches it, over this stack's network,
+    # so don't publish its port; DockVMap handles TLS and logins
+    volumes:
+      - registry-data:/var/lib/registry   # every pushed image; back it up separately from DockVMap
+
+volumes:
+  dockvmap-data:
+  registry-data:

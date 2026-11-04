@@ -13,12 +13,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/septi0/dockvmap/internal/blobcache"
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/httpmw"
-	"github.com/septi0/dockvmap/internal/oci"
 	"github.com/septi0/dockvmap/internal/proxy"
-	"github.com/septi0/dockvmap/internal/service"
 	"github.com/septi0/dockvmap/internal/web"
 )
 
@@ -106,17 +103,24 @@ func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFun
 	slog.Info("stopped")
 }
 
-func newProxyServer(cfg *config.Config, images *service.Images, ociClient *oci.Client, cache *blobcache.Cache, metrics *proxy.Metrics, proxyTokens *service.ProxyTokens, proxyUsage *service.ProxyUsage, tlsConfig *tls.Config) *http.Server {
-	var handler http.Handler = proxy.New(cfg, images, ociClient, cache, metrics, proxyTokens, proxyUsage)
+func newProxyServer(deps proxy.Deps, tlsConfig *tls.Config) *http.Server {
+	var handler http.Handler = proxy.New(deps)
+	cfg := deps.Config
 
 	if cfg.ProxyAccessLogEnabled() {
-		handler = httpmw.AccessLog("proxy", handler)
+		handler = httpmw.AccessLog("proxy", deps.TrustedProxies, handler)
+	}
+
+	readTimeout := proxy.RequestReadTimeout
+
+	if deps.InternalRegistry != "" {
+		readTimeout = 0
 	}
 
 	return &http.Server{
 		Addr:              cfg.ProxyServerListen,
 		Handler:           httpmw.Recover(handler),
-		ReadTimeout:       15 * time.Second,
+		ReadTimeout:       readTimeout,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    10 << 20,

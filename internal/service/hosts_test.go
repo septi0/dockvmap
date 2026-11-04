@@ -1081,3 +1081,43 @@ func TestImageRolloutsCountKnownVersionsOnOnlineHosts(t *testing.T) {
 		t.Fatalf("rollouts = %+v, want %+v (unknown digests, unknown images and pinned or stopped containers don't count; offline hosts and hosts that can't read Docker are counted apart)", rollouts, want)
 	}
 }
+
+func TestHostContainerFromTheInternalRegistry(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		f := newHostFixture(t)
+		f.hosts.internalRegistry = enabled
+		id, _ := f.addHost("server2")
+
+		f.report(id, []agentapi.Container{container("c1", "api", proxyHost+"/team/api:v3", "api")}, []agentapi.Image{
+			{ID: "api", RepoDigests: []string{repoDigest(proxyHost+"/team/api", "a")}},
+		})
+
+		hosts, err := f.hosts.List(f.ctx, testProxy)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		details, err := f.hosts.Get(f.ctx, id, testProxy)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		want := model.ContainerUnknownImage
+
+		if enabled {
+			want = model.ContainerInternalRegistry
+		}
+
+		tracking := details.Containers[0].Tracking
+
+		if tracking == nil || tracking.Status != want || tracking.InRollout {
+			t.Errorf("internal registry %v: tracking = %+v, want %s outside the rollout", enabled, tracking, want)
+		}
+
+		if hosts[0].Rollout.Total != 0 {
+			t.Errorf("internal registry %v: rollout = %+v, want nothing counted", enabled, hosts[0].Rollout)
+		}
+	}
+}

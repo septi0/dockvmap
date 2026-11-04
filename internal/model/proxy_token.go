@@ -7,4 +7,5 @@ type ProxyToken struct {
 	Label      string
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
+	CanPush    bool
 }
