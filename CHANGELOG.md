@@ -2,7 +2,7 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
-## v1.9.0 (unreleased)
+## v1.9.0 (2026-11-04)
 
 - **Hosts**: see the containers on each of your Docker hosts. Add a host with its address on the new Hosts page and run the DockVMap agent on it (`ghcr.io/septi0/dockvmap-agent`, sample in `compose.agent.sample.yaml`). DockVMap connects to the agent on port 9002 and adopts it on its first check, so hosts never need a route back to DockVMap and there are no tokens to copy. The agent only reads from Docker. Each host shows whether it's online, its containers with state, health, stack, image and published ports, and which containers pulled through DockVMap are up to date, outdated, or pulled but not recreated. DockVMap checks every host every 30 seconds (`agents_poll_interval`), and opening a host checks it right away. See "Hosts and the agent" in the README.
 - **Running on**: Image details lists the containers running that image on every host, with what needs attention first, and how many are up to date.
