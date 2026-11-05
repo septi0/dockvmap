@@ -2,7 +2,7 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
-## v1.10.0 (unreleased)
+## v1.10.0 (2026-11-05)
 
 - **Internal registry**: run the official `registry:2` next to DockVMap, with only DockVMap exposed, and push and pull every image through one address. Names that aren't virtual images pass straight through to the registry; virtual tags work as before. Turn it on with `internal_registry.enabled`; `compose.registry.sample.yaml` is a ready stack. At startup DockVMap adds the registry on the Registries page (marked Internal), or takes over an existing entry with that address, so virtual images on it keep working. A new tag pushed to a repository shows as an update within seconds, and every pushed tag and deleted manifest is in the audit log with the token that made the change. A virtual image built on a repository of the same name (`myapp` on `myapp`) still takes pushes to that repository. See "Internal registry" in the README.
 - **Internal registry over TLS**: `internal_registry.tls` puts DockVMap in front of a registry that already serves TLS, so you can take over an existing registry without changing it or the clients that use it directly. See "Keeping an existing registry as it is" in the README.
