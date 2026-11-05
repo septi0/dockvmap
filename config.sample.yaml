@@ -21,6 +21,8 @@ trusted_proxies: []
 
 # Pass pushes and pulls of names that aren't virtual images through to a registry:2
 # on DockVMap's stack network (plain HTTP, no login). See compose.registry.sample.yaml.
+# For a registry that already serves TLS, set address to its certificate's name and tls: true.
 # internal_registry:
 #   enabled: true
 #   address: registry:5000
+#   tls: false

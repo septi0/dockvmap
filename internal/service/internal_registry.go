@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,8 +28,6 @@ const (
 	changeMaxPending   = 1000
 	changeFlushTimeout = 10 * time.Second
 )
-
-var internalRegistryOptions = model.RegistryOptions{Insecure: true}
 
 var ErrRegistryManagedByConfig = errors.New("this registry is set by internal_registry in config; change it there")
 
@@ -78,6 +77,7 @@ type InternalRegistryDeps struct {
 	Refresher imageRefresher
 	Enabled   bool
 	Address   string
+	TLS       bool
 }
 
 type InternalRegistry struct {
@@ -87,6 +87,7 @@ type InternalRegistry struct {
 	refresher     imageRefresher
 	enabled       bool
 	address       string
+	useTLS        bool
 	client        *http.Client
 	checkInterval time.Duration
 	quietPeriod   time.Duration
@@ -104,6 +105,7 @@ func NewInternalRegistry(deps InternalRegistryDeps) *InternalRegistry {
 		refresher:     deps.Refresher,
 		enabled:       deps.Enabled,
 		address:       deps.Address,
+		useTLS:        deps.TLS,
 		client:        &http.Client{Timeout: internalRegistryCheckTimeout},
 		checkInterval: internalRegistryCheckInterval,
 		quietPeriod:   changeQuietPeriod,
@@ -118,6 +120,24 @@ func (r *InternalRegistry) Address() string {
 	}
 
 	return r.address
+}
+
+func (r *InternalRegistry) TLS() bool {
+	return r.useTLS
+}
+
+func (r *InternalRegistry) url(path string) string {
+	scheme := "http"
+
+	if r.useTLS {
+		scheme = "https"
+	}
+
+	return scheme + "://" + r.address + path
+}
+
+func (r *InternalRegistry) options() model.RegistryOptions {
+	return model.RegistryOptions{Insecure: !r.useTLS}
 }
 
 func (r *InternalRegistry) EnsureInternal(ctx context.Context) error {
@@ -153,8 +173,16 @@ func (r *InternalRegistry) EnsureInternal(ctx context.Context) error {
 	}
 
 	switch {
-	case marked != nil && marked.Registry == r.address:
+	case marked != nil && marked.Registry == r.address && marked.Options == r.options():
 		return nil
+
+	case marked != nil && marked.Registry == r.address:
+		if err := r.mark(ctx, marked.ID); err != nil {
+			return err
+		}
+
+		slog.Info("internal registry connection changed", "registry", r.address, "tls", r.useTLS)
+		r.auditRegistryEntry(ctx, AuditTypeRegistryUpdated, r.address)
 
 	case marked != nil && existing != nil:
 		return r.addressInUse()
@@ -194,7 +222,7 @@ func (r *InternalRegistry) EnsureInternal(ctx context.Context) error {
 }
 
 func (r *InternalRegistry) mark(ctx context.Context, registryID int64) error {
-	err := r.store.MarkRegistryInternal(ctx, registryID, r.address, internalRegistryOptions)
+	err := r.store.MarkRegistryInternal(ctx, registryID, r.address, r.options())
 
 	if errors.Is(err, store.ErrRegistryConflict) {
 		return r.addressInUse()
@@ -210,7 +238,7 @@ func (r *InternalRegistry) addressInUse() error {
 func (r *InternalRegistry) auditRegistryEntry(ctx context.Context, auditType, registry string) {
 	recordAudit(ctx, r.audit, auditType, auditRegistryData{
 		Registry: registry,
-		Options:  internalRegistryOptions,
+		Options:  r.options(),
 	})
 }
 
@@ -255,13 +283,17 @@ func (r *InternalRegistry) checkUntilReachable(ctx context.Context) {
 }
 
 func (r *InternalRegistry) ping(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+r.address+"/v2/", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url("/v2/"), nil)
 
 	if err != nil {
 		return err
 	}
 
 	resp, err := r.client.Do(req)
+
+	if problem := InternalRegistryCertProblem(err); problem != nil {
+		return fmt.Errorf("has a certificate DockVMap doesn't accept: %w", problem)
+	}
 
 	if err != nil {
 		return errors.New("didn't answer; check that its container is running on DockVMap's network")
@@ -276,7 +308,7 @@ func (r *InternalRegistry) ping(ctx context.Context) error {
 		return errInternalRegistryLogin
 	}
 
-	return fmt.Errorf("answered %s instead of a registry; check internal_registry.address", resp.Status)
+	return fmt.Errorf("answered %s instead of a registry; check internal_registry.address and internal_registry.tls", resp.Status)
 }
 
 func (r *InternalRegistry) Pushed(repository, tag, token string, info RequestInfo) {
@@ -432,13 +464,17 @@ func (r *InternalRegistry) Repositories(ctx context.Context) ([]string, error) {
 	next := "/v2/_catalog?n=100"
 
 	for next != "" && len(repositories) < maxInternalRepositories {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+r.address+next, nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url(next), nil)
 
 		if err != nil {
 			return nil, err
 		}
 
 		resp, err := r.client.Do(req)
+
+		if problem := InternalRegistryCertProblem(err); problem != nil {
+			return nil, fmt.Errorf("the internal registry at %s has a certificate DockVMap doesn't accept: %w", r.address, problem)
+		}
 
 		if err != nil {
 			return nil, fmt.Errorf("the internal registry at %s didn't answer; check that its container is running on DockVMap's network", r.address)
@@ -481,4 +517,14 @@ func nextCatalogPage(link string) string {
 	}
 
 	return target
+}
+
+func InternalRegistryCertProblem(err error) error {
+	var certErr *tls.CertificateVerificationError
+
+	if !errors.As(err, &certErr) {
+		return nil
+	}
+
+	return certErr.Err
 }

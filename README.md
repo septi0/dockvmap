@@ -204,7 +204,7 @@ DockVMap doesn't replace the registry. `registry:2` stores every image and does 
 3. Push: `docker push localhost:5000/team/web:v1`.
 4. For a virtual tag, add a virtual image from **Internal registry** and repository `team/web`, then `docker pull localhost:5000/web:current`. The repository field suggests what's already in the registry.
 
-The internal registry is reached over plain HTTP on the stack network and must not require a login: DockVMap handles TLS and logins.
+The internal registry is reached over plain HTTP on the stack network and must not require a login: DockVMap handles TLS and logins. For a registry that already serves TLS, see [Keeping an existing registry as it is](#keeping-an-existing-registry-as-it-is).
 
 ### Moving an existing registry
 
@@ -212,6 +212,15 @@ The internal registry is reached over plain HTTP on the stack network and must n
 2. Remove the registry's own TLS settings (`REGISTRY_HTTP_TLS_*`) and any `htpasswd` login, and stop publishing its port.
 3. If virtual images already use that registry in DockVMap, edit its registry entry and change the address to `registry:5000` before turning the setting on. DockVMap takes that entry over at startup, so those virtual images keep working.
 4. Turn on `internal_registry.enabled`, and point clients that pulled real names from the registry at DockVMap's proxy address.
+
+### Keeping an existing registry as it is
+
+To put DockVMap in front of a registry that already serves TLS, without changing the registry or the clients that use it directly:
+
+1. Set `internal_registry.address` to the name and port its certificate is for, like `registry.example.com:5000`, and turn on `internal_registry.tls`. DockVMap connects over HTTPS and checks the certificate, so it must be valid for that name and come from a CA DockVMap trusts, like Let's Encrypt.
+2. Turn on `internal_registry.enabled`. If DockVMap already has a registry entry with that address, it takes it over, so its virtual images keep working.
+
+Clients that use the registry directly keep working as before. Their pushes don't go through DockVMap, so they aren't in the audit log and show at the next scheduled tag check instead of within seconds. To finish the move later, follow [Moving an existing registry](#moving-an-existing-registry) and turn `internal_registry.tls` off; DockVMap moves the entry to the new address and its virtual images follow.
 
 ### How requests are routed
 
@@ -342,7 +351,8 @@ Fire after a scheduled tag check, once it has finished. Email is a digest per ch
 | Key | Default | Description |
 |---|---|---|
 | `internal_registry.enabled` | `false` | Pass pushes and pulls of names that aren't virtual images through to a `registry:2` on DockVMap's network. See [Internal registry](#internal-registry). |
-| `internal_registry.address` | `registry:5000` | The registry's `host:port`, reached over plain HTTP. Change it only if the registry service has another name. |
+| `internal_registry.address` | `registry:5000` | The registry's `host:port`. Change it if the registry service has another name, or, with `tls` on, to the name its certificate is for. |
+| `internal_registry.tls` | `false` | Connect to the registry over HTTPS and check its certificate, for a registry that already serves TLS. Off, DockVMap uses plain HTTP. See [Keeping an existing registry as it is](#keeping-an-existing-registry-as-it-is). |
 
 ## Tag filtering
 

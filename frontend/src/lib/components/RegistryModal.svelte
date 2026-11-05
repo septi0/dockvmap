@@ -190,8 +190,9 @@
     {#if managed}
       <p class="section-hint muted managed-note">
         The internal registry is set by <code class="inline-code">internal_registry</code> in config;
-        change it there. DockVMap reaches it over plain HTTP on the stack network, and handles
-        logins with proxy tokens.
+        change it there. DockVMap reaches it over {registry?.options.insecure
+          ? "plain HTTP on the stack network"
+          : "HTTPS"}, and handles logins with proxy tokens.
       </p>
     {:else if !editingAuth}
       <div class="auth-status">

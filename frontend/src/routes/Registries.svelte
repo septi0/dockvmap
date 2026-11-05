@@ -137,7 +137,7 @@
                 {/if}
               </td>
               <td class="phone-hidden">
-                {#if registry.internal}
+                {#if registry.internal && registry.options.insecure}
                   <span class="muted">Stack network</span>
                 {:else if registry.options.insecure}
                   <span class="badge badge-warning">Insecure</span>
@@ -145,7 +145,7 @@
                 {#if registry.options.allow_self_signed_certs}
                   <span class="badge badge-warning">Self-signed</span>
                 {/if}
-                {#if !registry.internal && !registry.options.insecure && !registry.options.allow_self_signed_certs}
+                {#if !registry.options.insecure && !registry.options.allow_self_signed_certs}
                   <span class="muted">-</span>
                 {/if}
               </td>

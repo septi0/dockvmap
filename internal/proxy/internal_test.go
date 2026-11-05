@@ -49,8 +49,24 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 	t.Helper()
 
 	f := &fakeRegistry{}
+	f.server = httptest.NewServer(f.handler())
+	t.Cleanup(f.server.Close)
 
-	f.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return f
+}
+
+func newFakeTLSRegistry(t *testing.T) *fakeRegistry {
+	t.Helper()
+
+	f := &fakeRegistry{}
+	f.server = httptest.NewTLSServer(f.handler())
+	t.Cleanup(f.server.Close)
+
+	return f
+}
+
+func (f *fakeRegistry) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, readErr := io.ReadAll(r.Body)
 
 		f.mu.Lock()
@@ -66,7 +82,13 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 			w.WriteHeader(http.StatusUnauthorized)
 
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/blobs/uploads/"):
-			w.Header().Set("Location", "http://"+r.Host+r.URL.Path+"0f1e?_state=abc")
+			scheme := "http"
+
+			if r.TLS != nil {
+				scheme = "https"
+			}
+
+			w.Header().Set("Location", scheme+"://"+r.Host+r.URL.Path+"0f1e?_state=abc")
 			w.WriteHeader(http.StatusAccepted)
 
 		case r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/elsewhere/"):
@@ -80,15 +102,11 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 			w.WriteHeader(http.StatusOK)
 			io.WriteString(w, `{"from":"registry"}`)
 		}
-	}))
-
-	t.Cleanup(f.server.Close)
-
-	return f
+	})
 }
 
 func (f *fakeRegistry) address() string {
-	return strings.TrimPrefix(f.server.URL, "http://")
+	return f.server.Listener.Addr().String()
 }
 
 func (f *fakeRegistry) recorded() []registryCall {
@@ -99,6 +117,10 @@ func (f *fakeRegistry) recorded() []registryCall {
 }
 
 func newInternalProxy(internal string, auth bool, tokens fakeTokens) *Proxy {
+	return newInternalProxyWith(internal, false, auth, tokens)
+}
+
+func newInternalProxyWith(internal string, useTLS, auth bool, tokens fakeTokens) *Proxy {
 	cfg := &config.Config{VirtualTag: "current"}
 	cfg.ProxyAuth.Enabled = auth
 
@@ -109,9 +131,10 @@ func newInternalProxy(internal string, auth bool, tokens fakeTokens) *Proxy {
 			"myapp": {ID: 2, Name: "myapp", Registry: internal, RegistryInternal: true, Repository: "myapp", Tag: "v1"},
 			"nginx": {ID: 3, Name: "nginx", Registry: "docker.io", Repository: "nginx", Tag: "1.27"},
 		}},
-		Tokens:           tokens,
-		Usage:            &recordingUsage{},
-		InternalRegistry: internal,
+		Tokens:              tokens,
+		Usage:               &recordingUsage{},
+		InternalRegistry:    internal,
+		InternalRegistryTLS: useTLS,
 	})
 }
 
@@ -234,6 +257,33 @@ func TestPassthroughReportsARegistryThatDoesntAnswer(t *testing.T) {
 
 	if _, message := ociMessage(t, rec); !strings.Contains(message, "didn't answer; check that its container is running") {
 		t.Errorf("message %q, want the no-answer message", message)
+	}
+}
+
+func TestPassthroughUsesTLSWhenSet(t *testing.T) {
+	registry := newFakeTLSRegistry(t)
+	p := newInternalProxyWith(registry.address(), true, false, nil)
+
+	rec := serve(p, http.MethodGet, "/v2/team/api/manifests/v1", "", nil)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("untrusted certificate: status %d, want 502", rec.Code)
+	}
+
+	if _, message := ociMessage(t, rec); !strings.Contains(message, "has a certificate DockVMap doesn't accept") {
+		t.Errorf("untrusted certificate: message %q, want the certificate message", message)
+	}
+
+	p.internal.proxy.Transport.(*http.Transport).TLSClientConfig = registry.server.Client().Transport.(*http.Transport).TLSClientConfig
+
+	if rec := serve(p, http.MethodGet, "/v2/team/api/manifests/v1", "", nil); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "registry") {
+		t.Fatalf("status %d, body %q; want the registry's answer over TLS", rec.Code, rec.Body.String())
+	}
+
+	rec = serve(p, http.MethodPost, "/v2/team/api/blobs/uploads/", "", nil)
+
+	if rec.Code != http.StatusAccepted || rec.Header().Get("Location") != "/v2/team/api/blobs/uploads/0f1e?_state=abc" {
+		t.Errorf("upload: status %d, Location %q; want 202 with a relative Location", rec.Code, rec.Header().Get("Location"))
 	}
 }
 

@@ -67,6 +67,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Refresher: images,
 		Enabled:   cfg.InternalRegistry.Enabled,
 		Address:   cfg.InternalRegistry.Address,
+		TLS:       cfg.InternalRegistry.TLS,
 	})
 
 	if err := internalRegistry.EnsureInternal(ctx); err != nil {
@@ -146,9 +147,10 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Tokens:  proxyTokens,
 		Usage:   proxyUsage,
 
-		InternalRegistry: internalRegistry.Address(),
-		Changes:          internalRegistry,
-		TrustedProxies:   trustedProxies,
+		InternalRegistry:    internalRegistry.Address(),
+		InternalRegistryTLS: internalRegistry.TLS(),
+		Changes:             internalRegistry,
+		TrustedProxies:      trustedProxies,
 	}, tlsConfig)
 
 	wDeps := workerDeps{

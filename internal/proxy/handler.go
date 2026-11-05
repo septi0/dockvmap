@@ -65,9 +65,10 @@ type Deps struct {
 	Tokens  tokenVerifier
 	Usage   usageRecorder
 
-	InternalRegistry string
-	Changes          changeRecorder
-	TrustedProxies   ipmatch.Set
+	InternalRegistry    string
+	InternalRegistryTLS bool
+	Changes             changeRecorder
+	TrustedProxies      ipmatch.Set
 }
 
 func New(deps Deps) *Proxy {
@@ -84,7 +85,7 @@ func New(deps Deps) *Proxy {
 	var internal *passthrough
 
 	if deps.InternalRegistry != "" {
-		internal = newPassthrough(deps.InternalRegistry, deps.Changes)
+		internal = newPassthrough(deps.InternalRegistry, deps.InternalRegistryTLS, deps.Changes)
 	}
 
 	return &Proxy{

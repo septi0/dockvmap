@@ -18,10 +18,11 @@ import (
 )
 
 type internalRegistryFixture struct {
-	t     *testing.T
-	ctx   context.Context
-	store *store.Store
-	audit *recordingAudit
+	t      *testing.T
+	ctx    context.Context
+	store  *store.Store
+	audit  *recordingAudit
+	useTLS bool
 }
 
 func newInternalRegistryFixture(t *testing.T) *internalRegistryFixture {
@@ -45,6 +46,7 @@ func (f *internalRegistryFixture) ensure(enabled bool, address string) error {
 		Failures: stubFailures{},
 		Enabled:  enabled,
 		Address:  address,
+		TLS:      f.useTLS,
 	}).EnsureInternal(f.ctx)
 }
 
@@ -111,6 +113,47 @@ func TestEnsureInternalTakesOverAnExistingEntry(t *testing.T) {
 
 	if info == nil || info.ID != id || !info.Options.Insecure {
 		t.Fatalf("internal registry = %+v, want the existing entry %d with Insecure on", info, id)
+	}
+}
+
+func TestEnsureInternalWithTLSTakesOverTheEntryWithoutInsecure(t *testing.T) {
+	f := newInternalRegistryFixture(t)
+	f.useTLS = true
+
+	id := f.createRegistry(model.Registry{Registry: "registry.example.com:5000"})
+
+	if err := f.ensure(true, "registry.example.com:5000"); err != nil {
+		t.Fatalf("EnsureInternal: %v", err)
+	}
+
+	if info := f.internal(); info == nil || info.ID != id || info.Options.Insecure {
+		t.Fatalf("internal registry = %+v, want the existing entry %d with Insecure off", info, id)
+	}
+}
+
+func TestEnsureInternalFollowsATLSChange(t *testing.T) {
+	f := newInternalRegistryFixture(t)
+
+	if err := f.ensure(true, "registry:5000"); err != nil {
+		t.Fatalf("EnsureInternal: %v", err)
+	}
+
+	f.useTLS = true
+
+	if err := f.ensure(true, "registry:5000"); err != nil {
+		t.Fatalf("EnsureInternal with TLS: %v", err)
+	}
+
+	if info := f.internal(); info == nil || info.Options.Insecure {
+		t.Fatalf("internal registry = %+v, want Insecure off after turning on TLS", info)
+	}
+
+	if got := f.audit.count(AuditTypeRegistryUpdated); got != 1 {
+		t.Errorf("REGISTRY_UPDATED audits = %d, want 1", got)
+	}
+
+	if err := f.ensure(true, "registry:5000"); err != nil || f.audit.count(AuditTypeRegistryUpdated) != 1 {
+		t.Errorf("a second start with TLS changed something: err = %v", err)
 	}
 }
 
@@ -296,6 +339,27 @@ func TestInternalRegistryCheckReportsNoAnswer(t *testing.T) {
 
 	if err := registry.ping(context.Background()); err == nil || !strings.Contains(err.Error(), "didn't answer; check that its container is running") {
 		t.Errorf("ping error = %v, want the no-answer message", err)
+	}
+}
+
+func TestInternalRegistryCheckOverTLS(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/" {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	registry := NewInternalRegistry(InternalRegistryDeps{Enabled: true, Address: strings.TrimPrefix(server.URL, "https://"), TLS: true})
+
+	if err := registry.ping(context.Background()); err == nil || !strings.Contains(err.Error(), "has a certificate DockVMap doesn't accept") {
+		t.Errorf("untrusted certificate: ping error = %v, want the certificate message", err)
+	}
+
+	registry.client = server.Client()
+
+	if err := registry.ping(context.Background()); err != nil {
+		t.Errorf("trusted certificate: ping error = %v, want none", err)
 	}
 }
 

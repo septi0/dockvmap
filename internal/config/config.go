@@ -69,6 +69,7 @@ type ProxyAuthConfig struct {
 type InternalRegistryConfig struct {
 	Enabled bool   `yaml:"enabled" env:"DOCKVMAP_INTERNAL_REGISTRY_ENABLED"`
 	Address string `yaml:"address" env:"DOCKVMAP_INTERNAL_REGISTRY_ADDRESS" default:"registry:5000"`
+	TLS     bool   `yaml:"tls" env:"DOCKVMAP_INTERNAL_REGISTRY_TLS"`
 }
 
 type TLSConfig struct {

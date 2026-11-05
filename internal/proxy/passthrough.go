@@ -23,6 +23,7 @@ const (
 	RequestReadTimeout = 15 * time.Second
 
 	passthroughDialTimeout           = 5 * time.Second
+	passthroughTLSHandshakeTimeout   = 10 * time.Second
 	passthroughResponseHeaderTimeout = 2 * time.Minute
 	passthroughIdleConns             = 16
 )
@@ -52,9 +53,14 @@ func withChange(ctx context.Context, c change) context.Context {
 	return context.WithValue(ctx, changeKey{}, c)
 }
 
-func newPassthrough(address string, changes changeRecorder) *passthrough {
+func newPassthrough(address string, useTLS bool, changes changeRecorder) *passthrough {
 	target := &url.URL{Scheme: "http", Host: address}
-	pt := &passthrough{address: address, prefix: "http://" + address, changes: changes}
+
+	if useTLS {
+		target.Scheme = "https"
+	}
+
+	pt := &passthrough{address: address, prefix: target.String(), changes: changes}
 
 	pt.proxy = &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -67,6 +73,7 @@ func newPassthrough(address string, changes changeRecorder) *passthrough {
 		FlushInterval:  -1,
 		Transport: &http.Transport{
 			DialContext:           (&net.Dialer{Timeout: passthroughDialTimeout}).DialContext,
+			TLSHandshakeTimeout:   passthroughTLSHandshakeTimeout,
 			ResponseHeaderTimeout: passthroughResponseHeaderTimeout,
 			MaxIdleConnsPerHost:   passthroughIdleConns,
 			IdleConnTimeout:       90 * time.Second,
@@ -138,6 +145,13 @@ func (pt *passthrough) errorHandler(w http.ResponseWriter, r *http.Request, err 
 	if r.Context().Err() != nil {
 		slog.Debug("client went away during an internal registry request", "path", r.URL.Path, "error", err)
 		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
+
+	if problem := service.InternalRegistryCertProblem(err); problem != nil {
+		slog.Warn("the internal registry's certificate isn't accepted", "registry", pt.address, "path", r.URL.Path, "error", problem)
+		writeOCIError(w, http.StatusBadGateway, "UNKNOWN", fmt.Sprintf("the internal registry at %s has a certificate DockVMap doesn't accept: %v", pt.address, problem))
+
 		return
 	}
 
