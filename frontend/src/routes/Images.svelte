@@ -27,7 +27,6 @@
   import { pullCommand } from "../lib/utils/pullInfo";
   import { getImageGroup, IMAGE_GROUPS_MAX_LIMIT, listImageGroups } from "../lib/api/imageGroups";
   import { listRegistries } from "../lib/api/registries";
-  import { registryLabel } from "../lib/utils/registries";
   import type { Registry } from "../lib/api/types/registries";
   import { triggerTagRefresh } from "../lib/api/worker";
   import { toast } from "../lib/services/toast";
@@ -43,7 +42,7 @@
   import type { ImageGroup } from "../lib/api/types/imageGroups";
   import { formatCount, formatDate, formatRelativeTime, imageParts } from "../lib/utils/format";
   import { writeListQuery } from "../lib/utils/listQuery";
-  import { imageSource } from "../lib/utils/registries";
+  import { imageSource, registryLabel } from "../lib/utils/registries";
   import { createVisibilityPoller } from "../lib/utils/visibilityPoller";
   import {
     createListView,

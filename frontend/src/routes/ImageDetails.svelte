@@ -277,6 +277,7 @@
 
   <AsyncState {loading} {error}>
     {#if image}
+      {@const source = imageSourceParts(image)}
       <div class="list-header detail-header">
         <div>
           <div class="title-row">
@@ -285,8 +286,8 @@
           </div>
           <p class="subtitle image-source">
             <span
-              ><strong>{imageSourceParts(image).registry}</strong
-              >{imageSourceParts(image).separator}{image.repository}</span
+              ><strong>{source.registry}</strong
+              >{source.separator}{image.repository}</span
             >
             <UpstreamLink registry={image.registry} repository={image.repository} />
           </p>

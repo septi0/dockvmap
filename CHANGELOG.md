@@ -5,8 +5,8 @@ Changes people running DockVMap will notice, newest first. Upgrade notes call ou
 ## v1.11.0 (unreleased)
 
 - **Browse a registry**: a Browse icon on Registries opens the repositories and tags of any registry that lists them, shows which repositories have no virtual image yet, and starts Add virtual image with the repository and tag filled in. DockVMap checks which registries list their repositories, so Docker Hub and GHCR simply have no Browse icon. See "Browse a registry" in the README.
-- **Virtual images per registry**: Registries shows how many virtual images use each registry, and the number opens Virtual Images filtered by that registry. Virtual Images has a Registry filter once two or more registries have images. A registry still in use shows which images use it instead of offering Delete.
-- **Failing checks per registry**: a registry whose virtual images fail their tag checks shows "2 failing checks" on Registries, linked to those images, so an expired login points at the registry instead of only at each image.
+- **Virtual images per registry**: Registries shows how many virtual images use each registry, and the number opens Virtual Images filtered by that registry. Virtual Images has a Registry filter once two or more registries have images. A registry still in use links to its virtual images and can't be deleted until they're gone.
+- **Failing checks per registry**: a registry whose virtual images fail their tag checks gets the same failed-check icon on Registries as on Virtual Images and Groups, with the count in its tooltip, so an expired login points at the registry instead of only at each image.
 - **Tidier Registries list**: the internal registry comes first, then the rest by name. Authentication shows the username, or None, in place of the separate Username column and badge.
 - **Repository suggestions**: New virtual image now suggests repositories for every registry that lists them, not only the internal registry.
 - **Registries**: the "anyone can push" warning no longer shows on the Registries list; it stays in the log and on Proxy Tokens.

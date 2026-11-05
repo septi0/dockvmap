@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { link } from "svelte-spa-router";
+  import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import FolderSearch from "@lucide/svelte/icons/folder-search";
   import Plus from "@lucide/svelte/icons/plus";
   import Server from "@lucide/svelte/icons/server";
-  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
@@ -123,18 +123,19 @@
                     class="row-name registry-name"
                     onclick={() => (editingRegistry = registry)}>{registry.registry}</button
                   >
+                  {#if registry.failedChecks > 0}
+                    <span
+                      class="check-error-icon"
+                      title={`${registry.failedChecks} ${registry.failedChecks === 1 ? "image" : "images"} failed the last tag check`}
+                      aria-label={`${registry.failedChecks} failed tag checks`}
+                    >
+                      <CircleAlert size={14} strokeWidth={2} />
+                    </span>
+                  {/if}
                   {#if registry.internal}<span class="badge badge-accent">Internal</span>{/if}
                 </span>
                 {#if registry.internal}
                   <p class="muted registry-note">Set by <code class="inline-code">internal_registry</code> in config</p>
-                {/if}
-                {#if registry.failedChecks > 0}
-                  <p class="warning-text registry-note">
-                    <TriangleAlert size={14} strokeWidth={2} />
-                    <a class="row-link accent" href={`${imagesHref(registry)}&status=failedCheck`} use:link
-                      >{registry.failedChecks} failing {registry.failedChecks === 1 ? "check" : "checks"}</a
-                    >
-                  </p>
                 {/if}
                 {#if registry.imageCount > 0}
                   <p class="phone-only registry-note">

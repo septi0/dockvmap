@@ -163,7 +163,6 @@
               </table>
             </div>
           {/if}
-
         {/if}
       </div>
     {/if}

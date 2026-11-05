@@ -92,7 +92,7 @@
     {:else if loaded}
       <p class="muted summary">
         {tagCount}
-        {tagCount === 1 ? "tag" : "tags"}
+        {tagCount === 1 ? "tag" : "tags"} found
         {#if ignoredCount > 0}
           &middot; {ignoredCount} filtered out
         {/if}

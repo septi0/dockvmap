@@ -1,8 +1,6 @@
 package web
 
-import (
-	"net/http"
-)
+import "net/http"
 
 func (w *Web) apiListBrowsableRegistries(rw http.ResponseWriter, r *http.Request) {
 	ids, err := w.registryBrowser.Browsable(r.Context())
