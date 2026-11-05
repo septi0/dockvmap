@@ -79,7 +79,7 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/registries/test", apiMethod(http.MethodPost, w.apiTestRegistry))
 
-	mux.HandleFunc("/registries/internal/repositories", apiMethod(http.MethodGet, w.apiListInternalRepositories))
+	mux.HandleFunc("/registries/browsable", apiMethod(http.MethodGet, w.apiListBrowsableRegistries))
 
 	mux.HandleFunc("/registries/{id}", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -95,6 +95,8 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("/registries/{id}/test", apiMethod(http.MethodPost, w.apiTestExistingRegistry))
+
+	mux.HandleFunc("/registries/{id}/repositories", apiMethod(http.MethodGet, w.apiListRegistryRepositories))
 
 	mux.HandleFunc("/proxy-tokens", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {

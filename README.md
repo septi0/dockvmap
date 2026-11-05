@@ -57,6 +57,8 @@ docker pull dockvmap.local/myapp:current
 - **Updates review**: a dedicated page listing every image with an update, each with all newer tags in its family, so you can compare and update them without opening each image.
 - **Image groups**: keep images that release together on one version. Changing the tag of one member changes all of them at once or none of them, only tags available on every member are offered, and the group reviews as a single row on the Updates page. The Groups page lists every group with its shared tag and status, and suggests groups for images that look related.
 - **Pinning**: park an image on its current tag from the details page. Upstream tags are still fetched and recorded, but no update is flagged and no upgrade email is sent until you unpin.
+- **Registry browsing**: browse the repositories and tags of any registry that lists them, see which ones have no virtual image yet, and add a virtual image from there. See [Browse a registry](#browse-a-registry).
+- **Registry usage**: Registries shows how many virtual images use each registry, linked to Virtual Images filtered by that registry, and warns when some of them fail their tag checks, which usually means the registry's login stopped working. A registry still in use says so instead of offering Delete.
 - **Tag discovery**: when adding a virtual image, scans the upstream repository in the background (result cached) so you pick from its real tags instead of typing one blind.
 - **Tag history**: per-image record of every real tag the virtual tag has resolved to, and when each change happened.
 - **Digest tracking**: the digest behind each image's current tag, checked on every tag sweep and right after a tag change, and updated when a pull through DockVMap gets a newer one, so a tag republished under the same name is noticed. Image details shows it with when it was first seen.
@@ -191,6 +193,14 @@ Matching uses the proxy address clients pull from, so set [`proxy_public_host`](
 
 `make build-agent` builds `bin/dockvmap-agent`, one static binary with no dependencies, configured by the same environment variables. Like DockVMap, it takes `-data-path` for its state, `./data` by default (`/data` in the image), and `-version`. `Dockerfile.agent` builds the agent image.
 
+## Browse a registry
+
+On Registries, a Browse icon shows on every registry that lists its repositories (`/v2/_catalog`), like `registry:2` or the internal registry. Docker Hub and GHCR don't list repositories, so they have no Browse icon.
+
+The Browse page lists up to 1000 repositories, with search and a Show filter for the ones with no virtual image yet. Each repository shows its virtual images. Open one to see its tags in families, as in the tag picker, and use **Add virtual image** to start the usual wizard with the registry, repository and tag filled in. Browsing never changes anything in the registry.
+
+DockVMap asks each registry once an hour whether it lists its repositories, and again right after you edit it. Listing uses the registry's saved login, and some registries allow it only for some accounts: Harbor, for example, lists repositories only for admins. New virtual image also suggests repositories for these registries.
+
 ## Internal registry
 
 Run the official `registry:2` in the same stack as DockVMap, with only DockVMap exposed, and push and pull every image through DockVMap's proxy address. Virtual tags keep working as before.
@@ -232,7 +242,7 @@ Pulls of real names don't count in Last pulled or the dashboard's pull numbers, 
 
 ### Who can push
 
-With [`proxy_auth`](#proxy-authentication-proxy_auth) on, pulls need any proxy token and pushes need a token with **Can push**, chosen when you create it. Give it to your build script; hosts only need to pull. With `proxy_auth` off, anyone who can reach the proxy can push, the same as an open `registry:2`, and DockVMap warns about it in the log, on Proxy Tokens and on Registries.
+With [`proxy_auth`](#proxy-authentication-proxy_auth) on, pulls need any proxy token and pushes need a token with **Can push**, chosen when you create it. Give it to your build script; hosts only need to pull. With `proxy_auth` off, anyone who can reach the proxy can push, the same as an open `registry:2`, and DockVMap warns about it in the log and on Proxy Tokens.
 
 Every pushed tag is recorded in the audit log as `IMAGE_PUSHED`, and every deleted manifest as `MANIFEST_DELETED`, with the token and the client address resolved with [`trusted_proxies`](#networking).
 

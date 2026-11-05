@@ -43,6 +43,7 @@ type Registries struct {
 	store       registryStore
 	audit       auditRecorder
 	connChecker RegistryConnChecker
+	changed     func(registryID int64, hosts ...string)
 }
 
 type auditRegistryData struct {
@@ -61,6 +62,16 @@ func NewRegistries(deps RegistriesDeps) *Registries {
 		store:       deps.Store,
 		audit:       deps.Audit,
 		connChecker: deps.ConnChecker,
+	}
+}
+
+func (r *Registries) OnChanged(fn func(registryID int64, hosts ...string)) {
+	r.changed = fn
+}
+
+func (r *Registries) notifyChanged(registryID int64, hosts ...string) {
+	if r.changed != nil {
+		r.changed(registryID, hosts...)
 	}
 }
 
@@ -245,6 +256,10 @@ func (r *Registries) UpdateByID(ctx context.Context, registry model.RegistryUpda
 		return updated, err
 	}
 
+	if current != nil {
+		r.notifyChanged(registry.ID, current.Registry, registry.Registry)
+	}
+
 	info, infoErr := r.store.GetRegistryInfoByID(ctx, registry.ID)
 
 	if infoErr != nil || info == nil {
@@ -289,6 +304,7 @@ func (r *Registries) DeleteByID(ctx context.Context, registryID int64) (bool, er
 	}
 
 	if info != nil {
+		r.notifyChanged(registryID, info.Registry)
 		recordAudit(ctx, r.audit, AuditTypeRegistryDeleted, auditRegistryData{
 			Registry:                 info.Registry,
 			Options:                  info.Options,

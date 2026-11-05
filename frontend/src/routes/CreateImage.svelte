@@ -11,8 +11,9 @@
   import SourceStep from "../lib/components/createImage/SourceStep.svelte";
   import TagSelectionStep from "../lib/components/createImage/TagSelectionStep.svelte";
   import RegistryModal from "../lib/components/RegistryModal.svelte";
-  import { listInternalRepositories, listRegistries } from "../lib/api/registries";
-  import { INTERNAL_REGISTRY_LABEL } from "../lib/utils/registries";
+  import { listBrowsableRegistries, listRegistries, listRegistryRepositories } from "../lib/api/registries";
+  import { readListQuery } from "../lib/utils/listQuery";
+  import { registryLabel } from "../lib/utils/registries";
   import { createImage } from "../lib/api/images";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
@@ -26,6 +27,7 @@
   };
 
   const discovery = createTagDiscovery();
+  const prefill = readListQuery({ registryId: 0, repository: "", tag: "" });
 
   let registries = $state<Registry[]>([]);
   let loadingRegistries = $state(true);
@@ -46,7 +48,9 @@
   let creating = $state(false);
   let createError = $state<string | null>(null);
   let addingAnother = $state(false);
-  let internalRepositories = $state<string[]>([]);
+  let browsableIds = $state<Set<number>>(new Set());
+  let suggestions = $state<Record<number, string[]>>({});
+  let pendingTag: string | null = prefill.tag || null;
 
   async function loadRegistries() {
     loadingRegistries = true;
@@ -55,11 +59,9 @@
     try {
       registries = await listRegistries();
 
-      if (registries.some((registry) => registry.internal)) {
-        listInternalRepositories()
-          .then((names) => (internalRepositories = names))
-          .catch(() => {});
-      }
+      listBrowsableRegistries()
+        .then((result) => (browsableIds = new Set(result.registryIds)))
+        .catch(() => {});
     } catch (err) {
       registriesError = errorMessage(err, "Failed to load registries");
     } finally {
@@ -74,17 +76,34 @@
     registryId = String(registry.id);
   }
 
-  onMount(loadRegistries);
+  onMount(async () => {
+    await loadRegistries();
+
+    if (prefill.registryId && registries.some((registry) => registry.id === prefill.registryId)) {
+      registryId = String(prefill.registryId);
+      repository = prefill.repository;
+      inspect();
+    }
+  });
   onMount(() => discovery.onResolved(applyDiscovery));
   onDestroy(discovery.destroy);
 
+  $effect(() => {
+    const id = Number(registryId);
+
+    if (!browsableIds.has(id) || id in suggestions) return;
+
+    suggestions[id] = [];
+    listRegistryRepositories(id)
+      .then((result) => (suggestions[id] = result.repositories.map((r) => r.name)))
+      .catch(() => {});
+  });
+
   const registryOptions = $derived(
-    [...registries]
-      .sort((a, b) => Number(b.internal) - Number(a.internal))
-      .map((registry) => ({
-        value: String(registry.id),
-        label: registry.internal ? `${INTERNAL_REGISTRY_LABEL} (${registry.registry})` : registry.registry,
-      })),
+    registries.map((registry) => ({
+      value: String(registry.id),
+      label: registryLabel(registry),
+    })),
   );
   const selectedRegistry = $derived(
     registries.find((r) => r.id === Number(registryId)),
@@ -107,19 +126,24 @@
     tagGroups = result.tagGroups ?? [];
     tagCount = result.tagCount ?? 0;
     ignoredCount = result.ignoredCount ?? 0;
-    selectedTag = null;
+    selectedTag =
+      pendingTag && tagGroups.some((group) => group.tags.some((t) => t.tag === pendingTag)) ? pendingTag : null;
+    pendingTag = null;
     step = 2;
   }
 
-  function handleInspect(event: SubmitEvent) {
-    event.preventDefault();
-
+  function inspect() {
     if (!selectedRegistry) return;
 
     void discovery.start({
       registry: selectedRegistry.registry,
       repository: repository.trim(),
     });
+  }
+
+  function handleInspect(event: SubmitEvent) {
+    event.preventDefault();
+    inspect();
   }
 
   function backToSource() {
@@ -228,7 +252,7 @@
             bind:repository
             {registryOptions}
             registryLabel={selectedRegistry?.registry}
-            repositorySuggestions={selectedRegistry?.internal ? internalRepositories : []}
+            repositorySuggestions={suggestions[Number(registryId)] ?? []}
             focusRepository={addingAnother}
             discovery={$discovery}
             onSubmit={handleInspect}

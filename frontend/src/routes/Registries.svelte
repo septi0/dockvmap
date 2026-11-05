@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { link } from "svelte-spa-router";
+  import FolderSearch from "@lucide/svelte/icons/folder-search";
   import Plus from "@lucide/svelte/icons/plus";
   import Server from "@lucide/svelte/icons/server";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
@@ -8,8 +10,7 @@
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
   import RegistryModal from "../lib/components/RegistryModal.svelte";
-  import { listRegistries } from "../lib/api/registries";
-  import { getProxyAuthStatus } from "../lib/api/system";
+  import { listBrowsableRegistries, listRegistries } from "../lib/api/registries";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
   import type { Registry } from "../lib/api/types/registries";
@@ -20,13 +21,19 @@
   let error = $state<string | null>(null);
   let showCreateModal = $state(false);
   let editingRegistry = $state<Registry | null>(null);
-  let proxyAuthEnabled = $state(true);
+  let browsable = $state<Set<number>>(new Set());
   let loadToken = 0;
 
   async function load() {
     const requestId = ++loadToken;
     loading = true;
     error = null;
+
+    listBrowsableRegistries()
+      .then((result) => {
+        if (requestId === loadToken) browsable = new Set(result.registryIds);
+      })
+      .catch(() => {});
 
     try {
       const result = await listRegistries();
@@ -43,16 +50,15 @@
     }
   }
 
-  onMount(() => {
-    load();
-    getProxyAuthStatus()
-      .then((status) => (proxyAuthEnabled = status.enabled))
-      .catch(() => {});
-  });
+  onMount(load);
 
   async function handleSaved(registry: Registry, action: "created" | "updated") {
     await load();
     toast.success(`Registry "${registry.registry}" ${action}.`);
+  }
+
+  function imagesHref(registry: Registry) {
+    return `/images?registry=${registry.id}`;
   }
 
   function handleRowClick(event: MouseEvent, registry: Registry) {
@@ -87,7 +93,7 @@
     {error}
     empty={registries.length === 0}
     emptyMessage="No registries yet. Add one to start tracking virtual images."
-    columns={4}
+    columns={5}
   >
     {#snippet emptyAction()}
       <Button onclick={() => (showCreateModal = true)}>
@@ -101,9 +107,10 @@
         <thead>
           <tr>
             <th>Registry</th>
-            <th class="phone-hidden">Username</th>
+            <th class="phone-hidden">Virtual images</th>
             <th>Authentication</th>
             <th class="phone-hidden">Options</th>
+            <th class="browse-cell"></th>
           </tr>
         </thead>
         <tbody>
@@ -113,27 +120,47 @@
                 <span class="name-cell">
                   <button
                     type="button"
-                    class="registry-name"
+                    class="row-name registry-name"
                     onclick={() => (editingRegistry = registry)}>{registry.registry}</button
                   >
                   {#if registry.internal}<span class="badge badge-accent">Internal</span>{/if}
                 </span>
                 {#if registry.internal}
                   <p class="muted registry-note">Set by <code class="inline-code">internal_registry</code> in config</p>
-                  {#if !proxyAuthEnabled}
-                    <p class="warning-text registry-note">
-                      <TriangleAlert size={14} strokeWidth={2} />
-                      <span>Anyone who can reach the proxy can push; turn on <code class="inline-code">proxy_auth</code></span>
-                    </p>
-                  {/if}
+                {/if}
+                {#if registry.failedChecks > 0}
+                  <p class="warning-text registry-note">
+                    <TriangleAlert size={14} strokeWidth={2} />
+                    <a class="row-link accent" href={`${imagesHref(registry)}&status=failedCheck`} use:link
+                      >{registry.failedChecks} failing {registry.failedChecks === 1 ? "check" : "checks"}</a
+                    >
+                  </p>
+                {/if}
+                {#if registry.imageCount > 0}
+                  <p class="phone-only registry-note">
+                    <a class="row-link accent" href={imagesHref(registry)} use:link
+                      >{registry.imageCount} virtual {registry.imageCount === 1 ? "image" : "images"}</a
+                    >
+                  </p>
                 {/if}
               </td>
-              <td class="phone-hidden">{registry.username ?? "-"}</td>
-              <td>
-                {#if registry.authenticationConfigured}
-                  <span class="badge badge-accent">Configured</span>
+              <td class="phone-hidden">
+                {#if registry.imageCount > 0}
+                  <a
+                    class="row-link accent"
+                    href={imagesHref(registry)}
+                    title="Show the virtual images from this registry"
+                    use:link>{registry.imageCount}</a
+                  >
                 {:else}
-                  <span class="badge">None</span>
+                  <span class="muted">0</span>
+                {/if}
+              </td>
+              <td class="auth-cell">
+                {#if registry.authenticationConfigured}
+                  {registry.username}
+                {:else}
+                  <span class="muted">None</span>
                 {/if}
               </td>
               <td class="phone-hidden">
@@ -148,6 +175,21 @@
                 {#if !registry.options.insecure && !registry.options.allow_self_signed_certs}
                   <span class="muted">-</span>
                 {/if}
+              </td>
+              <td class="browse-cell">
+                <div class="table-actions">
+                  {#if browsable.has(registry.id)}
+                    <a
+                      class="icon-button"
+                      href={`/registries/${registry.id}/browse`}
+                      title="Browse"
+                      aria-label={`Browse ${registry.registry}`}
+                      use:link
+                    >
+                      <FolderSearch size={16} strokeWidth={1.75} />
+                    </a>
+                  {/if}
+                </div>
               </td>
             </tr>
           {/each}
@@ -178,20 +220,20 @@
     overflow-wrap: anywhere;
   }
 
+  .auth-cell {
+    overflow-wrap: anywhere;
+  }
+
+  .browse-cell {
+    width: 48px;
+  }
+
   .registry-note {
     margin: 2px 0 0;
     font-size: 0.8125rem;
   }
 
   .registry-name {
-    padding: 0;
     overflow-wrap: anywhere;
-    border: none;
-    background: none;
-    color: inherit;
-    font: inherit;
-    font-weight: 500;
-    text-align: left;
-    cursor: pointer;
   }
 </style>

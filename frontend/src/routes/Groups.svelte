@@ -271,7 +271,7 @@
                 <span class="name-cell">
                   <button
                     type="button"
-                    class="group-name"
+                    class="row-name"
                     onclick={() => openGroup(group)}>{group.name}</button
                   >
                   {#if failed > 0}
@@ -407,18 +407,6 @@
   .suggestion-images {
     font-size: 0.8125rem;
     overflow-wrap: anywhere;
-  }
-
-  .group-name {
-    padding: 0;
-    overflow-wrap: break-word;
-    border: none;
-    background: none;
-    color: inherit;
-    font: inherit;
-    font-weight: 500;
-    text-align: left;
-    cursor: pointer;
   }
 
   .members {

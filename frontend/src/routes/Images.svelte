@@ -26,6 +26,9 @@
   import type { ImageRollout } from "../lib/api/types/hosts";
   import { pullCommand } from "../lib/utils/pullInfo";
   import { getImageGroup, IMAGE_GROUPS_MAX_LIMIT, listImageGroups } from "../lib/api/imageGroups";
+  import { listRegistries } from "../lib/api/registries";
+  import { registryLabel } from "../lib/utils/registries";
+  import type { Registry } from "../lib/api/types/registries";
   import { triggerTagRefresh } from "../lib/api/worker";
   import { toast } from "../lib/services/toast";
   import { tagRefreshStatus } from "../lib/services/tagRefreshStatus";
@@ -70,6 +73,7 @@
   let pullInfo = $state<PullInfo | null>(null);
   let rollouts = $state(new Map<number, ImageRollout>());
   let managedGroup = $state<ImageGroup | null>(null);
+  let usedRegistries = $state<Registry[]>([]);
   let groupError = $state<string | null>(null);
 
   const view = createListView<
@@ -77,6 +81,7 @@
       search: string;
       status: string;
       group: string;
+      registry: string;
       sort: string;
       order: string;
       offset: number;
@@ -84,7 +89,7 @@
     Image
   >({
     routePath: "/images",
-    defaults: { search: "", status: "", group: "", ...NO_SORT, offset: 0 },
+    defaults: { search: "", status: "", group: "", registry: "", ...NO_SORT, offset: 0 },
     errorFallback: "Failed to load images",
     sortFields: {
       name: "asc",
@@ -104,6 +109,7 @@
         ungrouped: q.group === NOT_GROUPED ? true : undefined,
         groupId:
           q.group && q.group !== NOT_GROUPED ? Number(q.group) : undefined,
+        registryId: q.registry ? Number(q.registry) : undefined,
       }).then((r) => ({ items: r.images, total: r.total })),
   });
 
@@ -113,6 +119,14 @@
       groups = result.groups;
     } catch {
       groups = [];
+    }
+  }
+
+  async function loadRegistries() {
+    try {
+      usedRegistries = (await listRegistries()).filter((registry) => registry.imageCount > 0);
+    } catch {
+      usedRegistries = [];
     }
   }
 
@@ -142,6 +156,7 @@
 
   onMount(view.init);
   onMount(loadGroups);
+  onMount(loadRegistries);
   onMount(() =>
     createVisibilityPoller({
       tick: loadRollouts,
@@ -273,6 +288,22 @@
           <option value={NOT_GROUPED}>Not in a group</option>
           {#each groups as group (group.id)}
             <option value={String(group.id)}>{group.name}</option>
+          {/each}
+        </select>
+      </div>
+    {/if}
+    {#if usedRegistries.length > 1 || (view.filters.registry !== "" && usedRegistries.length > 0)}
+      <div class="filter-field">
+        <span class="filter-label">Registry</span>
+        <select
+          class="input filter-control"
+          class:is-active={view.filters.registry !== ""}
+          bind:value={view.filters.registry}
+          onchange={view.applyFilters}
+        >
+          <option value="">All registries</option>
+          {#each usedRegistries as registry (registry.id)}
+            <option value={String(registry.id)}>{registryLabel(registry)}</option>
           {/each}
         </select>
       </div>

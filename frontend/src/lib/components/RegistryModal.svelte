@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { link } from "svelte-spa-router";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -48,6 +49,7 @@
 
   const isEdit = $derived(mode === "edit");
   const managed = $derived(isEdit && !!registry?.internal);
+  const inUse = $derived((registry?.imageCount ?? 0) > 0);
   const ready = $derived(mode === "create" || registry !== null);
 
   $effect(() => {
@@ -241,10 +243,18 @@
       </p>
     {/if}
 
+    {#if isEdit && !managed && inUse}
+      <p class="section-hint muted in-use-note">
+        Used by <a class="row-link accent" href={`/images?registry=${registry?.id}`} use:link
+          >{registry?.imageCount} virtual {registry?.imageCount === 1 ? "image" : "images"}</a
+        >. Delete them first to delete this registry.
+      </p>
+    {/if}
+
     <div class="modal-actions split">
       <div class="modal-actions-left">
         {#if isEdit && !managed}
-          <Button type="button" variant="danger" onclick={() => (showDeleteConfirm = true)}>
+          <Button type="button" variant="danger" disabled={inUse} onclick={() => (showDeleteConfirm = true)}>
             <Trash2 size={16} strokeWidth={1.75} />
             Delete
           </Button>
@@ -291,6 +301,10 @@
 <style>
   .managed-note {
     margin: var(--space-2) 0 0;
+  }
+
+  .in-use-note {
+    margin: 0 0 var(--space-3);
   }
 
   .auth-status {

@@ -287,7 +287,7 @@ select.filter-control {
 
 .filter-control.is-active {
   border-color: var(--color-accent);
-  background: var(--color-accent-muted-bg);
+  background-color: var(--color-accent-muted-bg);
   color: var(--color-text);
 }
 
@@ -603,6 +603,22 @@ select.filter-control {
 
 .row-link:hover {
   text-decoration: underline;
+}
+
+.row-link.accent {
+  color: var(--color-accent);
+}
+
+.row-name {
+  padding: 0;
+  overflow-wrap: break-word;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
 }
 
 .link {

@@ -40,6 +40,11 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		ConnChecker: registryConnCheckerAdapter{},
 	})
 	ociClient := oci.NewClient(nil, registryCredentialsAdapter{registries: registries}, registryOptionsAdapter{registries: registries})
+	registryBrowser := service.NewRegistryBrowser(service.RegistryBrowserDeps{
+		Store:      db,
+		Catalog:    ociClient,
+		Registries: registries,
+	})
 
 	failureLog := service.NewFailureLog(db)
 
@@ -186,6 +191,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		ProxyTokens:          proxyTokens,
 		Hosts:                hosts,
 		InternalRegistry:     internalRegistry,
+		RegistryBrowser:      registryBrowser,
 		ProxyMetricsHistory:  proxyMetricsHistory,
 		ProxyUsage:           proxyUsage,
 		Failures:             failureLog,

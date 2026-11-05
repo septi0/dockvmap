@@ -2,6 +2,16 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.11.0 (unreleased)
+
+- **Browse a registry**: a Browse icon on Registries opens the repositories and tags of any registry that lists them, shows which repositories have no virtual image yet, and starts Add virtual image with the repository and tag filled in. DockVMap checks which registries list their repositories, so Docker Hub and GHCR simply have no Browse icon. See "Browse a registry" in the README.
+- **Virtual images per registry**: Registries shows how many virtual images use each registry, and the number opens Virtual Images filtered by that registry. Virtual Images has a Registry filter once two or more registries have images. A registry still in use shows which images use it instead of offering Delete.
+- **Failing checks per registry**: a registry whose virtual images fail their tag checks shows "2 failing checks" on Registries, linked to those images, so an expired login points at the registry instead of only at each image.
+- **Tidier Registries list**: the internal registry comes first, then the rest by name. Authentication shows the username, or None, in place of the separate Username column and badge.
+- **Repository suggestions**: New virtual image now suggests repositories for every registry that lists them, not only the internal registry.
+- **Registries**: the "anyone can push" warning no longer shows on the Registries list; it stays in the log and on Proxy Tokens.
+- **Fixed**: an active filter (Status, Group, Registry) keeps its dropdown arrow.
+
 ## v1.10.0 (2026-11-05)
 
 - **Internal registry**: run the official `registry:2` next to DockVMap, with only DockVMap exposed, and push and pull every image through one address. Names that aren't virtual images pass straight through to the registry; virtual tags work as before. Turn it on with `internal_registry.enabled`; `compose.registry.sample.yaml` is a ready stack. At startup DockVMap adds the registry on the Registries page (marked Internal), or takes over an existing entry with that address, so virtual images on it keep working. A new tag pushed to a repository shows as an update within seconds, and every pushed tag and deleted manifest is in the audit log with the token that made the change. A virtual image built on a repository of the same name (`myapp` on `myapp`) still takes pushes to that repository. See "Internal registry" in the README.

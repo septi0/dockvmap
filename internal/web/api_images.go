@@ -46,14 +46,16 @@ func parseImageListFilters(r *http.Request) (model.ImageListFilters, error) {
 		return model.ImageListFilters{}, fmt.Errorf("status must be one of: updateAvailable, failedCheck, pinned")
 	}
 
-	var groupID int64
+	groupID, err := positiveIDParam(r, "groupId")
 
-	if value := r.URL.Query().Get("groupId"); value != "" {
-		groupID, err = strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return model.ImageListFilters{}, err
+	}
 
-		if err != nil || groupID < 1 {
-			return model.ImageListFilters{}, fmt.Errorf("groupId must be a positive integer")
-		}
+	registryID, err := positiveIDParam(r, "registryId")
+
+	if err != nil {
+		return model.ImageListFilters{}, err
 	}
 
 	return model.ImageListFilters{
@@ -63,7 +65,24 @@ func parseImageListFilters(r *http.Request) (model.ImageListFilters, error) {
 		Status:     status,
 		Ungrouped:  r.URL.Query().Get("ungrouped") == "true",
 		GroupID:    groupID,
+		RegistryID: registryID,
 	}, nil
+}
+
+func positiveIDParam(r *http.Request, name string) (int64, error) {
+	value := r.URL.Query().Get(name)
+
+	if value == "" {
+		return 0, nil
+	}
+
+	id, err := strconv.ParseInt(value, 10, 64)
+
+	if err != nil || id < 1 {
+		return 0, fmt.Errorf("%s must be a positive integer", name)
+	}
+
+	return id, nil
 }
 
 func (w *Web) apiListImages(rw http.ResponseWriter, r *http.Request) {

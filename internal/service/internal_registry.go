@@ -3,15 +3,11 @@ package service
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
-	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -455,68 +451,6 @@ func (r *InternalRegistry) checkTags(ctx context.Context, repository string) {
 	if started > 0 {
 		slog.Info("checking tags after a change", "repository", repository, "images", started)
 	}
-}
-
-const maxInternalRepositories = 1000
-
-func (r *InternalRegistry) Repositories(ctx context.Context) ([]string, error) {
-	repositories := make([]string, 0)
-	next := "/v2/_catalog?n=100"
-
-	for next != "" && len(repositories) < maxInternalRepositories {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url(next), nil)
-
-		if err != nil {
-			return nil, err
-		}
-
-		resp, err := r.client.Do(req)
-
-		if problem := InternalRegistryCertProblem(err); problem != nil {
-			return nil, fmt.Errorf("the internal registry at %s has a certificate DockVMap doesn't accept: %w", r.address, problem)
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("the internal registry at %s didn't answer; check that its container is running on DockVMap's network", r.address)
-		}
-
-		var page struct {
-			Repositories []string `json:"repositories"`
-		}
-
-		err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&page)
-		link := resp.Header.Get("Link")
-		resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("the internal registry at %s answered %s to the catalog request", r.address, resp.Status)
-		}
-
-		if err != nil {
-			return nil, fmt.Errorf("reading the internal registry's catalog: %w", err)
-		}
-
-		repositories = append(repositories, page.Repositories...)
-		next = nextCatalogPage(link)
-	}
-
-	if len(repositories) > maxInternalRepositories {
-		repositories = repositories[:maxInternalRepositories]
-	}
-
-	slices.Sort(repositories)
-
-	return repositories, nil
-}
-
-func nextCatalogPage(link string) string {
-	target, _, found := strings.Cut(strings.TrimPrefix(strings.TrimSpace(link), "<"), ">")
-
-	if !found || !strings.Contains(link, `rel="next"`) || !strings.HasPrefix(target, "/v2/_catalog") {
-		return ""
-	}
-
-	return target
 }
 
 func InternalRegistryCertProblem(err error) error {

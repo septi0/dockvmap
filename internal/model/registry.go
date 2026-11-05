@@ -26,6 +26,16 @@ type RegistryOptions struct {
 	AllowSelfSignedCerts bool `json:"allow_self_signed_certs"`
 }
 
+type RegistryRepository struct {
+	Name   string
+	Images []Image
+}
+
+type RegistryRepositories struct {
+	Repositories []RegistryRepository
+	More         bool
+}
+
 type RegistryInfo struct {
 	ID                       int64           `json:"id"`
 	Registry                 string          `json:"registry"`
@@ -33,4 +43,6 @@ type RegistryInfo struct {
 	AuthenticationConfigured bool            `json:"authenticationConfigured"`
 	Options                  RegistryOptions `json:"options"`
 	Internal                 bool            `json:"internal"`
+	ImageCount               int64           `json:"imageCount"`
+	FailedChecks             int64           `json:"failedChecks"`
 }

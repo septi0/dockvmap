@@ -3,11 +3,9 @@ package service
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -509,41 +507,5 @@ func TestDeletesAreAuditedAndStartATagCheck(t *testing.T) {
 
 	if got := f.audit.count(AuditTypeImagePushed); got != 0 {
 		t.Errorf("IMAGE_PUSHED audits = %d, want 0 for a delete", got)
-	}
-}
-
-func TestInternalRepositoriesFollowsCatalogPages(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/_catalog" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-
-		if r.URL.Query().Get("last") == "" {
-			w.Header().Set("Link", `</v2/_catalog?last=team%2Fweb&n=100>; rel="next"`)
-			io.WriteString(w, `{"repositories":["team/web","team/api"]}`)
-			return
-		}
-
-		io.WriteString(w, `{"repositories":["base/alpine"]}`)
-	}))
-	defer server.Close()
-
-	registry := NewInternalRegistry(InternalRegistryDeps{Enabled: true, Address: strings.TrimPrefix(server.URL, "http://")})
-
-	got, err := registry.Repositories(context.Background())
-
-	if err != nil {
-		t.Fatalf("Repositories: %v", err)
-	}
-
-	if want := []string{"base/alpine", "team/api", "team/web"}; !slices.Equal(got, want) {
-		t.Errorf("repositories = %v, want %v", got, want)
-	}
-}
-
-func TestInternalRepositoriesReportsNoAnswer(t *testing.T) {
-	if _, err := NewInternalRegistry(InternalRegistryDeps{Enabled: true, Address: "127.0.0.1:1"}).Repositories(context.Background()); err == nil || !strings.Contains(err.Error(), "didn't answer") {
-		t.Errorf("no answer: error = %v, want the no-answer message", err)
 	}
 }

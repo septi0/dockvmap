@@ -29,6 +29,42 @@ type registryResponse struct {
 	AuthenticationConfigured bool                  `json:"authenticationConfigured"`
 	Options                  model.RegistryOptions `json:"options"`
 	Internal                 bool                  `json:"internal"`
+	ImageCount               int64                 `json:"imageCount"`
+	FailedChecks             int64                 `json:"failedChecks"`
+}
+
+type registryRepositoryImageResponse struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+type registryRepositoryResponse struct {
+	Name   string                            `json:"name"`
+	Images []registryRepositoryImageResponse `json:"images"`
+}
+
+type registryRepositoriesResponse struct {
+	Repositories []registryRepositoryResponse `json:"repositories"`
+	More         bool                         `json:"more"`
+}
+
+func newRegistryRepositoriesResponse(result model.RegistryRepositories) registryRepositoriesResponse {
+	resp := registryRepositoriesResponse{
+		Repositories: make([]registryRepositoryResponse, 0, len(result.Repositories)),
+		More:         result.More,
+	}
+
+	for _, repository := range result.Repositories {
+		images := make([]registryRepositoryImageResponse, 0, len(repository.Images))
+
+		for _, image := range repository.Images {
+			images = append(images, registryRepositoryImageResponse{ID: image.ID, Name: image.Name})
+		}
+
+		resp.Repositories = append(resp.Repositories, registryRepositoryResponse{Name: repository.Name, Images: images})
+	}
+
+	return resp
 }
 
 func newRegistryResponse(info model.RegistryInfo) registryResponse {
@@ -39,6 +75,8 @@ func newRegistryResponse(info model.RegistryInfo) registryResponse {
 		AuthenticationConfigured: info.AuthenticationConfigured,
 		Options:                  info.Options,
 		Internal:                 info.Internal,
+		ImageCount:               info.ImageCount,
+		FailedChecks:             info.FailedChecks,
 	}
 }
 

@@ -26,6 +26,7 @@ const registryDataCacheTTL = 30 * time.Second
 const tokenCacheMaxEntries = 512
 const insecureClientCacheMaxEntries = 32
 const tagsListPageSize = 1000
+const catalogPageSize = 100
 const maxTagListPages = 1000
 const maxRetryAttempts = 3
 const maxRetryAfterDelay = 30 * time.Second
@@ -282,6 +283,68 @@ func (c *Client) listTags(ctx context.Context, registry, repository string, onPa
 	}
 
 	return tags, nil
+}
+
+func (c *Client) ListRepositories(ctx context.Context, registry string, limit int) ([]string, bool, error) {
+	host := RegistryAPIHost(registry)
+	endpoint := fmt.Sprintf("https://%s/v2/_catalog?n=%d", host, min(limit, catalogPageSize))
+
+	repositories := make([]string, 0)
+
+	for endpoint != "" {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+
+		if err != nil {
+			return nil, false, fmt.Errorf("creating registry request: %w", err)
+		}
+
+		response, err := c.Do(req, registry, "")
+
+		if err != nil {
+			return nil, false, err
+		}
+
+		if response.StatusCode != http.StatusOK {
+			err := registryStatusError(response)
+
+			drainAndClose(response)
+
+			return nil, false, err
+		}
+
+		var page struct {
+			Repositories []string `json:"repositories"`
+		}
+
+		decodeErr := json.NewDecoder(response.Body).Decode(&page)
+		next := nextPageURL(response.Request.URL, response.Header.Get("Link"))
+
+		drainAndClose(response)
+
+		if decodeErr != nil {
+			return nil, false, fmt.Errorf("decoding repository list from %s: %w", response.Request.URL.Host, decodeErr)
+		}
+
+		repositories = append(repositories, page.Repositories...)
+
+		if len(repositories) >= limit {
+			return repositories[:limit], len(repositories) > limit || next != "", nil
+		}
+
+		if len(page.Repositories) == 0 {
+			break
+		}
+
+		endpoint = next
+	}
+
+	return repositories, false, nil
+}
+
+func (c *Client) Forget(registry string) {
+	c.cache.credentials.Remove(registry)
+	c.cache.options.Remove(registry)
+	c.cache.insecureClients.Remove(registry)
 }
 
 func (c *Client) CheckRegistry(ctx context.Context, registry string) error {

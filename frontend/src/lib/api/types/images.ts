@@ -41,6 +41,7 @@ export interface ImageListParams extends SortParams<ImageSortField> {
   status?: ImageStatusFilter
   ungrouped?: boolean
   groupId?: number
+  registryId?: number
 }
 
 export interface Tag {

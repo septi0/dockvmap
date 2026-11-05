@@ -156,13 +156,17 @@ func (s *Store) GetRegistryOptions(ctx context.Context, registry string) (*model
 	return &options, nil
 }
 
-const registryInfoSelect = `SELECT id, registry, username, options, internal FROM registries `
+const registryInfoSelect = `
+	SELECT id, registry, username, options, internal,
+		(SELECT COUNT(*) FROM images WHERE images.registry_id = registries.id),
+		(SELECT COUNT(*) FROM images WHERE images.registry_id = registries.id AND images.last_check_error IS NOT NULL)
+	FROM registries `
 
 func scanRegistryInfo(row rowScanner, info *model.RegistryInfo) error {
 	var username sql.NullString
 	var optionsJSON sql.NullString
 
-	if err := row.Scan(&info.ID, &info.Registry, &username, &optionsJSON, &info.Internal); err != nil {
+	if err := row.Scan(&info.ID, &info.Registry, &username, &optionsJSON, &info.Internal, &info.ImageCount, &info.FailedChecks); err != nil {
 		return err
 	}
 
@@ -177,7 +181,7 @@ func scanRegistryInfo(row rowScanner, info *model.RegistryInfo) error {
 }
 
 func (s *Store) ListRegistryInfo(ctx context.Context) ([]model.RegistryInfo, error) {
-	rows, err := s.db.QueryContext(ctx, registryInfoSelect+`ORDER BY created_at DESC`)
+	rows, err := s.db.QueryContext(ctx, registryInfoSelect+`ORDER BY internal DESC, registry ASC`)
 
 	if err != nil {
 		return nil, fmt.Errorf("listing registries: %w", err)

@@ -9,6 +9,7 @@ import Dashboard from './routes/Dashboard.svelte'
 import Registries from './routes/Registries.svelte'
 import Images from './routes/Images.svelte'
 import CreateImage from './routes/CreateImage.svelte'
+import RegistryBrowse from './routes/RegistryBrowse.svelte'
 import ImageDetails from './routes/ImageDetails.svelte'
 import Updates from './routes/Updates.svelte'
 import Groups from './routes/Groups.svelte'
@@ -58,6 +59,7 @@ export default {
 
   '/': wrap({ component: Dashboard, conditions: [requireAuth] }),
   '/registries': wrap({ component: Registries, conditions: [requireAuth] }),
+  '/registries/:id/browse': wrap({ component: RegistryBrowse, conditions: [requireAuth] }),
   '/images': wrap({ component: Images, conditions: [requireAuth] }),
   '/images/new': wrap({ component: CreateImage, conditions: [requireAuth] }),
   '/images/:id': wrap({ component: ImageDetails, conditions: [requireAuth] }),

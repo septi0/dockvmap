@@ -104,7 +104,11 @@ type hostService interface {
 
 type internalRegistryService interface {
 	Address() string
-	Repositories(ctx context.Context) ([]string, error)
+}
+
+type registryBrowserService interface {
+	Browsable(ctx context.Context) ([]int64, error)
+	Repositories(ctx context.Context, registryID int64) (*model.RegistryRepositories, error)
 }
 
 type proxyMetricsHistoryReader interface {
@@ -146,6 +150,7 @@ type Web struct {
 	proxyTokens          proxyTokenService
 	hosts                hostService
 	internalRegistry     internalRegistryService
+	registryBrowser      registryBrowserService
 	proxyMetricsHistory  proxyMetricsHistoryReader
 	proxyUsage           proxyUsageReader
 	cacheUsage           cacheUsageReader
@@ -175,6 +180,7 @@ type Dependencies struct {
 	ProxyTokens          proxyTokenService
 	Hosts                hostService
 	InternalRegistry     internalRegistryService
+	RegistryBrowser      registryBrowserService
 	ProxyMetricsHistory  proxyMetricsHistoryReader
 	ProxyUsage           proxyUsageReader
 	CacheUsage           cacheUsageReader
@@ -198,6 +204,7 @@ func New(deps Dependencies) (http.Handler, error) {
 		proxyTokens:          deps.ProxyTokens,
 		hosts:                deps.Hosts,
 		internalRegistry:     deps.InternalRegistry,
+		registryBrowser:      deps.RegistryBrowser,
 		proxyMetricsHistory:  deps.ProxyMetricsHistory,
 		proxyUsage:           deps.ProxyUsage,
 		cacheUsage:           deps.CacheUsage,

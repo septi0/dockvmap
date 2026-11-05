@@ -1,6 +1,7 @@
 import { api } from './client'
 import type {
   Registry,
+  RegistryRepositories,
   CreateRegistryParams,
   UpdateRegistryParams,
   RegistryTestResult,
@@ -10,8 +11,12 @@ export function listRegistries() {
   return api.get<Registry[]>('/registries')
 }
 
-export function listInternalRepositories() {
-  return api.get<string[]>('/registries/internal/repositories')
+export function listBrowsableRegistries() {
+  return api.get<{ registryIds: number[] }>('/registries/browsable')
+}
+
+export function listRegistryRepositories(id: number) {
+  return api.get<RegistryRepositories>(`/registries/${id}/repositories`)
 }
 
 export function createRegistry(params: CreateRegistryParams) {

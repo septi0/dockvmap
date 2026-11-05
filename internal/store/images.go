@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -49,6 +50,28 @@ func scanImage(row rowScanner, img *model.Image) error {
 	)
 }
 
+func scanImages(rows *sql.Rows) ([]model.Image, error) {
+	defer rows.Close()
+
+	images := make([]model.Image, 0)
+
+	for rows.Next() {
+		var img model.Image
+
+		if err := scanImage(rows, &img); err != nil {
+			return nil, fmt.Errorf("scanning image row: %w", err)
+		}
+
+		images = append(images, img)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("reading image rows: %w", err)
+	}
+
+	return images, nil
+}
+
 func imageListWhere(filters model.ImageListFilters) (string, []any) {
 	b := &whereBuilder{}
 
@@ -77,6 +100,10 @@ func imageListWhere(filters model.ImageListFilters) (string, []any) {
 		b.add(`i.group_id = ?`, filters.GroupID)
 	}
 
+	if filters.RegistryID > 0 {
+		b.add(`i.registry_id = ?`, filters.RegistryID)
+	}
+
 	return b.clause(), b.args
 }
 
@@ -95,25 +122,7 @@ func (s *Store) ListImages(ctx context.Context, filters model.ImageListFilters) 
 		return nil, fmt.Errorf("listing images: %w", err)
 	}
 
-	defer rows.Close()
-
-	images := make([]model.Image, 0)
-
-	for rows.Next() {
-		var img model.Image
-
-		if err := scanImage(rows, &img); err != nil {
-			return nil, fmt.Errorf("scanning image row: %w", err)
-		}
-
-		images = append(images, img)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("reading image rows: %w", err)
-	}
-
-	return images, nil
+	return scanImages(rows)
 }
 
 func (s *Store) ListImageIDsByRegistryRepository(ctx context.Context, registryID int64, repository string) ([]int64, error) {
@@ -144,6 +153,16 @@ func (s *Store) ListImageIDsByRegistryRepository(ctx context.Context, registryID
 	}
 
 	return ids, nil
+}
+
+func (s *Store) ListImagesByRegistry(ctx context.Context, registryID int64) ([]model.Image, error) {
+	rows, err := s.db.QueryContext(ctx, imageSelect+`WHERE i.registry_id = ? ORDER BY i.name ASC`, registryID)
+
+	if err != nil {
+		return nil, fmt.Errorf("listing images of registry %d: %w", registryID, err)
+	}
+
+	return scanImages(rows)
 }
 
 func (s *Store) ListImagesAfterID(ctx context.Context, afterID int64, limit int) ([]model.Image, error) {

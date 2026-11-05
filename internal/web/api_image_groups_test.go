@@ -211,16 +211,18 @@ func TestListImagesUngroupedFilter(t *testing.T) {
 	}
 }
 
-func TestListImagesGroupFilter(t *testing.T) {
-	filters, err := parseImageListFilters(request(http.MethodGet, "/images?groupId=3", ""))
+func TestListImagesGroupAndRegistryFilters(t *testing.T) {
+	filters, err := parseImageListFilters(request(http.MethodGet, "/images?groupId=3&registryId=5", ""))
 
-	if err != nil || filters.GroupID != 3 {
+	if err != nil || filters.GroupID != 3 || filters.RegistryID != 5 {
 		t.Fatalf("filters = %+v (%v)", filters, err)
 	}
 
-	for _, value := range []string{"abc", "0", "-1"} {
-		if _, err := parseImageListFilters(request(http.MethodGet, "/images?groupId="+value, "")); err == nil {
-			t.Fatalf("groupId=%s: want an error", value)
+	for _, param := range []string{"groupId", "registryId"} {
+		for _, value := range []string{"abc", "0", "-1"} {
+			if _, err := parseImageListFilters(request(http.MethodGet, "/images?"+param+"="+value, "")); err == nil {
+				t.Fatalf("%s=%s: want an error", param, value)
+			}
 		}
 	}
 }

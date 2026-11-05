@@ -1,4 +1,8 @@
-export const INTERNAL_REGISTRY_LABEL = 'Internal registry'
+const INTERNAL_REGISTRY_LABEL = 'Internal registry'
+
+export function registryLabel(registry: { registry: string; internal: boolean }): string {
+  return registry.internal ? `${INTERNAL_REGISTRY_LABEL} (${registry.registry})` : registry.registry
+}
 
 type ImageSourceFields = { registry: string; repository: string; registryInternal: boolean }
 

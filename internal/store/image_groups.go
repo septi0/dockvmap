@@ -109,25 +109,7 @@ func (s *Store) ListImageGroupMembers(ctx context.Context, groupId int64) ([]mod
 		return nil, fmt.Errorf("listing members of image group %d: %w", groupId, err)
 	}
 
-	defer rows.Close()
-
-	images := make([]model.Image, 0)
-
-	for rows.Next() {
-		var img model.Image
-
-		if err := scanImage(rows, &img); err != nil {
-			return nil, fmt.Errorf("scanning image row: %w", err)
-		}
-
-		images = append(images, img)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("reading image rows: %w", err)
-	}
-
-	return images, nil
+	return scanImages(rows)
 }
 
 func (s *Store) CreateImageGroup(ctx context.Context, tx DBTX, name string) (int64, error) {

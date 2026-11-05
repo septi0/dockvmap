@@ -74,10 +74,11 @@ func (f ImageStatusFilter) Valid() bool {
 type ImageListFilters struct {
 	Pagination
 	Sort
-	Search    string
-	Status    ImageStatusFilter
-	Ungrouped bool
-	GroupID   int64
+	Search     string
+	Status     ImageStatusFilter
+	Ungrouped  bool
+	GroupID    int64
+	RegistryID int64
 }
 
 type ImageStatusCounts struct {

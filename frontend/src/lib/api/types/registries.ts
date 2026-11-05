@@ -10,6 +10,18 @@ export interface Registry {
   authenticationConfigured: boolean
   options: RegistryOptions
   internal: boolean
+  imageCount: number
+  failedChecks: number
+}
+
+export interface RegistryRepository {
+  name: string
+  images: { id: number; name: string }[]
+}
+
+export interface RegistryRepositories {
+  repositories: RegistryRepository[]
+  more: boolean
 }
 
 export interface CreateRegistryParams {
