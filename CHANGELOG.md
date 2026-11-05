@@ -2,7 +2,7 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
-## v1.11.0 (unreleased)
+## v1.11.0 (2026-11-05)
 
 - **Browse a registry**: a Browse icon on Registries opens the repositories and tags of any registry that lists them, shows which repositories have no virtual image yet, and starts Add virtual image with the repository and tag filled in. DockVMap checks which registries list their repositories, so Docker Hub and GHCR simply have no Browse icon. See "Browse a registry" in the README.
 - **Virtual images per registry**: Registries shows how many virtual images use each registry, and the number opens Virtual Images filtered by that registry. Virtual Images has a Registry filter. A registry still in use links to its virtual images and can't be deleted until they're gone.
