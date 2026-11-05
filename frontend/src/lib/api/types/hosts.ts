@@ -54,6 +54,7 @@ export interface ContainerTracking {
   status: ContainerVersionStatus
   pinnedTag?: string
   needsUpdate: boolean
+  internalRegistry: boolean
 }
 
 export interface HostContainer {
@@ -67,6 +68,7 @@ export interface HostContainer {
   recentlyCrashed: boolean
   composeProject?: string
   composeService?: string
+  composeWorkingDir?: string
   createdAt?: string
   startedAt?: string
   finishedAt?: string

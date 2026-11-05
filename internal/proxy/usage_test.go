@@ -28,7 +28,7 @@ func (r *recordingUsage) RecordImagePull(imageID int64, tag string) {
 	r.pulls = append(r.pulls, recordedPull{imageID, tag})
 }
 
-func (r *recordingUsage) RecordTagDigest(imageID int64, tag, digest string) {
+func (r *recordingUsage) RecordServedDigest(imageID int64, tag, digest string) {
 	r.digests = append(r.digests, recordedDigest{imageID, tag, digest})
 }
 
@@ -88,7 +88,7 @@ func TestTagRequestsRecordTheServedDigest(t *testing.T) {
 
 	for _, tc := range cases {
 		usage := &recordingUsage{}
-		p := &Proxy{usage: usage}
+		p := &Proxy{usage: usage, servedDigests: usage}
 
 		r := httptest.NewRequest(tc.method, "/v2/app/manifests/current", nil)
 		r.Header.Set("Accept", tc.accept)

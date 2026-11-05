@@ -25,6 +25,8 @@ type systemStatusResponse struct {
 	VirtualTag       string               `json:"virtualTag"`
 	TrustedProxies   []string             `json:"trustedProxies"`
 	ProxyAuthEnabled bool                 `json:"proxyAuthEnabled"`
+	InternalRegistry bool                 `json:"internalRegistry"`
+	PushAllowedIPs   []string             `json:"pushAllowedIps"`
 }
 
 func (w *Web) apiSystemStatus(rw http.ResponseWriter, r *http.Request) {
@@ -40,6 +42,8 @@ func (w *Web) apiSystemStatus(rw http.ResponseWriter, r *http.Request) {
 		VirtualTag:       w.cfg.VirtualTag,
 		TrustedProxies:   append([]string{}, w.resolvedProxies...),
 		ProxyAuthEnabled: w.cfg.ProxyAuth.Enabled,
+		InternalRegistry: w.internalRegistry.Address() != "",
+		PushAllowedIPs:   append([]string{}, w.cfg.InternalRegistry.PushAllowedIPs...),
 	}
 
 	status.Database.Path = dbPath

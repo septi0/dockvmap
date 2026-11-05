@@ -40,12 +40,12 @@
 
   onMount(view.init);
 
-  function actor(entry: AuditLog, fallback: string): string {
+  function actor(entry: AuditLog): string {
     if (entry.type === "IMAGE_PUSHED" || entry.type === "MANIFEST_DELETED") {
       return typeof entry.data?.token === "string" && entry.data.token ? `Token ${entry.data.token}` : "Anonymous";
     }
 
-    return entry.username ?? fallback;
+    return entry.username ?? "System";
   }
 
   function selectRow(event: MouseEvent, entry: AuditLog) {
@@ -111,7 +111,7 @@
               </button>
             </td>
             <td>{formatAuditType(entry.type)}</td>
-            <td>{actor(entry, "-")}</td>
+            <td>{actor(entry)}</td>
             <td>{entry.ip ?? "-"}</td>
           </tr>
         {/each}
@@ -135,7 +135,7 @@
   {#if selectedEntry}
     <DetailRow label="Time">{formatDate(selectedEntry.createdAt)}</DetailRow>
     <DetailRow label="Event">{formatAuditType(selectedEntry.type)}</DetailRow>
-    <DetailRow label="User">{actor(selectedEntry, "System")}</DetailRow>
+    <DetailRow label="User">{actor(selectedEntry)}</DetailRow>
     <DetailRow label="IP">{selectedEntry.ip ?? "-"}</DetailRow>
     <DetailRow label="User agent">
       {#if selectedEntry.userAgent}

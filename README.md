@@ -24,6 +24,8 @@ docker pull dockvmap.local/myapp:current
 
 `current` isn't a real tag on the upstream registry. It's a pointer DockVMap maintains. Behind it, you track a real upstream tag (`myapp:1.4.2`, say) per image, and change what `current` resolves to whenever *you* decide to, from a web UI. Clients never change what they pull; you change what they get.
 
+Tools that list tags, like skopeo, crane, Renovate or diun, see only the virtual tag: `myapp` lists `current`. Renovate or diun tracking the digest of `myapp:current` then notices when you move the tag in DockVMap.
+
 <p align="center">
   <img src="docs/screenshots/flow.png" width="800" alt="DockVMap request flow: client pulls a virtual tag, DockVMap resolves it via the configured mapping, fetches the real image from the upstream registry, and returns it to the client">
 </p>
@@ -66,7 +68,7 @@ docker pull dockvmap.local/myapp:current
 - **Notifications**: digest emails (SMTP) and/or generic webhooks when a tracked image's tags change. Email volume is selectable per account (every tag change / only when an upgrade becomes available / off); webhooks always fire and carry an `updateAvailable` flag.
 - **Optional blob cache**: on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.
 - **Hosts**: DockVMap reads a small read-only agent on each Docker host, so you see what runs where, with state, health, stacks and ports, and which containers pulled through DockVMap are outdated or pulled but not recreated. See [Hosts and the agent](#hosts-and-the-agent).
-- **Internal registry**: run the official `registry:2` next to DockVMap with only DockVMap exposed, and push and pull every image through one address. With `proxy_auth` on, pushes need a proxy token with Can push. Each pushed tag is audited, and a new tag shows as an update within seconds. See [Internal registry](#internal-registry).
+- **Internal registry**: run the official `registry:3` next to DockVMap with only DockVMap exposed, and push and pull every image through one address. With `proxy_auth` on, pushes need a proxy token with Can push. Each pushed tag is audited, and a new tag shows as an update within seconds. See [Internal registry](#internal-registry).
 - **Pull tracking**: when each image was last pulled through the proxy and which real tag clients got, with a warning when nobody has pulled since the last tag change. A pull that downloads nothing new isn't recorded, so after rolling back to a version your hosts already have, the warning stays until the next real download. Groups show how many members were pulled on the shared tag. Each proxy token shows when it was last used, with a warning once it has gone unused for over 90 days.
 - **Proxy authentication**: optional HTTP Basic Auth (via issued tokens) in front of the registry proxy itself.
 - **Audit log**: every state-changing action recorded, with resolved client IP and actor.
@@ -168,7 +170,7 @@ The agent only reads from Docker: containers, images, system info and events. Mo
 ### What it reports
 
 - **The host**: hostname, OS, architecture, CPUs, memory and Docker version.
-- **Each container**: name, image, state and health, exit code, compose project and service, when it was created, started and stopped, and its published ports.
+- **Each container**: name, image, state and health, exit code, compose project, service and folder, when it was created, started and stopped, and its published ports.
 
 Never environment variables, mounts, other labels or logs. DockVMap asks every agent for changes every [`agents_poll_interval`](#core) (30 seconds by default), and opening a host's page asks right away. When nothing changed, the agent answers in a few bytes. A host that misses 3 checks in a row shows as Offline, with the containers it had when it was last online; the reason, like a refused connection, shows on hover.
 
@@ -176,7 +178,7 @@ Never environment variables, mounts, other labels or logs. DockVMap asks every a
 
 A container whose image comes through DockVMap's proxy, like `dockvmap.local:5000/myapp:current`, is matched to its virtual image by digest and shows as **Up to date**, **Outdated**, or **Pulled, not recreated** (the new version is on the host, but the container still runs the old one). A container using another tag through the proxy shows which tag it is pinned to.
 
-Image details lists every host and container running that image. The Virtual Images and Hosts lists show how many containers run the current version in a Deployed column, like "5/8", and the dashboard counts what is outdated. Numbers refresh by themselves, so you can watch a deploy reach every host. Only running or crash-looping containers that use the virtual tag count: a pinned or stopped container stays visible but never holds the number back. Hosts that are offline or can't read Docker can't be checked, so Virtual Images shows how many were left out, and why.
+Image details lists every host and container running that image, and the dashboard lists the containers that are behind. A container started with Docker Compose gets a copy icon with the command that fixes it, like `cd /srv/shop && docker compose pull web && docker compose up -d web`, run on its host. The Virtual Images list shows in its Deployed column how many containers are behind the current version, like "3 behind" or "Current", the Hosts list shows the same per host, and the dashboard counts them. On Virtual Images, the Newer tag column is about the other step: whether the upstream has a tag newer than the one the virtual tag points to. Numbers refresh by themselves, so you can watch a deploy reach every host. Only running or crash-looping containers that use the virtual tag count: a pinned or stopped container stays visible but never holds the number back. Hosts that are offline or can't read Docker can't be checked, so Virtual Images shows how many were left out, and why.
 
 A host's crashed badge counts containers that keep restarting or crashed in the last 7 days. Exit codes 137 and 143 come from a normal `docker stop`, so they don't count.
 
@@ -195,7 +197,7 @@ Matching uses the proxy address clients pull from, so set [`proxy_public_host`](
 
 ## Browse a registry
 
-On Registries, a Browse icon shows on every registry that lists its repositories (`/v2/_catalog`), like `registry:2` or the internal registry. Docker Hub and GHCR don't list repositories, so they have no Browse icon.
+On Registries, a Browse icon shows on every registry that lists its repositories (`/v2/_catalog`), like `registry:3` or the internal registry. Docker Hub and GHCR don't list repositories, so they have no Browse icon.
 
 The Browse page lists up to 1000 repositories, with search and a Show filter for the ones with no virtual image yet. Each repository shows its virtual images. Open one to see its tags in families, as in the tag picker, and use **Add virtual image** to start the usual wizard with the registry, repository and tag filled in. Browsing never changes anything in the registry.
 
@@ -203,14 +205,14 @@ DockVMap asks each registry once an hour whether it lists its repositories, and 
 
 ## Internal registry
 
-Run the official `registry:2` in the same stack as DockVMap, with only DockVMap exposed, and push and pull every image through DockVMap's proxy address. Virtual tags keep working as before.
+Run the official `registry:3` in the same stack as DockVMap, with only DockVMap exposed, and push and pull every image through DockVMap's proxy address. Virtual tags keep working as before.
 
-DockVMap doesn't replace the registry. `registry:2` stores every image and does the uploads; DockVMap stands in front of it, handles TLS and who can pull or push, and forwards everything else unchanged. Without DockVMap, the registry keeps working on its own.
+DockVMap doesn't replace the registry. `registry:3` stores every image and does the uploads; DockVMap stands in front of it, handles TLS and who can pull or push, and forwards everything else unchanged. Without DockVMap, the registry keeps working on its own.
 
 ### Setup
 
 1. Copy `compose.registry.sample.yaml` to `compose.yaml` and `docker compose up -d`. It runs DockVMap with `DOCKVMAP_INTERNAL_REGISTRY_ENABLED: "true"` next to a `registry` service whose port isn't published.
-2. Open the web UI and create the admin account. The Registries page shows the internal registry with an **Internal** badge; DockVMap adds it at startup.
+2. Open the web UI and create the admin account. The Registries page lists it first, marked "Internal registry"; DockVMap adds it at startup.
 3. Push: `docker push localhost:5000/team/web:v1`.
 4. For a virtual tag, add a virtual image from **Internal registry** and repository `team/web`, then `docker pull localhost:5000/web:current`. The repository field suggests what's already in the registry.
 
@@ -236,13 +238,15 @@ Clients that use the registry directly keep working as before. Their pushes don'
 
 - **A virtual image's name**: handled as before. The virtual tag is resolved, every other tag passes through to the virtual image's registry. Pushing to a virtual image is refused, since a virtual tag is a pointer DockVMap manages.
 - **Any other name**: passed through to the internal registry, pushes included, along with `/v2/_catalog`.
-- **A virtual image and a repository with the same name**: pulls go to the virtual image. Pushes go to the registry when the virtual image is built on that same repository in the internal registry, like `myapp` on `myapp`; pushing its virtual tag (`myapp:current`) is refused, since DockVMap manages that tag.
+- **A virtual image and a repository with the same name**: pulls go to the virtual image. Pushes and the tag list go to the registry when the virtual image is built on that same repository in the internal registry, like `myapp` on `myapp`, so a CI check sees the tags you pushed; pushing its virtual tag (`myapp:current`) is refused, since DockVMap manages that tag.
 
 Pulls of real names don't count in Last pulled or the dashboard's pull numbers, which are about virtual images.
 
 ### Who can push
 
-With [`proxy_auth`](#proxy-authentication-proxy_auth) on, pulls need any proxy token and pushes need a token with **Can push**, chosen when you create it. Give it to your build script; hosts only need to pull. With `proxy_auth` off, anyone who can reach the proxy can push, the same as an open `registry:2`, and DockVMap warns about it in the log and on Proxy Tokens.
+With [`proxy_auth`](#proxy-authentication-proxy_auth) on, pulls need any proxy token and pushes need a token with **Can push**, chosen when you create it. Give it to your build script; hosts only need to pull. With `proxy_auth` off, anyone who can reach the proxy can push, the same as an open registry, and DockVMap warns about it in the log and on Proxy Tokens.
+
+To limit pushes without tokens on every host, list your build hosts in `internal_registry.push_allowed_ips` (IPs or CIDRs). Pushes and deletes from any other address get `403` with the address that was refused; pulls aren't affected. With `proxy_auth` on, a push needs both: an allowed address and a token with Can push. To find a build host's address, open its `IMAGE_PUSHED` entry in the audit log. Behind a reverse proxy, set [`trusted_proxies`](#networking) too, or every push seems to come from the proxy and is refused. System → Status shows the list in use.
 
 Every pushed tag is recorded in the audit log as `IMAGE_PUSHED`, and every deleted manifest as `MANIFEST_DELETED`, with the token and the client address resolved with [`trusted_proxies`](#networking).
 
@@ -250,7 +254,7 @@ Every pushed tag is recorded in the audit log as `IMAGE_PUSHED`, and every delet
 
 A pushed tag starts a tag check for the virtual images built on that repository, about 5 seconds after the last push to it, so a new tag shows as an update within seconds and several tags pushed together cause one check. Re-pushing an existing tag shows its new digest.
 
-Containers that run a real name through DockVMap, like `dockvmap.lan:5000/team/web:v3`, show as from the internal registry on the host's page and don't count in Deployed.
+Containers that run a real name through DockVMap, like `dockvmap.lan:5000/team/web:latest`, show as from the internal registry on the host's page, with the same versions as virtual images: **Up to date**, **Outdated** once a new image is pushed to that tag, or **Pulled, not recreated**. They count in the Hosts page and dashboard "behind" numbers, but not in any virtual image's Deployed. Pushing through DockVMap updates this within one host check; a push straight to the registry shows within 5 minutes.
 
 ### Startup and address changes
 
@@ -261,7 +265,8 @@ If the registry doesn't answer at startup, DockVMap starts anyway, shows it in R
 ### Good to know
 
 - Back up the registry's volume separately: `dockvmap -backup` covers DockVMap's database only.
-- Garbage collection stays the registry's job: `docker compose exec registry registry garbage-collect /etc/docker/registry/config.yml`.
+- Garbage collection stays the registry's job: `docker compose exec registry registry garbage-collect --delete-untagged /etc/distribution/config.yml`, when nothing is pushing. `--delete-untagged` also removes the images left behind when you push a tag again, like `latest`, so the volume doesn't keep growing; multi-arch images stay complete (checked with `registry:3` 3.1.2). On `registry:2` the config is `/etc/docker/registry/config.yml`.
+- If DockVMap's own image lives in the internal registry, don't pull it through DockVMap, or DockVMap can't be deployed while it's down. Publish the registry on DockVMap's host for loopback only (`127.0.0.1:5000:5000`) and pull DockVMap as `127.0.0.1:5000/<name>`: Docker allows plain HTTP to `127.0.0.1`, and the registry stays unreachable from the network.
 - If you turn on deletes in the registry, don't delete the tag a virtual image points to, or pulls of its virtual tag break. A delete through DockVMap starts a tag check for that repository, so a virtual image whose tag is gone shows in Recent issues within seconds.
 - If DockVMap is down, nothing can push or pull real names; the registry itself isn't reachable from outside.
 
@@ -360,9 +365,10 @@ Fire after a scheduled tag check, once it has finished. Email is a digest per ch
 
 | Key | Default | Description |
 |---|---|---|
-| `internal_registry.enabled` | `false` | Pass pushes and pulls of names that aren't virtual images through to a `registry:2` on DockVMap's network. See [Internal registry](#internal-registry). |
+| `internal_registry.enabled` | `false` | Pass pushes and pulls of names that aren't virtual images through to a `registry:3` on DockVMap's network. See [Internal registry](#internal-registry). |
 | `internal_registry.address` | `registry:5000` | The registry's `host:port`. Change it if the registry service has another name, or, with `tls` on, to the name its certificate is for. |
 | `internal_registry.tls` | `false` | Connect to the registry over HTTPS and check its certificate, for a registry that already serves TLS. Off, DockVMap uses plain HTTP. See [Keeping an existing registry as it is](#keeping-an-existing-registry-as-it-is). |
+| `internal_registry.push_allowed_ips` | `[]` | IPs or CIDRs allowed to push and delete, resolved with `trusted_proxies`, like `["10.0.0.5", "10.0.1.0/24"]` (env: comma-separated). Empty allows every address. See [Who can push](#who-can-push). |
 
 ## Tag filtering
 

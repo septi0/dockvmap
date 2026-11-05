@@ -19,7 +19,6 @@ const (
 	maxRegistryRepositories = 1000
 	browsableCacheTTL       = time.Hour
 	browsableCheckTimeout   = 5 * time.Second
-	browsableChecksAtOnce   = 8
 )
 
 type registryCatalog interface {
@@ -78,16 +77,11 @@ func (b *RegistryBrowser) Browsable(ctx context.Context) ([]int64, error) {
 		ids = make([]int64, 0, len(registries))
 	)
 
-	slots := make(chan struct{}, browsableChecksAtOnce)
-
 	for _, registry := range registries {
 		wg.Add(1)
 
 		go func() {
 			defer wg.Done()
-
-			slots <- struct{}{}
-			defer func() { <-slots }()
 
 			if b.isBrowsable(ctx, registry) {
 				mu.Lock()

@@ -47,6 +47,8 @@ func parseOne(value string) (netip.Prefix, error) {
 }
 
 func (s Set) Contains(addr netip.Addr) bool {
+	addr = addr.Unmap()
+
 	for _, prefix := range s.prefixes {
 		if prefix.Contains(addr) {
 			return true

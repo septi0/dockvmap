@@ -106,20 +106,21 @@ func (a *Agent) collect(ctx context.Context, proxyHost string, report *agentapi.
 		}
 
 		report.Containers = append(report.Containers, agentapi.Container{
-			ID:             c.ID,
-			Name:           containerName(c),
-			Image:          c.Image,
-			ImageID:        c.ImageID,
-			RefImageID:     refImageID,
-			State:          c.State,
-			Health:         healthFromStatus(c.Status),
-			ExitCode:       details.exitCode,
-			ComposeProject: c.Labels["com.docker.compose.project"],
-			ComposeService: c.Labels["com.docker.compose.service"],
-			Created:        c.Created,
-			StartedAt:      details.startedAt,
-			FinishedAt:     details.finishedAt,
-			Ports:          publishedPorts(c.Ports),
+			ID:                c.ID,
+			Name:              containerName(c),
+			Image:             c.Image,
+			ImageID:           c.ImageID,
+			RefImageID:        refImageID,
+			State:             c.State,
+			Health:            healthFromStatus(c.Status),
+			ExitCode:          details.exitCode,
+			ComposeProject:    c.Labels["com.docker.compose.project"],
+			ComposeService:    c.Labels["com.docker.compose.service"],
+			ComposeWorkingDir: c.Labels["com.docker.compose.project.working_dir"],
+			Created:           c.Created,
+			StartedAt:         details.startedAt,
+			FinishedAt:        details.finishedAt,
+			Ports:             publishedPorts(c.Ports),
 		})
 
 		used[c.ImageID] = true

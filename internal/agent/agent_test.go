@@ -102,7 +102,7 @@ func (d *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 	case version + "/containers/json":
 		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"Id": "c1", "Names": []string{"/web-1"}, "Image": proxyHost + "/web:current", "ImageID": "sha256:old", "State": webState, "Status": "Up 2 hours (healthy)", "Created": 100,
-				"Labels": map[string]string{"com.docker.compose.project": "shop", "com.docker.compose.service": "web", "secret": "do-not-send"},
+				"Labels": map[string]string{"com.docker.compose.project": "shop", "com.docker.compose.service": "web", "com.docker.compose.project.working_dir": "/srv/shop", "secret": "do-not-send"},
 				"Ports": []map[string]any{
 					{"IP": "::", "PrivatePort": 80, "PublicPort": 8080, "Type": "tcp"},
 					{"PrivatePort": 9000, "Type": "tcp"},
@@ -333,7 +333,7 @@ func TestAgentReportsTheHostSnapshot(t *testing.T) {
 		t.Errorf("ports = %+v, want only published ones in a stable order", web.Ports)
 	}
 
-	if web.Health != "healthy" || web.ComposeProject != "shop" || web.ComposeService != "web" || web.RefImageID != "sha256:new" || web.StartedAt != 1_793_527_200 || web.FinishedAt != 0 {
+	if web.Health != "healthy" || web.ComposeProject != "shop" || web.ComposeService != "web" || web.ComposeWorkingDir != "/srv/shop" || web.RefImageID != "sha256:new" || web.StartedAt != 1_793_527_200 || web.FinishedAt != 0 {
 		t.Errorf("web = %+v", web)
 	}
 

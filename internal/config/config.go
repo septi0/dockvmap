@@ -67,9 +67,10 @@ type ProxyAuthConfig struct {
 }
 
 type InternalRegistryConfig struct {
-	Enabled bool   `yaml:"enabled" env:"DOCKVMAP_INTERNAL_REGISTRY_ENABLED"`
-	Address string `yaml:"address" env:"DOCKVMAP_INTERNAL_REGISTRY_ADDRESS" default:"registry:5000"`
-	TLS     bool   `yaml:"tls" env:"DOCKVMAP_INTERNAL_REGISTRY_TLS"`
+	Enabled        bool     `yaml:"enabled" env:"DOCKVMAP_INTERNAL_REGISTRY_ENABLED"`
+	Address        string   `yaml:"address" env:"DOCKVMAP_INTERNAL_REGISTRY_ADDRESS" default:"registry:5000"`
+	TLS            bool     `yaml:"tls" env:"DOCKVMAP_INTERNAL_REGISTRY_TLS"`
+	PushAllowedIPs []string `yaml:"push_allowed_ips" env:"DOCKVMAP_INTERNAL_REGISTRY_PUSH_ALLOWED_IPS"`
 }
 
 type TLSConfig struct {
@@ -98,8 +99,8 @@ func (c *Config) applyDerivedDefaults() {
 
 	c.InternalRegistry.Address = strings.TrimSpace(c.InternalRegistry.Address)
 
-	if c.InternalRegistry.Enabled && !c.ProxyAuth.Enabled {
-		c.warn("internal_registry is enabled but proxy_auth is off; the internal registry accepts pushes from anyone who can reach the proxy. Turn on proxy_auth and push with a token that has Can push")
+	if c.InternalRegistry.Enabled && !c.ProxyAuth.Enabled && len(c.InternalRegistry.PushAllowedIPs) == 0 {
+		c.warn("internal_registry is enabled but proxy_auth is off and internal_registry.push_allowed_ips is empty; the internal registry accepts pushes from anyone who can reach the proxy. Set push_allowed_ips to your build hosts, or turn on proxy_auth and push with a token that has Can push")
 	}
 
 	if len(c.TrustedProxies) == 0 {

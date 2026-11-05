@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,10 +19,10 @@ import (
 const (
 	internalRegistryCheckInterval = 10 * time.Second
 	internalRegistryCheckTimeout  = 5 * time.Second
+	internalTagDigestTTL          = 5 * time.Minute
 
 	changeQuietPeriod  = 5 * time.Second
 	changeMaxWait      = 30 * time.Second
-	changeMaxPending   = 1000
 	changeFlushTimeout = 10 * time.Second
 )
 
@@ -54,16 +55,9 @@ type auditManifestDeletedData struct {
 	Token      string `json:"token,omitempty"`
 }
 
-type pendingChange struct {
-	reference, token string
-	deleted          bool
-	info             RequestInfo
-}
-
-type repositoryChanges struct {
-	first   time.Time
-	entries []pendingChange
-	timer   *time.Timer
+type pendingCheck struct {
+	first time.Time
+	timer *time.Timer
 }
 
 type InternalRegistryDeps struct {
@@ -71,16 +65,21 @@ type InternalRegistryDeps struct {
 	Audit     auditRecorder
 	Failures  failureRecorder
 	Refresher imageRefresher
+	Digests   digestResolver
 	Enabled   bool
 	Address   string
 	TLS       bool
 }
 
 type InternalRegistry struct {
-	store         internalRegistryStore
-	audit         auditRecorder
-	failures      failureRecorder
-	refresher     imageRefresher
+	store     internalRegistryStore
+	audit     auditRecorder
+	failures  failureRecorder
+	refresher imageRefresher
+	digests   digestResolver
+
+	digestsMu     sync.Mutex
+	tagDigests    map[string]*registryTagDigest
 	enabled       bool
 	address       string
 	useTLS        bool
@@ -90,7 +89,8 @@ type InternalRegistry struct {
 	maxWait       time.Duration
 
 	mu      sync.Mutex
-	pending map[string]*repositoryChanges
+	pending map[string]*pendingCheck
+	audits  sync.WaitGroup
 }
 
 func NewInternalRegistry(deps InternalRegistryDeps) *InternalRegistry {
@@ -99,6 +99,8 @@ func NewInternalRegistry(deps InternalRegistryDeps) *InternalRegistry {
 		audit:         deps.Audit,
 		failures:      deps.Failures,
 		refresher:     deps.Refresher,
+		digests:       deps.Digests,
+		tagDigests:    make(map[string]*registryTagDigest),
 		enabled:       deps.Enabled,
 		address:       deps.Address,
 		useTLS:        deps.TLS,
@@ -106,7 +108,7 @@ func NewInternalRegistry(deps InternalRegistryDeps) *InternalRegistry {
 		checkInterval: internalRegistryCheckInterval,
 		quietPeriod:   changeQuietPeriod,
 		maxWait:       changeMaxWait,
-		pending:       make(map[string]*repositoryChanges),
+		pending:       make(map[string]*pendingCheck),
 	}
 }
 
@@ -308,115 +310,127 @@ func (r *InternalRegistry) ping(ctx context.Context) error {
 }
 
 func (r *InternalRegistry) Pushed(repository, tag, token string, info RequestInfo) {
-	r.queue(repository, pendingChange{reference: tag, token: token, info: info})
+	r.changed(repository, AuditTypeImagePushed, auditImagePushedData{Repository: repository, Tag: tag, Token: token}, info)
 }
 
 func (r *InternalRegistry) Deleted(repository, reference, token string, info RequestInfo) {
-	r.queue(repository, pendingChange{reference: reference, token: token, deleted: true, info: info})
+	r.changed(repository, AuditTypeManifestDeleted, auditManifestDeletedData{Repository: repository, Reference: reference, Token: token}, info)
 }
 
-func (r *InternalRegistry) queue(repository string, change pendingChange) {
+type registryTagDigest struct {
+	digest   string
+	checked  time.Time
+	checking bool
+}
+
+func (r *InternalRegistry) TagDigest(repository, tag string) string {
+	key := repository + ":" + tag
+
+	r.digestsMu.Lock()
+	defer r.digestsMu.Unlock()
+
+	entry, ok := r.tagDigests[key]
+
+	if !ok {
+		entry = &registryTagDigest{}
+		r.tagDigests[key] = entry
+	}
+
+	if !entry.checking && time.Since(entry.checked) > internalTagDigestTTL {
+		entry.checking = true
+		go r.checkTagDigest(entry, repository, tag)
+	}
+
+	return entry.digest
+}
+
+func (r *InternalRegistry) checkTagDigest(entry *registryTagDigest, repository, tag string) {
+	ctx, cancel := context.WithTimeout(context.Background(), internalRegistryCheckTimeout)
+	defer cancel()
+
+	digest, err := r.digests.ManifestDigest(ctx, r.address, repository, tag)
+
+	if err != nil {
+		slog.Debug("looking up a tag in the internal registry failed", "repository", repository, "tag", tag, "error", err)
+	}
+
+	r.digestsMu.Lock()
+	defer r.digestsMu.Unlock()
+
+	if err == nil {
+		entry.digest = digest
+	}
+
+	entry.checked = time.Now()
+	entry.checking = false
+}
+
+func (r *InternalRegistry) forgetTagDigests(repository string) {
+	r.digestsMu.Lock()
+	defer r.digestsMu.Unlock()
+
+	for key, entry := range r.tagDigests {
+		if strings.HasPrefix(key, repository+":") {
+			entry.checked = time.Time{}
+		}
+	}
+}
+
+func (r *InternalRegistry) changed(repository, auditType string, data any, info RequestInfo) {
+	r.forgetTagDigests(repository)
+
+	r.audits.Add(1)
+
+	go func() {
+		defer r.audits.Done()
+
+		ctx, cancel := context.WithTimeout(WithRequestInfo(context.Background(), info), changeFlushTimeout)
+		defer cancel()
+
+		recordAudit(ctx, r.audit, auditType, data)
+	}()
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	changes, ok := r.pending[repository]
+	check, ok := r.pending[repository]
 
 	if !ok {
-		changes = &repositoryChanges{first: time.Now()}
-		r.pending[repository] = changes
+		check = &pendingCheck{first: time.Now()}
+		r.pending[repository] = check
 	}
 
-	changes.entries = append(changes.entries, change)
+	wait := min(r.quietPeriod, max(0, r.maxWait-time.Since(check.first)))
 
-	if len(changes.entries) >= changeMaxPending {
-		r.takeLocked(repository)
-		go r.apply(repository, changes.entries)
-
-		return
-	}
-
-	wait := min(r.quietPeriod, max(0, r.maxWait-time.Since(changes.first)))
-
-	if changes.timer == nil {
-		changes.timer = time.AfterFunc(wait, func() { r.fire(repository) })
+	if check.timer == nil {
+		check.timer = time.AfterFunc(wait, func() { r.runCheck(repository) })
 	} else {
-		changes.timer.Reset(wait)
+		check.timer.Reset(wait)
 	}
 }
 
-func (r *InternalRegistry) fire(repository string) {
+func (r *InternalRegistry) runCheck(repository string) {
 	r.mu.Lock()
-	changes := r.takeLocked(repository)
+	delete(r.pending, repository)
 	r.mu.Unlock()
 
-	if changes != nil {
-		r.apply(repository, changes.entries)
-	}
-}
+	ctx, cancel := context.WithTimeout(context.Background(), changeFlushTimeout)
+	defer cancel()
 
-func (r *InternalRegistry) takeLocked(repository string) *repositoryChanges {
-	changes, ok := r.pending[repository]
-
-	if !ok {
-		return nil
-	}
-
-	delete(r.pending, repository)
-
-	if changes.timer != nil {
-		changes.timer.Stop()
-	}
-
-	return changes
+	r.checkTags(ctx, repository)
 }
 
 func (r *InternalRegistry) Stop() {
 	r.mu.Lock()
 
-	taken := make(map[string]*repositoryChanges, len(r.pending))
-
-	for repository := range r.pending {
-		taken[repository] = r.takeLocked(repository)
+	for repository, check := range r.pending {
+		check.timer.Stop()
+		delete(r.pending, repository)
 	}
 
 	r.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), changeFlushTimeout)
-	defer cancel()
-
-	for repository, changes := range taken {
-		r.recordAudits(ctx, repository, changes.entries)
-	}
-}
-
-func (r *InternalRegistry) apply(repository string, entries []pendingChange) {
-	ctx, cancel := context.WithTimeout(context.Background(), changeFlushTimeout)
-	defer cancel()
-
-	r.recordAudits(ctx, repository, entries)
-	r.checkTags(ctx, repository)
-}
-
-func (r *InternalRegistry) recordAudits(ctx context.Context, repository string, entries []pendingChange) {
-	for _, change := range entries {
-		changeCtx := WithRequestInfo(ctx, change.info)
-
-		if change.deleted {
-			recordAudit(changeCtx, r.audit, AuditTypeManifestDeleted, auditManifestDeletedData{
-				Repository: repository,
-				Reference:  change.reference,
-				Token:      change.token,
-			})
-
-			continue
-		}
-
-		recordAudit(changeCtx, r.audit, AuditTypeImagePushed, auditImagePushedData{
-			Repository: repository,
-			Tag:        change.reference,
-			Token:      change.token,
-		})
-	}
+	r.audits.Wait()
 }
 
 func (r *InternalRegistry) checkTags(ctx context.Context, repository string) {

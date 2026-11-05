@@ -32,6 +32,17 @@ func (i *Images) refreshDigest(ctx context.Context, image *model.Image) {
 	}
 }
 
+func (i *Images) RecordServedDigest(imageID int64, tag, digest string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), digestLookupTimeout)
+		defer cancel()
+
+		if err := i.store.UpdateImageDigest(ctx, imageID, tag, &digest, time.Now().UTC()); err != nil {
+			slog.Error("recording a served digest failed", "image", imageID, "error", err)
+		}
+	}()
+}
+
 func (i *Images) refreshDigestsInBackground(names []string) {
 	go func() {
 		for _, name := range names {

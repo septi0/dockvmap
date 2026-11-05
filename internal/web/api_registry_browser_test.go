@@ -2,20 +2,25 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/septi0/dockvmap/internal/model"
+	"github.com/septi0/dockvmap/internal/service"
 )
 
-type fakeRegistryBrowser struct{ result *model.RegistryRepositories }
+type fakeRegistryBrowser struct {
+	result *model.RegistryRepositories
+	err    error
+}
 
 func (fakeRegistryBrowser) Browsable(context.Context) ([]int64, error) { return []int64{3}, nil }
 
 func (f fakeRegistryBrowser) Repositories(context.Context, int64) (*model.RegistryRepositories, error) {
-	return f.result, nil
+	return f.result, f.err
 }
 
 func TestListRegistryRepositories(t *testing.T) {
@@ -30,8 +35,9 @@ func TestListRegistryRepositories(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{"found", fakeRegistryBrowser{result}, http.StatusOK, `{"repositories":[{"name":"team/web","images":[{"id":4,"name":"web"}]},{"name":"team/api","images":[]}],"more":false}`},
+		{"found", fakeRegistryBrowser{result: result}, http.StatusOK, `{"repositories":[{"name":"team/web","images":[{"id":4,"name":"web"}]},{"name":"team/api","images":[]}],"more":false}`},
 		{"unknown registry", fakeRegistryBrowser{}, http.StatusNotFound, "registry not found"},
+		{"registry down", fakeRegistryBrowser{err: fmt.Errorf("%w: connection refused", service.ErrUpstreamUnavailable)}, http.StatusBadGateway, "check that the registry is running and its login"},
 	}
 
 	for _, tc := range cases {

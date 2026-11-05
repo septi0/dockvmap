@@ -94,6 +94,7 @@ type proxyTokenService interface {
 type hostService interface {
 	Create(ctx context.Context, name, address string) (int64, error)
 	List(ctx context.Context, proxy service.ProxyTarget) ([]model.Host, error)
+	ListWithBehind(ctx context.Context, proxy service.ProxyTarget) ([]model.Host, []model.HostContainer, error)
 	Get(ctx context.Context, id int64, proxy service.ProxyTarget) (*model.HostDetails, error)
 	Update(ctx context.Context, id int64, name, address string) error
 	TrustNewAgent(ctx context.Context, id int64) error

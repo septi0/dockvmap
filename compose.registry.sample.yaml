@@ -29,7 +29,7 @@ services:
       start_period: 10s
 
   registry:
-    image: registry:2
+    image: registry:3
     restart: unless-stopped
 
     # plain HTTP and no login: only DockVMap reaches it, over this stack's network,

@@ -440,10 +440,6 @@ func TestPushesToOneRepositoryCauseOneTagCheck(t *testing.T) {
 	f.registry.Pushed("team/web", "latest", "build", RequestInfo{IP: "10.0.0.9"})
 	f.registry.Pushed("team/other", "v1", "build", RequestInfo{IP: "10.0.0.9"})
 
-	if got := f.audit.count(AuditTypeImagePushed); got != 0 {
-		t.Fatalf("audits written during the request: %d, want 0", got)
-	}
-
 	waitFor(t, "the audit entries", func() bool { return f.audit.count(AuditTypeImagePushed) == 3 })
 	waitFor(t, "the tag check", func() bool { return len(f.refresher.started()) == 1 })
 
@@ -469,19 +465,7 @@ func TestPushesKeepWaitingButNotPastTheMaximum(t *testing.T) {
 	}
 }
 
-func TestPushesFireAtThePendingLimit(t *testing.T) {
-	f := newPushFixture(t)
-	f.registry.quietPeriod = time.Hour
-	f.registry.maxWait = time.Hour
-
-	for range changeMaxPending {
-		f.registry.Pushed("team/web", "v2", "build", RequestInfo{})
-	}
-
-	waitFor(t, "the flush at the pending limit", func() bool { return f.audit.count(AuditTypeImagePushed) == changeMaxPending })
-}
-
-func TestStopWritesPendingAuditsWithoutATagCheck(t *testing.T) {
+func TestStopWaitsForAuditsAndSkipsPendingTagChecks(t *testing.T) {
 	f := newPushFixture(t)
 	f.registry.quietPeriod = time.Hour
 
@@ -507,5 +491,68 @@ func TestDeletesAreAuditedAndStartATagCheck(t *testing.T) {
 
 	if got := f.audit.count(AuditTypeImagePushed); got != 0 {
 		t.Errorf("IMAGE_PUSHED audits = %d, want 0 for a delete", got)
+	}
+}
+
+type countingDigests struct {
+	mu     sync.Mutex
+	digest string
+	calls  int
+}
+
+func (d *countingDigests) ManifestDigest(context.Context, string, string, string) (string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.calls++
+
+	return d.digest, nil
+}
+
+func (d *countingDigests) count() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.calls
+}
+
+func (d *countingDigests) set(digest string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.digest = digest
+}
+
+func TestTagDigestsAreLookedUpInTheBackground(t *testing.T) {
+	digests := &countingDigests{digest: "sha256:aaa"}
+	registry := NewInternalRegistry(InternalRegistryDeps{Audit: &recordingAudit{}, Refresher: &recordingRefresher{}, Digests: digests, Enabled: true, Address: "registry:5000"})
+	registry.quietPeriod = time.Hour
+	t.Cleanup(registry.Stop)
+
+	if got := registry.TagDigest("team/web", "latest"); got != "" {
+		t.Fatalf("first read = %q, want nothing while the lookup runs", got)
+	}
+
+	waitFor(t, "the background lookup", func() bool { return registry.TagDigest("team/web", "latest") == "sha256:aaa" })
+
+	registry.TagDigest("team/web", "latest")
+	registry.TagDigest("team/web-two", "latest")
+	waitFor(t, "the second repository's lookup", func() bool { return registry.TagDigest("team/web-two", "latest") == "sha256:aaa" })
+
+	if calls := digests.count(); calls != 2 {
+		t.Fatalf("lookups = %d, want 2 (one per repository and tag)", calls)
+	}
+
+	digests.set("sha256:bbb")
+	registry.Pushed("team/web", "latest", "", RequestInfo{})
+
+	if got := registry.TagDigest("team/web", "latest"); got != "sha256:aaa" {
+		t.Errorf("right after a push = %q, want the last known digest while it refreshes", got)
+	}
+
+	waitFor(t, "the refresh after a push", func() bool { return registry.TagDigest("team/web", "latest") == "sha256:bbb" })
+
+	if registry.TagDigest("team/web-two", "latest"); digests.count() != 3 {
+		t.Errorf("lookups = %d, want team/web-two still fresh", digests.count())
 	}
 }

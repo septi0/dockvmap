@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { link } from "svelte-spa-router";
+  import { link, push } from "svelte-spa-router";
+  import RedeployButton from "../hosts/RedeployButton.svelte";
   import ContainerState from "../hosts/ContainerState.svelte";
   import ContainerVersion from "../hosts/ContainerVersion.svelte";
   import HostStatus from "../hosts/HostStatus.svelte";
@@ -7,6 +8,7 @@
   import { getImageHosts } from "../../api/hosts";
   import { errorMessage } from "../../api/client";
   import { formatCount } from "../../utils/format";
+  import { redeployCommand } from "../../utils/hosts";
   import { createVisibilityPoller } from "../../utils/visibilityPoller";
   import type { Host, HostContainer, ImageContainers } from "../../api/types/hosts";
 
@@ -22,10 +24,21 @@
   let rows = $derived(
     (result?.hosts ?? [])
       .flatMap(({ host, containers }) =>
-        containers.map((container) => ({ host, container })),
+        containers.map((container) => ({
+          host,
+          container,
+          command: host.current ? redeployCommand(container) : null,
+        })),
       )
       .sort((a, b) => attentionRank(a.host, a.container) - attentionRank(b.host, b.container)),
   );
+
+  function openHost(event: MouseEvent, id: number) {
+    if ((event.target as HTMLElement).closest("a, button")) return;
+    push(`/hosts/${id}`);
+  }
+
+  let hasCommands = $derived(rows.some((row) => row.command));
 
   function attentionRank(host: Host, container: HostContainer): number {
     if (!host.current) return 2;
@@ -92,11 +105,12 @@
               <th>Container</th>
               <th>State</th>
               <th class="phone-hidden">Version</th>
+              {#if hasCommands}<th aria-label="Copy command"></th>{/if}
             </tr>
           </thead>
           <tbody>
-            {#each rows as { host, container } (`${host.id}:${container.id}`)}
-              <tr>
+            {#each rows as { host, container, command } (`${host.id}:${container.id}`)}
+              <tr class="clickable" onclick={(event) => openHost(event, host.id)}>
                 <td class="phone-hidden">
                   <a class="row-link host-name" href={`/hosts/${host.id}`} use:link>{host.name}</a>
                 </td>
@@ -115,6 +129,13 @@
                   {/if}
                 </td>
                 <td class="phone-hidden">{@render version(host, container)}</td>
+                {#if hasCommands}
+                  <td class="copy-cell">
+                    {#if command}
+                      <RedeployButton {container} {command} />
+                    {/if}
+                  </td>
+                {/if}
               </tr>
             {/each}
           </tbody>
@@ -125,6 +146,11 @@
 {/if}
 
 <style>
+  .copy-cell {
+    width: 1%;
+    text-align: right;
+  }
+
   .row-detail {
     margin-top: var(--space-1);
   }

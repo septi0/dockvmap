@@ -121,7 +121,6 @@ type hostFixture struct {
 	*groupFixture
 	hosts  *Hosts
 	agents *fakeAgents
-	usage  *ProxyUsage
 	clock  *stepClock
 }
 
@@ -129,11 +128,10 @@ func newHostFixture(t *testing.T) *hostFixture {
 	f := newGroupFixture(t)
 	clock := &stepClock{at: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}
 	agents := &fakeAgents{agents: make(map[string]*fakeAgent)}
-	usage := NewProxyUsage(f.store)
-	hosts := NewHosts(HostsDeps{Store: f.store, Audit: f.audit, Agents: agents, Usage: usage, PollInterval: time.Minute, ProxyHost: proxyHost})
+	hosts := NewHosts(HostsDeps{Store: f.store, Audit: f.audit, Agents: agents, PollInterval: time.Minute, ProxyHost: proxyHost})
 	hosts.now = clock.now
 
-	return &hostFixture{groupFixture: f, hosts: hosts, agents: agents, usage: usage, clock: clock}
+	return &hostFixture{groupFixture: f, hosts: hosts, agents: agents, clock: clock}
 }
 
 func (f *hostFixture) addHost(name string) (int64, string) {
@@ -498,7 +496,7 @@ func TestHostReportStoresSnapshotAndSkipsUnchangedOnes(t *testing.T) {
 
 	containers := []agentapi.Container{
 		container("c1", "web-1", "nginx:1.27", "img1"),
-		{ID: "c2", Name: "old-job", Image: "busybox", ImageID: "img2", State: "exited", ExitCode: 3, StartedAt: 1_700_000_000, FinishedAt: 1_700_000_500},
+		{ID: "c2", Name: "old-job", Image: "busybox", ImageID: "img2", State: "exited", ExitCode: 3, StartedAt: 1_700_000_000, FinishedAt: 1_700_000_500, ComposeWorkingDir: "/srv/jobs"},
 	}
 
 	f.report(id, containers, nil)
@@ -518,12 +516,12 @@ func TestHostReportStoresSnapshotAndSkipsUnchangedOnes(t *testing.T) {
 	}
 
 	for _, c := range details.Containers {
-		if c.Name == "old-job" && (c.ExitCode != 3 || c.StartedAt == nil || c.FinishedAt == nil || c.FinishedAt.Unix() != 1_700_000_500) {
-			t.Fatalf("stopped container times = %+v", c)
+		if c.Name == "old-job" && (c.ExitCode != 3 || c.StartedAt == nil || c.FinishedAt == nil || c.FinishedAt.Unix() != 1_700_000_500 || c.ComposeWorkingDir == nil || *c.ComposeWorkingDir != "/srv/jobs") {
+			t.Fatalf("stopped container = %+v", c)
 		}
 
-		if c.Name == "web-1" && (c.StartedAt == nil || c.FinishedAt != nil || len(c.Ports) != 1 || c.Ports[0].PublicPort != 8080) {
-			t.Fatalf("running container times = %+v", c)
+		if c.Name == "web-1" && (c.StartedAt == nil || c.FinishedAt != nil || len(c.Ports) != 1 || c.Ports[0].PublicPort != 8080 || c.ComposeWorkingDir != nil) {
+			t.Fatalf("running container = %+v", c)
 		}
 	}
 
@@ -612,14 +610,15 @@ func TestHostReportValidation(t *testing.T) {
 	}
 
 	cases := map[string]agentapi.Report{
-		"missing state":      {Containers: mutate(func(c *agentapi.Container) { c.State = "" })},
-		"long state":         {Containers: mutate(func(c *agentapi.Container) { c.State = strings.Repeat("s", 33) })},
-		"unknown health":     {Containers: mutate(func(c *agentapi.Container) { c.Health = "meh" })},
-		"missing id":         {Containers: mutate(func(c *agentapi.Container) { c.ID = "" })},
-		"missing name":       {Containers: mutate(func(c *agentapi.Container) { c.Name = "" })},
-		"long image":         {Containers: mutate(func(c *agentapi.Container) { c.Image = strings.Repeat("a", 513) })},
-		"long compose label": {Containers: mutate(func(c *agentapi.Container) { c.ComposeProject = strings.Repeat("a", 256) })},
-		"negative start":     {Containers: mutate(func(c *agentapi.Container) { c.StartedAt = -1 })},
+		"missing state":       {Containers: mutate(func(c *agentapi.Container) { c.State = "" })},
+		"long state":          {Containers: mutate(func(c *agentapi.Container) { c.State = strings.Repeat("s", 33) })},
+		"unknown health":      {Containers: mutate(func(c *agentapi.Container) { c.Health = "meh" })},
+		"missing id":          {Containers: mutate(func(c *agentapi.Container) { c.ID = "" })},
+		"missing name":        {Containers: mutate(func(c *agentapi.Container) { c.Name = "" })},
+		"long image":          {Containers: mutate(func(c *agentapi.Container) { c.Image = strings.Repeat("a", 513) })},
+		"long compose label":  {Containers: mutate(func(c *agentapi.Container) { c.ComposeProject = strings.Repeat("a", 256) })},
+		"long compose folder": {Containers: mutate(func(c *agentapi.Container) { c.ComposeWorkingDir = strings.Repeat("a", 256) })},
+		"negative start":      {Containers: mutate(func(c *agentapi.Container) { c.StartedAt = -1 })},
 		"port out of range": {Containers: mutate(func(c *agentapi.Container) {
 			c.Ports = []agentapi.Port{{PrivatePort: 80, PublicPort: 70000, Type: "tcp"}}
 		})},
@@ -804,10 +803,18 @@ func TestHostContainerTrackingUsesTheDigestTheProxyJustServed(t *testing.T) {
 		t.Fatalf("before the pull: %s, want outdated", got)
 	}
 
-	f.usage.RecordTagDigest(webID, "v2", testDigest("b"))
+	f.images.RecordServedDigest(webID, "v2", testDigest("b"))
+	waitForDigest(t, f.groupFixture, webID, "v2", testDigest("b"))
 
 	if got := status(); got != model.ContainerUpToDate {
 		t.Fatalf("after the pull: %s, want upToDate", got)
+	}
+
+	f.images.RecordServedDigest(webID, "v1", testDigest("c"))
+	time.Sleep(50 * time.Millisecond)
+
+	if got := status(); got != model.ContainerUpToDate {
+		t.Fatalf("a digest for another tag: %s, want it ignored", got)
 	}
 }
 
@@ -1119,10 +1126,25 @@ func TestImageRolloutsCountKnownVersionsOnOnlineHosts(t *testing.T) {
 	}
 }
 
+type fakeInternalTags struct {
+	address string
+	digests map[string]string
+}
+
+func (f fakeInternalTags) Address() string { return f.address }
+
+func (f fakeInternalTags) TagDigest(repository, tag string) string {
+	return f.digests[repository+":"+tag]
+}
+
 func TestHostContainerFromTheInternalRegistry(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
 		f := newHostFixture(t)
-		f.hosts.internalRegistry = enabled
+
+		if enabled {
+			f.hosts.internalRegistry = fakeInternalTags{address: "registry:5000"}
+		}
+
 		id, _ := f.addHost("server2")
 
 		f.report(id, []agentapi.Container{container("c1", "api", proxyHost+"/team/api:v3", "api")}, []agentapi.Image{
@@ -1149,12 +1171,71 @@ func TestHostContainerFromTheInternalRegistry(t *testing.T) {
 
 		tracking := details.Containers[0].Tracking
 
-		if tracking == nil || tracking.Status != want || tracking.InRollout {
+		if tracking == nil || tracking.Status != want || tracking.InRollout || tracking.InternalRegistry != enabled {
 			t.Errorf("internal registry %v: tracking = %+v, want %s outside the rollout", enabled, tracking, want)
 		}
 
 		if hosts[0].Rollout.Total != 0 {
 			t.Errorf("internal registry %v: rollout = %+v, want nothing counted", enabled, hosts[0].Rollout)
 		}
+	}
+}
+
+func TestInternalRegistryContainersFollowTheirTag(t *testing.T) {
+	f := newHostFixture(t)
+	f.hosts.internalRegistry = fakeInternalTags{address: "registry:5000", digests: map[string]string{"team/api:latest": testDigest("b")}}
+	id, _ := f.addHost("server2")
+
+	api := proxyHost + "/team/api"
+
+	f.report(id, []agentapi.Container{
+		container("c1", "api-current", api+":latest", "new"),
+		container("c2", "api-old", api+":latest", "old"),
+		{ID: "c3", Name: "api-pulled", Image: api + ":latest", ImageID: "old", RefImageID: "new", State: "running"},
+		container("c4", "api-other-tag", api+":v1", "old"),
+	}, []agentapi.Image{
+		{ID: "new", RepoDigests: []string{repoDigest(api, "b")}},
+		{ID: "old", RepoDigests: []string{repoDigest(api, "a")}},
+	})
+
+	details, err := f.hosts.Get(f.ctx, id, testProxy)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := map[string]model.ContainerVersionStatus{
+		"api-current":   model.ContainerUpToDate,
+		"api-old":       model.ContainerOutdated,
+		"api-pulled":    model.ContainerPulledNotRecreated,
+		"api-other-tag": model.ContainerInternalRegistry,
+	}
+
+	for _, c := range details.Containers {
+		if c.Tracking == nil || c.Tracking.Status != want[c.Name] || !c.Tracking.InternalRegistry || c.Tracking.PinnedTag != nil {
+			t.Errorf("%s tracking = %+v, want %s from the internal registry", c.Name, c.Tracking, want[c.Name])
+		}
+	}
+
+	hosts, err := f.hosts.List(f.ctx, testProxy)
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if hosts[0].Rollout != (model.Rollout{UpToDate: 1, Total: 3}) {
+		t.Errorf("host rollout = %+v, want 1 of 3 up to date", hosts[0].Rollout)
+	}
+
+	_, behind, err := f.hosts.ListWithBehind(f.ctx, testProxy)
+
+	if err != nil || len(behind) != 2 || behind[0].Name != "api-old" || behind[1].Name != "api-pulled" {
+		t.Errorf("behind = %+v, %v; want the outdated one before the pulled one", behind, err)
+	}
+
+	rollouts, err := f.hosts.ImageRollouts(f.ctx, testProxy)
+
+	if err != nil || len(rollouts) != 0 {
+		t.Errorf("image rollouts = %+v, %v; want none for real names", rollouts, err)
 	}
 }

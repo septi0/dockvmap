@@ -7,7 +7,7 @@ import (
 	"github.com/septi0/dockvmap/internal/model"
 )
 
-func (s *Store) RecordProxyUsage(ctx context.Context, images []model.ImageUsage, digests []model.ImageDigest, tokens []model.ProxyTokenUsage) error {
+func (s *Store) RecordProxyUsage(ctx context.Context, images []model.ImageUsage, tokens []model.ProxyTokenUsage) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 
 	if err != nil {
@@ -21,12 +21,6 @@ func (s *Store) RecordProxyUsage(ctx context.Context, images []model.ImageUsage,
 
 		if err != nil {
 			return fmt.Errorf("recording usage for image %d: %w", usage.ImageID, err)
-		}
-	}
-
-	for _, seen := range digests {
-		if err := updateImageDigest(ctx, tx, seen.ImageID, seen.Tag, &seen.Digest, &seen.SeenAt); err != nil {
-			return err
 		}
 	}
 

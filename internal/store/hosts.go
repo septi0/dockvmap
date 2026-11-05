@@ -30,7 +30,7 @@ const hostSelect = `
 const hostContainerSelect = `
 	SELECT host_id, container_id, name, image, image_host, image_repository, image_tag, image_digest,
 		running_digests, ref_digests, state, health, exit_code, compose_project, compose_service,
-		created_at, started_at, finished_at, ports
+		compose_working_dir, created_at, started_at, finished_at, ports
 	FROM host_containers
 `
 
@@ -50,7 +50,7 @@ func scanHostContainer(row rowScanner, container *model.HostContainer) error {
 		&container.HostID, &container.ContainerID, &container.Name, &container.Image, &container.ImageHost,
 		&container.ImageRepository, &container.ImageTag, &container.ImageDigest, &runningDigests, &refDigests,
 		&container.State, &container.Health, &container.ExitCode, &container.ComposeProject,
-		&container.ComposeService, &container.CreatedAt, &container.StartedAt, &container.FinishedAt, &ports,
+		&container.ComposeService, &container.ComposeWorkingDir, &container.CreatedAt, &container.StartedAt, &container.FinishedAt, &ports,
 	)
 
 	if err != nil {
@@ -281,8 +281,8 @@ func (s *Store) ReplaceHostSnapshot(ctx context.Context, id int64, snapshot mode
 		INSERT INTO host_containers (
 			host_id, container_id, name, image, image_host, image_repository, image_tag, image_digest,
 			running_digests, ref_digests, state, health, exit_code, compose_project, compose_service,
-			created_at, started_at, finished_at, ports
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			compose_working_dir, created_at, started_at, finished_at, ports
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 
 	if err != nil {
@@ -295,7 +295,7 @@ func (s *Store) ReplaceHostSnapshot(ctx context.Context, id int64, snapshot mode
 		_, err := insert.ExecContext(ctx,
 			id, c.ContainerID, c.Name, c.Image, c.ImageHost, c.ImageRepository, c.ImageTag, c.ImageDigest,
 			marshalList(c.RunningDigests), marshalList(c.RefDigests), c.State, c.Health, c.ExitCode,
-			c.ComposeProject, c.ComposeService, c.CreatedAt, c.StartedAt, c.FinishedAt, marshalList(c.Ports),
+			c.ComposeProject, c.ComposeService, c.ComposeWorkingDir, c.CreatedAt, c.StartedAt, c.FinishedAt, marshalList(c.Ports),
 		)
 
 		if err != nil {

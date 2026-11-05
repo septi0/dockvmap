@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Rollout } from "../../api/types/hosts";
+  import { formatCount } from "../../utils/format";
 
   let {
     rollout,
@@ -8,9 +9,11 @@
   }: { rollout: Rollout; compact?: boolean; quiet?: boolean } = $props();
 
   let outdated = $derived(rollout.total - rollout.upToDate);
-  let label = $derived(
-    `${rollout.upToDate}/${rollout.total}${compact ? "" : " up to date"}`,
-  );
+  let label = $derived.by(() => {
+    if (outdated === 0) return compact ? "Current" : "All current";
+
+    return compact ? `${outdated} behind` : `${formatCount(outdated, "container")} behind`;
+  });
   let title = $derived(
     outdated > 0
       ? `${outdated} of ${rollout.total} running containers aren't on the current version yet`

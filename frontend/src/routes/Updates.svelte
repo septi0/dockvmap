@@ -153,7 +153,7 @@
     empty={visibleItems.length === 0}
     emptyMessage={view.filters.search
       ? "No images with an update match your search."
-      : "All caught up. No images have an update available."}
+      : "No newer tags. Every image is on its latest matching tag."}
     listSkeleton
   >
     {#each visibleItems as item (item.key)}

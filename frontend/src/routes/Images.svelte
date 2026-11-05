@@ -291,7 +291,7 @@
         </select>
       </div>
     {/if}
-    {#if usedRegistries.length > 1 || (view.filters.registry !== "" && usedRegistries.length > 0)}
+    {#if usedRegistries.length > 0}
       <div class="filter-field">
         <span class="filter-label">Registry</span>
         <select
@@ -359,7 +359,7 @@
             />
             {#if rollouts.size > 0}<th class="phone-hidden">Deployed</th>{/if}
             <SortableHeader
-              label="Update"
+              label="Newer tag"
               direction={view.sortDirection("status")}
               onSort={() => view.toggleSort("status")}
             />
@@ -442,18 +442,18 @@
                   <span
                     class="badge badge-warning"
                     title={image.updateAvailableTag
-                      ? `Update to ${image.updateAvailableTag}`
+                      ? `${image.updateAvailableTag} is newer than ${image.tag}`
                       : undefined}
                   >
                     <TriangleAlert size={12} strokeWidth={2} />
                     {#if image.updateAvailableTag}
-                      <span>Update to <span class="badge-tag">{image.updateAvailableTag}</span></span>
+                      <span><span class="badge-tag">{image.updateAvailableTag}</span> available</span>
                     {:else}
-                      Update available
+                      Newer tag available
                     {/if}
                   </span>
                 {:else}
-                  <span class="muted">Up to date</span>
+                  <span class="muted">Latest</span>
                 {/if}
               </td>
               {#if pullInfo}

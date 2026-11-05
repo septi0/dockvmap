@@ -7,6 +7,7 @@
   import StatStrip from "../lib/components/dashboard/StatStrip.svelte";
   import RecentIssuesCard from "../lib/components/dashboard/RecentIssuesCard.svelte";
   import UpdatesAvailableCard from "../lib/components/dashboard/UpdatesAvailableCard.svelte";
+  import BehindOnHostsCard from "../lib/components/dashboard/BehindOnHostsCard.svelte";
   import RecentTagActivityCard from "../lib/components/dashboard/RecentTagActivityCard.svelte";
   import ProxyActivityCard from "../lib/components/dashboard/ProxyActivityCard.svelte";
   import { dashboard, dashboardSections } from "../lib/services/dashboard";
@@ -37,6 +38,10 @@
     void dashboard.refresh();
     void tagRefreshStatus.refresh();
   };
+
+  let showBehind = $derived(
+    sections.hosts.data ? sections.hosts.data.total > 0 : !!sections.hosts.error,
+  );
 
   let hasErrors = $derived(
     Object.values(sections).some((section) => section.error !== null),
@@ -98,12 +103,15 @@
 
     <section class="dash-band">
       <h2 class="band-label">Needs attention</h2>
-      <div class="band-grid needs-attention">
+      <div class="band-grid needs-attention" class:with-hosts={showBehind}>
         <UpdatesAvailableCard
           {...sections.updates}
           trackedImages={sections.summary.data?.images.total ?? null}
           {onRetry}
         />
+        {#if showBehind}
+          <BehindOnHostsCard {...sections.hosts} {onRetry} />
+        {/if}
         <RecentIssuesCard {...sections.issues} {onRetry} />
       </div>
     </section>
@@ -169,10 +177,20 @@
     align-items: stretch;
   }
 
+  .needs-attention.with-hosts {
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+
   .band-stack {
     display: flex;
     flex-direction: column;
     gap: var(--space-4);
+  }
+
+  @media (max-width: 1100px) {
+    .needs-attention.with-hosts {
+      grid-template-columns: 1fr;
+    }
   }
 
   @media (max-width: 900px) {

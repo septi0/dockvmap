@@ -26,7 +26,7 @@
     <span class="label">{count === 1 ? 'update available' : 'updates available'}</span>
   {:else}
     <span class="icon"><Check size={14} strokeWidth={1.75} /></span>
-    <span class="label">All caught up</span>
+    <span class="label">No newer tags</span>
   {/if}
 </a>
 

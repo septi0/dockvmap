@@ -64,7 +64,7 @@
       {:else}
         <CardState
           tone="success"
-          title="Everything is up to date"
+          title="No newer tags"
           description="Every tracked image is on its latest matching tag."
         >
           {#snippet icon()}<CircleCheck size={30} strokeWidth={1.5} />{/snippet}

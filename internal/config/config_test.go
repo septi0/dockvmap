@@ -61,6 +61,17 @@ func TestInternalRegistryWarnsWithoutProxyAuth(t *testing.T) {
 		t.Errorf("no warning with proxy_auth off: %v", cfg.DerivedWarnings)
 	}
 
+	t.Setenv("DOCKVMAP_INTERNAL_REGISTRY_PUSH_ALLOWED_IPS", "10.0.0.5, 10.0.1.0/24")
+
+	if cfg, err = Load(""); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if warned(cfg) || !slices.Equal(cfg.InternalRegistry.PushAllowedIPs, []string{"10.0.0.5", "10.0.1.0/24"}) {
+		t.Errorf("with push_allowed_ips %v: warnings %v; want no warning", cfg.InternalRegistry.PushAllowedIPs, cfg.DerivedWarnings)
+	}
+
+	t.Setenv("DOCKVMAP_INTERNAL_REGISTRY_PUSH_ALLOWED_IPS", "")
 	t.Setenv("DOCKVMAP_PROXY_AUTH_ENABLED", "true")
 
 	if cfg, err = Load(""); err != nil {

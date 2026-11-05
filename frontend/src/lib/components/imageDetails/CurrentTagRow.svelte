@@ -91,9 +91,10 @@
 <style>
   .current-tag {
     padding: 2px var(--space-3);
+    border: 1px solid var(--color-border-strong);
     border-radius: 999px;
-    background: var(--color-accent-muted-bg);
-    color: var(--color-accent);
+    background: var(--color-surface-hover);
+    color: var(--color-text);
     font-size: 0.9375rem;
   }
 </style>

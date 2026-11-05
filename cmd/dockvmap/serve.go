@@ -7,6 +7,7 @@ import (
 	"github.com/septi0/dockvmap/internal/agentclient"
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/httpmw"
+	"github.com/septi0/dockvmap/internal/ipmatch"
 	"github.com/septi0/dockvmap/internal/oci"
 	"github.com/septi0/dockvmap/internal/proxy"
 	"github.com/septi0/dockvmap/internal/service"
@@ -28,6 +29,12 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 
 	if err != nil {
 		return err
+	}
+
+	pushAllowed, err := ipmatch.Parse(cfg.InternalRegistry.PushAllowedIPs)
+
+	if err != nil {
+		return fmt.Errorf("parsing internal_registry.push_allowed_ips: %w", err)
 	}
 
 	audit := service.NewAudit(db)
@@ -70,6 +77,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Audit:     audit,
 		Failures:  failureLog,
 		Refresher: images,
+		Digests:   ociClient,
 		Enabled:   cfg.InternalRegistry.Enabled,
 		Address:   cfg.InternalRegistry.Address,
 		TLS:       cfg.InternalRegistry.TLS,
@@ -113,11 +121,10 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Store:        db,
 		Audit:        audit,
 		Agents:       agentclient.New(agentIdentity, version),
-		Usage:        proxyUsage,
 		PollInterval: cfg.AgentsPollIntervalDuration(),
 		ProxyHost:    cfg.ProxyPublicAddress(),
 
-		InternalRegistry: cfg.InternalRegistry.Enabled,
+		InternalRegistry: internalRegistry,
 	})
 	worker := service.NewWorker(db)
 	proxyMetricsHistory := service.NewProxyMetricsHistory(db)
@@ -152,10 +159,12 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Tokens:  proxyTokens,
 		Usage:   proxyUsage,
 
+		ServedDigests:       images,
 		InternalRegistry:    internalRegistry.Address(),
 		InternalRegistryTLS: internalRegistry.TLS(),
 		Changes:             internalRegistry,
 		TrustedProxies:      trustedProxies,
+		PushAllowed:         pushAllowed,
 	}, tlsConfig)
 
 	wDeps := workerDeps{

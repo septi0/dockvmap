@@ -62,27 +62,28 @@ type HostSnapshot struct {
 }
 
 type HostContainer struct {
-	HostID          int64
-	ContainerID     string
-	Name            string
-	Image           string
-	ImageHost       string
-	ImageRepository string
-	ImageTag        *string
-	ImageDigest     *string
-	RunningDigests  []string
-	RefDigests      []string
-	State           string
-	Health          *string
-	ExitCode        int
-	ComposeProject  *string
-	ComposeService  *string
-	CreatedAt       *time.Time
-	StartedAt       *time.Time
-	FinishedAt      *time.Time
-	Ports           []ContainerPort
-	Tracking        *ContainerTracking
-	RecentlyCrashed bool
+	HostID            int64
+	ContainerID       string
+	Name              string
+	Image             string
+	ImageHost         string
+	ImageRepository   string
+	ImageTag          *string
+	ImageDigest       *string
+	RunningDigests    []string
+	RefDigests        []string
+	State             string
+	Health            *string
+	ExitCode          int
+	ComposeProject    *string
+	ComposeService    *string
+	ComposeWorkingDir *string
+	CreatedAt         *time.Time
+	StartedAt         *time.Time
+	FinishedAt        *time.Time
+	Ports             []ContainerPort
+	Tracking          *ContainerTracking
+	RecentlyCrashed   bool
 }
 
 func (c HostContainer) Running() bool {
@@ -125,6 +126,8 @@ type ContainerTracking struct {
 	Status    ContainerVersionStatus
 	PinnedTag *string
 	InRollout bool
+
+	InternalRegistry bool
 }
 
 func (t ContainerTracking) NeedsUpdate() bool {

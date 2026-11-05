@@ -9,6 +9,7 @@ export interface SMTPStatus {
 export interface ProxyAuthStatus {
   enabled: boolean
   internalRegistry: boolean
+  pushRestricted: boolean
 }
 
 export interface SystemDatabaseStatus {
@@ -27,6 +28,8 @@ export interface SystemStatus {
   virtualTag: string
   trustedProxies: string[]
   proxyAuthEnabled: boolean
+  internalRegistry: boolean
+  pushAllowedIps: string[]
 }
 
 export interface SystemTask {

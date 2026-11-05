@@ -132,10 +132,9 @@
                       <CircleAlert size={14} strokeWidth={2} />
                     </span>
                   {/if}
-                  {#if registry.internal}<span class="badge badge-accent">Internal</span>{/if}
                 </span>
                 {#if registry.internal}
-                  <p class="muted registry-note">Set by <code class="inline-code">internal_registry</code> in config</p>
+                  <p class="muted registry-note">Internal registry · set by <code class="inline-code">internal_registry</code> in config</p>
                 {/if}
                 {#if registry.imageCount > 0}
                   <p class="phone-only registry-note">

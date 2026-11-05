@@ -29,6 +29,7 @@
   let deleting = $state(false)
   let proxyAuthEnabled = $state(true)
   let internalRegistry = $state(false)
+  let pushRestricted = $state(false)
   let loadToken = 0
 
   const STALE_AFTER_DAYS = 90
@@ -66,6 +67,7 @@
       const status = await getProxyAuthStatus()
       proxyAuthEnabled = status.enabled
       internalRegistry = status.internalRegistry
+      pushRestricted = status.pushRestricted
     } catch {}
   })
 
@@ -118,7 +120,7 @@
       <TriangleAlert size={14} strokeWidth={2} />
       <span>
         Proxy authentication is <strong>not enabled</strong> in config.yaml. These
-        tokens exist but nothing is being enforced yet; the proxy accepts pulls{internalRegistry ? " and pushes to the internal registry" : ""}
+        tokens exist but nothing is being enforced yet; the proxy accepts pulls{internalRegistry && !pushRestricted ? " and pushes to the internal registry" : ""}
         with no credential until this is turned on.
       </span>
     </p>
@@ -144,6 +146,7 @@
         <thead>
           <tr>
             <th>Label</th>
+            {#if internalRegistry}<th>Access</th>{/if}
             <th>Created</th>
             {#if proxyAuthEnabled}<th>Last used</th>{/if}
             <th></th>
@@ -153,11 +156,9 @@
           {#each tokens as token (token.id)}
             <tr>
               <td>
-                <span class="name-cell">
-                  {token.label}
-                  {#if token.canPush}<span class="badge badge-accent">Can push</span>{/if}
-                </span>
+                {token.label}
               </td>
+              {#if internalRegistry}<td>{token.canPush ? "Pull and push" : "Pull"}</td>{/if}
               <td class="time-cell">
                 <span title={formatDate(token.createdAt)}>{formatRelativeTime(token.createdAt)}</span>
               </td>

@@ -4,6 +4,7 @@ import type { ContainerPort, HostContainer } from '../api/types/hosts'
 const AGENT_IMAGE = 'ghcr.io/septi0/dockvmap-agent'
 const PUBLISHED_VERSION = /^v?(\d+\.\d+\.\d+(?:-rc\.\d+)?)$/
 const ANY_ADDRESS = ['', '0.0.0.0', '::']
+const SHELL_SAFE = /^[\w./-]+$/
 
 export type StateTone = 'running' | 'stopped' | 'warning' | 'failed'
 
@@ -77,6 +78,28 @@ function portAddress(ip = ''): string {
   if (ANY_ADDRESS.includes(ip)) return ''
 
   return ip.includes(':') ? `[${ip}]:` : `${ip}:`
+}
+
+export function redeployCommand(container: HostContainer): string | null {
+  const { tracking, composeWorkingDir: dir, composeService: service } = container
+
+  if (!tracking?.needsUpdate || !dir || !service) return null
+
+  const cd = `cd ${shellQuote(dir)}`
+  const name = shellQuote(service)
+
+  switch (tracking.status) {
+    case 'outdated':
+      return `${cd} && docker compose pull ${name} && docker compose up -d ${name}`
+    case 'pulledNotRecreated':
+      return `${cd} && docker compose up -d ${name}`
+    default:
+      return null
+  }
+}
+
+function shellQuote(value: string): string {
+  return SHELL_SAFE.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
 }
 
 export function agentCompose(address: string, appVersion: string): string {

@@ -344,7 +344,8 @@ func validateContainer(c agentapi.Container) error {
 		return fmt.Errorf("%w: container %q state is missing or too long", ErrInvalidAgentReport, c.Name)
 	case !slices.Contains(containerHealthStates, c.Health):
 		return fmt.Errorf("%w: container %q has unknown health %q", ErrInvalidAgentReport, c.Name, c.Health)
-	case len(c.ComposeProject) > agentapi.MaxTextLength || len(c.ComposeService) > agentapi.MaxTextLength:
+	case len(c.ComposeProject) > agentapi.MaxTextLength || len(c.ComposeService) > agentapi.MaxTextLength ||
+		len(c.ComposeWorkingDir) > agentapi.MaxTextLength:
 		return fmt.Errorf("%w: container %q field longer than %d characters", ErrInvalidAgentReport, c.Name, agentapi.MaxTextLength)
 	case c.Created < 0 || c.StartedAt < 0 || c.FinishedAt < 0:
 		return fmt.Errorf("%w: container %q has a negative time", ErrInvalidAgentReport, c.Name)
@@ -393,19 +394,20 @@ func hostContainer(c agentapi.Container, digests map[string][]string) model.Host
 	ref := agentapi.ParseImageRef(c.Image)
 
 	container := model.HostContainer{
-		ContainerID:     c.ID,
-		Name:            c.Name,
-		Image:           c.Image,
-		ImageHost:       ref.Host,
-		ImageRepository: ref.Repository,
-		ImageTag:        optional(ref.Tag),
-		ImageDigest:     optional(ref.Digest),
-		RunningDigests:  knownDigests(digests, c.ImageID),
-		State:           c.State,
-		Health:          optional(c.Health),
-		ExitCode:        c.ExitCode,
-		ComposeProject:  optional(c.ComposeProject),
-		ComposeService:  optional(c.ComposeService),
+		ContainerID:       c.ID,
+		Name:              c.Name,
+		Image:             c.Image,
+		ImageHost:         ref.Host,
+		ImageRepository:   ref.Repository,
+		ImageTag:          optional(ref.Tag),
+		ImageDigest:       optional(ref.Digest),
+		RunningDigests:    knownDigests(digests, c.ImageID),
+		State:             c.State,
+		Health:            optional(c.Health),
+		ExitCode:          c.ExitCode,
+		ComposeProject:    optional(c.ComposeProject),
+		ComposeService:    optional(c.ComposeService),
+		ComposeWorkingDir: optional(c.ComposeWorkingDir),
 	}
 
 	if c.RefImageID != "" && c.RefImageID != c.ImageID {

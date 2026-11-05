@@ -176,10 +176,16 @@ func TestFeatureOffAnswersAsBefore(t *testing.T) {
 		t.Errorf("unknown name: code %q, want NAME_UNKNOWN", code)
 	}
 
-	for _, path := range []string{"/v2/web/tags/list", "/v2/_catalog"} {
+	for _, path := range []string{"/v2/team/api/tags/list", "/v2/_catalog", "/v2/web/blobs/uploads/0f1e"} {
 		if rec := serve(p, http.MethodGet, path, "", nil); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: status %d, want 404", path, rec.Code)
 		}
+	}
+
+	if rec := serve(p, http.MethodGet, "/v2/Team/Web/manifests/v1", "", nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("invalid name: status %d, want 400", rec.Code)
+	} else if code, _ := ociMessage(t, rec); code != "NAME_INVALID" {
+		t.Errorf("invalid name: code %q, want NAME_INVALID", code)
 	}
 
 	auth := newInternalProxy("", true, nil)
@@ -287,6 +293,39 @@ func TestPassthroughUsesTLSWhenSet(t *testing.T) {
 	}
 }
 
+func TestVirtualImagesListTheirVirtualTag(t *testing.T) {
+	registry := newFakeRegistry(t)
+
+	for _, p := range []*Proxy{newInternalProxy("", false, nil), newInternalProxy(registry.address(), false, nil)} {
+		for path, want := range map[string]string{
+			"/v2/nginx/tags/list":              `{"name":"nginx","tags":["current"]}`,
+			"/v2/nginx/tags/list?n=10":         `{"name":"nginx","tags":["current"]}`,
+			"/v2/nginx/tags/list?n=0":          `{"name":"nginx","tags":[]}`,
+			"/v2/nginx/tags/list?last=current": `{"name":"nginx","tags":[]}`,
+		} {
+			rec := serve(p, http.MethodGet, path, "", nil)
+
+			if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != want || rec.Header().Get("Content-Type") != "application/json" {
+				t.Errorf("%s: status %d, body %q; want 200 with %s", path, rec.Code, rec.Body.String(), want)
+			}
+		}
+	}
+
+	if calls := registry.recorded(); len(calls) != 0 {
+		t.Errorf("registry calls = %+v, want none for a virtual image's tags", calls)
+	}
+
+	p := newInternalProxy(registry.address(), false, nil)
+
+	if rec := serve(p, http.MethodGet, "/v2/myapp/tags/list", "", nil); rec.Code != http.StatusOK {
+		t.Fatalf("own repository: status %d, want the registry's answer", rec.Code)
+	}
+
+	if calls := registry.recorded(); len(calls) != 1 || calls[0].path != "/v2/myapp/tags/list" {
+		t.Errorf("registry calls = %+v, want the own repository's tags passed through", calls)
+	}
+}
+
 func TestPassthroughRefusesWritesToVirtualImages(t *testing.T) {
 	registry := newFakeRegistry(t)
 	p := newInternalProxy(registry.address(), false, nil)
@@ -320,6 +359,66 @@ func TestPassthroughRefusesInvalidNames(t *testing.T) {
 
 	if calls := registry.recorded(); len(calls) != 0 {
 		t.Errorf("registry calls = %+v, want none", calls)
+	}
+}
+
+func TestPushesOnlyFromAllowedIPs(t *testing.T) {
+	registry := newFakeRegistry(t)
+	allowed, _ := ipmatch.Parse([]string{"10.0.0.0/24"})
+
+	from := func(p *Proxy, ip, method, path, token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, nil)
+		req.RemoteAddr = ip + ":40000"
+
+		if token != "" {
+			req.SetBasicAuth("ci", token)
+		}
+
+		rec := httptest.NewRecorder()
+		p.ServeHTTP(rec, req)
+
+		return rec
+	}
+
+	open := newInternalProxy(registry.address(), false, nil)
+	open.pushAllowed = allowed
+
+	rec := from(open, "192.0.2.7", http.MethodPost, "/v2/team/api/blobs/uploads/", "")
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("push from elsewhere: status %d, want 403", rec.Code)
+	}
+
+	if code, message := ociMessage(t, rec); code != "DENIED" || !strings.Contains(message, "192.0.2.7") || !strings.Contains(message, "internal_registry.push_allowed_ips") {
+		t.Errorf("error = %s %q, want the IP and the setting named", code, message)
+	}
+
+	if rec := from(open, "192.0.2.7", http.MethodGet, "/v2/team/api/manifests/v1", ""); rec.Code != http.StatusOK {
+		t.Errorf("pull from elsewhere: status %d, want 200", rec.Code)
+	}
+
+	if rec := from(open, "10.0.0.5", http.MethodPost, "/v2/team/api/blobs/uploads/", ""); rec.Code != http.StatusAccepted {
+		t.Errorf("push from an allowed IP: status %d, want 202", rec.Code)
+	}
+
+	if rec := from(open, "[::ffff:10.0.0.5]", http.MethodPost, "/v2/team/api/blobs/uploads/", ""); rec.Code != http.StatusAccepted {
+		t.Errorf("push from an allowed IP written as IPv6: status %d, want 202", rec.Code)
+	}
+
+	tokens := fakeTokens{"pull": {ID: 1, Label: "host"}, "push": {ID: 2, Label: "build", CanPush: true}}
+	auth := newInternalProxy(registry.address(), true, tokens)
+	auth.pushAllowed = allowed
+
+	if rec := from(auth, "192.0.2.7", http.MethodPost, "/v2/team/api/blobs/uploads/", "push"); rec.Code != http.StatusForbidden {
+		t.Errorf("Can push token from elsewhere: status %d, want 403", rec.Code)
+	}
+
+	if rec := from(auth, "10.0.0.5", http.MethodPost, "/v2/team/api/blobs/uploads/", "pull"); rec.Code != http.StatusForbidden {
+		t.Errorf("pull-only token from an allowed IP: status %d, want 403", rec.Code)
+	}
+
+	if rec := from(auth, "10.0.0.5", http.MethodPost, "/v2/team/api/blobs/uploads/", "push"); rec.Code != http.StatusAccepted {
+		t.Errorf("Can push token from an allowed IP: status %d, want 202", rec.Code)
 	}
 }
 

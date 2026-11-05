@@ -96,6 +96,15 @@
       <DetailRow label="Proxy authentication">
         {status.proxyAuthEnabled ? "Enabled" : "Disabled"}
       </DetailRow>
+      {#if status.internalRegistry}
+        <DetailRow label="Pushes allowed from">
+          {#if status.pushAllowedIps.length === 0}
+            <span class="muted">Anywhere (internal_registry.push_allowed_ips is empty)</span>
+          {:else}
+            <span class="mono">{status.pushAllowedIps.join(", ")}</span>
+          {/if}
+        </DetailRow>
+      {/if}
     </div>
   {/if}
 </AsyncState>

@@ -87,10 +87,12 @@
   </a>
 
   <div class="page-header">
-    <div class="title-row">
-      <FolderSearch size={20} strokeWidth={1.75} />
-      <h1>{registry?.registry ?? "Browse registry"}</h1>
-      {#if registry?.internal}<span class="badge badge-accent">Internal</span>{/if}
+    <div>
+      <div class="title-row">
+        <FolderSearch size={20} strokeWidth={1.75} />
+        <h1>{registry?.registry ?? "Browse registry"}</h1>
+      </div>
+      {#if registry?.internal}<p class="subtitle">Internal registry</p>{/if}
     </div>
   </div>
 

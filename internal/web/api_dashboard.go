@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	dashboardBehindLimit   = 5
 	dashboardUpdatesLimit  = 5
 	dashboardActivityLimit = 5
 	dashboardIssuesLimit   = 5
@@ -54,9 +55,16 @@ type dashboardIssuesData struct {
 }
 
 type dashboardHostsData struct {
-	Online   int `json:"online"`
-	Total    int `json:"total"`
-	Outdated int `json:"outdated"`
+	Online   int                       `json:"online"`
+	Total    int                       `json:"total"`
+	Outdated int                       `json:"outdated"`
+	Behind   []dashboardBehindResponse `json:"behind"`
+}
+
+type dashboardBehindResponse struct {
+	HostID    int64                 `json:"hostId"`
+	HostName  string                `json:"hostName"`
+	Container hostContainerResponse `json:"container"`
 }
 
 type dashboardResponse struct {
@@ -89,20 +97,33 @@ func (w *Web) apiDashboard(rw http.ResponseWriter, r *http.Request) {
 }
 
 func (w *Web) dashboardHosts(ctx context.Context, proxy service.ProxyTarget) dashboardSection[dashboardHostsData] {
-	hosts, err := w.hosts.List(ctx, proxy)
+	hosts, behind, err := w.hosts.ListWithBehind(ctx, proxy)
 
 	if err != nil {
 		return dashboardError[dashboardHostsData]("failed to load hosts")
 	}
 
-	data := dashboardHostsData{Total: len(hosts)}
+	data := dashboardHostsData{Total: len(hosts), Behind: []dashboardBehindResponse{}}
+	names := make(map[int64]string, len(hosts))
 
 	for _, host := range hosts {
+		names[host.ID] = host.Name
+
 		if host.Current() {
 			data.Online++
 		}
 
 		data.Outdated += host.Rollout.Outdated()
+	}
+
+	shown := behind[:min(len(behind), dashboardBehindLimit)]
+
+	for i, container := range newHostContainerResponses(shown) {
+		data.Behind = append(data.Behind, dashboardBehindResponse{
+			HostID:    shown[i].HostID,
+			HostName:  names[shown[i].HostID],
+			Container: container,
+		})
 	}
 
 	return dashboardData(data)

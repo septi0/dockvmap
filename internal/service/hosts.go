@@ -76,29 +76,28 @@ type auditHostUpdateData struct {
 	OldAddress string `json:"oldAddress"`
 }
 
-type tagDigestOverlay interface {
-	ApplyTagDigest(image *model.Image)
+type internalTagDigests interface {
+	Address() string
+	TagDigest(repository, tag string) string
 }
 
 type HostsDeps struct {
 	Store            hostStore
 	Audit            auditRecorder
 	Agents           agentDialer
-	Usage            tagDigestOverlay
 	PollInterval     time.Duration
 	ProxyHost        string
-	InternalRegistry bool
+	InternalRegistry internalTagDigests
 }
 
 type Hosts struct {
 	store        hostStore
 	audit        auditRecorder
 	agents       agentDialer
-	usage        tagDigestOverlay
 	offlineAfter time.Duration
 	proxyHost    string
 
-	internalRegistry bool
+	internalRegistry internalTagDigests
 	now              func() time.Time
 
 	mu     sync.Mutex
@@ -111,7 +110,6 @@ func NewHosts(deps HostsDeps) *Hosts {
 		store:        deps.Store,
 		audit:        deps.Audit,
 		agents:       deps.Agents,
-		usage:        deps.Usage,
 		offlineAfter: hostOfflineAfterPolls * deps.PollInterval,
 		proxyHost:    deps.ProxyHost,
 
@@ -238,11 +236,19 @@ func normalizeAgentAddress(raw string) (string, error) {
 }
 
 func (h *Hosts) List(ctx context.Context, proxy ProxyTarget) ([]model.Host, error) {
+	hosts, _, err := h.ListWithBehind(ctx, proxy)
+
+	return hosts, err
+}
+
+func (h *Hosts) ListWithBehind(ctx context.Context, proxy ProxyTarget) ([]model.Host, []model.HostContainer, error) {
 	hosts, containers, err := h.trackedContainers(ctx, proxy)
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	var behind []model.HostContainer
 
 	indexes := make(map[int64]int, len(hosts))
 
@@ -264,6 +270,10 @@ func (h *Hosts) List(ctx context.Context, proxy ProxyTarget) ([]model.Host, erro
 			host.ProxyContainers++
 		}
 
+		if c.Tracking != nil && c.Tracking.NeedsUpdate() {
+			behind = append(behind, c)
+		}
+
 		if h.crashedRecently(c) {
 			host.CrashedContainers++
 		}
@@ -277,7 +287,23 @@ func (h *Hosts) List(ctx context.Context, proxy ProxyTarget) ([]model.Host, erro
 		}
 	}
 
-	return hosts, nil
+	slices.SortStableFunc(behind, func(a, b model.HostContainer) int {
+		return cmp.Or(
+			cmp.Compare(behindRank(a), behindRank(b)),
+			strings.Compare(hosts[indexes[a.HostID]].Name, hosts[indexes[b.HostID]].Name),
+			strings.Compare(a.Name, b.Name),
+		)
+	})
+
+	return hosts, behind, nil
+}
+
+func behindRank(c model.HostContainer) int {
+	if c.Tracking.Status == model.ContainerOutdated {
+		return 0
+	}
+
+	return 1
 }
 
 func (h *Hosts) crashedRecently(c model.HostContainer) bool {
@@ -307,7 +333,7 @@ func (h *Hosts) ImageRollouts(ctx context.Context, proxy ProxyTarget) ([]model.I
 	seenStale := make(map[imageHost]bool)
 
 	for _, c := range containers {
-		if c.Tracking == nil || !c.Tracking.InRollout {
+		if c.Tracking == nil || !c.Tracking.InRollout || c.Tracking.ImageID == nil {
 			continue
 		}
 
@@ -563,21 +589,36 @@ func (h *Hosts) track(ctx context.Context, containers []model.HostContainer, pro
 				return err
 			}
 
-			if image != nil {
-				h.usage.ApplyTagDigest(image)
-			}
-
 			images[c.ImageRepository] = image
 		}
 
 		c.Tracking = trackContainer(*c, image, proxy.VirtualTag)
 
-		if image == nil && h.internalRegistry {
-			c.Tracking.Status = model.ContainerInternalRegistry
+		if image == nil && h.internalRegistry != nil && h.internalRegistry.Address() != "" {
+			h.trackInternal(c)
 		}
 	}
 
 	return nil
+}
+
+func (h *Hosts) trackInternal(c *model.HostContainer) {
+	c.Tracking.Status = model.ContainerInternalRegistry
+	c.Tracking.InternalRegistry = true
+	c.Tracking.PinnedTag = nil
+
+	if c.ImageTag == nil || len(c.RunningDigests) == 0 {
+		return
+	}
+
+	digest := h.internalRegistry.TagDigest(c.ImageRepository, *c.ImageTag)
+
+	if digest == "" {
+		return
+	}
+
+	c.Tracking.Status = versionStatus(*c, digest)
+	c.Tracking.InRollout = c.Running() || c.Restarting()
 }
 
 func onProxy(c model.HostContainer, proxy ProxyTarget) bool {
@@ -601,18 +642,24 @@ func trackContainer(c model.HostContainer, image *model.Image, virtualTag string
 	tracking.ImageID = &image.ID
 	digest, _ := image.TagDigest()
 
-	switch {
-	case digest == nil || len(c.RunningDigests) == 0:
+	if digest == nil || len(c.RunningDigests) == 0 {
 		tracking.Status = model.ContainerVersionUnknown
-	case slices.Contains(c.RunningDigests, *digest):
-		tracking.Status = model.ContainerUpToDate
-	case slices.Contains(c.RefDigests, *digest):
-		tracking.Status = model.ContainerPulledNotRecreated
-	default:
-		tracking.Status = model.ContainerOutdated
+	} else {
+		tracking.Status = versionStatus(c, *digest)
 	}
 
 	tracking.InRollout = (c.Running() || c.Restarting()) && followsVirtualTag && tracking.Status != model.ContainerVersionUnknown
 
 	return tracking
+}
+
+func versionStatus(c model.HostContainer, digest string) model.ContainerVersionStatus {
+	switch {
+	case slices.Contains(c.RunningDigests, digest):
+		return model.ContainerUpToDate
+	case slices.Contains(c.RefDigests, digest):
+		return model.ContainerPulledNotRecreated
+	default:
+		return model.ContainerOutdated
+	}
 }

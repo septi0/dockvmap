@@ -40,7 +40,7 @@
     const needAttention = hostCounts.total - hostCounts.online;
 
     if (needAttention > 0) parts.push(`${needAttention} need attention`);
-    if (hostCounts.outdated > 0) parts.push(`${hostCounts.outdated} outdated`);
+    if (hostCounts.outdated > 0) parts.push(`${hostCounts.outdated} behind`);
 
     return parts.join(" · ");
   });

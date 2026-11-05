@@ -10,7 +10,9 @@
   {:else if tracking.status === "outdated"}
     <span
       class={tracking.needsUpdate ? "badge badge-warning" : "muted"}
-      title="This container runs an older version than the one DockVMap points to."
+      title={tracking.internalRegistry
+        ? "A newer image was pushed to this tag in the internal registry. Pull it and recreate the container."
+        : "This container runs an older version than the one DockVMap points to."}
       >Outdated</span
     >
   {:else if tracking.status === "pulledNotRecreated"}
@@ -22,7 +24,7 @@
   {:else if tracking.status === "internalRegistry"}
     <span
       class="muted"
-      title="Pulled from the internal registry by its real name, so DockVMap doesn't track its version."
+      title="Pulled from the internal registry by its real name. DockVMap can't compare it with the registry's tag right now: the tag may be gone, or the image was pulled by digest."
       >Internal registry</span
     >
   {:else if tracking.status === "unknownImage"}

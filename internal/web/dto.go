@@ -599,21 +599,22 @@ type hostInfoResponse struct {
 }
 
 type hostContainerResponse struct {
-	ID              string                     `json:"id"`
-	Name            string                     `json:"name"`
-	Image           string                     `json:"image"`
-	State           string                     `json:"state"`
-	Health          *string                    `json:"health,omitempty"`
-	ExitCode        int                        `json:"exitCode"`
-	Crashed         bool                       `json:"crashed"`
-	RecentlyCrashed bool                       `json:"recentlyCrashed"`
-	ComposeProject  *string                    `json:"composeProject,omitempty"`
-	ComposeService  *string                    `json:"composeService,omitempty"`
-	CreatedAt       *time.Time                 `json:"createdAt,omitempty"`
-	StartedAt       *time.Time                 `json:"startedAt,omitempty"`
-	FinishedAt      *time.Time                 `json:"finishedAt,omitempty"`
-	Ports           []model.ContainerPort      `json:"ports"`
-	Tracking        *containerTrackingResponse `json:"tracking,omitempty"`
+	ID                string                     `json:"id"`
+	Name              string                     `json:"name"`
+	Image             string                     `json:"image"`
+	State             string                     `json:"state"`
+	Health            *string                    `json:"health,omitempty"`
+	ExitCode          int                        `json:"exitCode"`
+	Crashed           bool                       `json:"crashed"`
+	RecentlyCrashed   bool                       `json:"recentlyCrashed"`
+	ComposeProject    *string                    `json:"composeProject,omitempty"`
+	ComposeService    *string                    `json:"composeService,omitempty"`
+	ComposeWorkingDir *string                    `json:"composeWorkingDir,omitempty"`
+	CreatedAt         *time.Time                 `json:"createdAt,omitempty"`
+	StartedAt         *time.Time                 `json:"startedAt,omitempty"`
+	FinishedAt        *time.Time                 `json:"finishedAt,omitempty"`
+	Ports             []model.ContainerPort      `json:"ports"`
+	Tracking          *containerTrackingResponse `json:"tracking,omitempty"`
 }
 
 type containerTrackingResponse struct {
@@ -622,6 +623,8 @@ type containerTrackingResponse struct {
 	Status      string  `json:"status"`
 	PinnedTag   *string `json:"pinnedTag,omitempty"`
 	NeedsUpdate bool    `json:"needsUpdate"`
+
+	InternalRegistry bool `json:"internalRegistry"`
 }
 
 type hostDetailsResponse struct {
@@ -690,20 +693,21 @@ func newHostContainerResponses(containers []model.HostContainer) []hostContainer
 
 	for _, c := range containers {
 		response := hostContainerResponse{
-			ID:              c.ContainerID,
-			Name:            c.Name,
-			Image:           c.Image,
-			State:           c.State,
-			Health:          c.Health,
-			ExitCode:        c.ExitCode,
-			Crashed:         c.Crashed(),
-			RecentlyCrashed: c.RecentlyCrashed,
-			ComposeProject:  c.ComposeProject,
-			ComposeService:  c.ComposeService,
-			CreatedAt:       c.CreatedAt,
-			StartedAt:       c.StartedAt,
-			FinishedAt:      c.FinishedAt,
-			Ports:           c.Ports,
+			ID:                c.ContainerID,
+			Name:              c.Name,
+			Image:             c.Image,
+			State:             c.State,
+			Health:            c.Health,
+			ExitCode:          c.ExitCode,
+			Crashed:           c.Crashed(),
+			RecentlyCrashed:   c.RecentlyCrashed,
+			ComposeProject:    c.ComposeProject,
+			ComposeService:    c.ComposeService,
+			ComposeWorkingDir: c.ComposeWorkingDir,
+			CreatedAt:         c.CreatedAt,
+			StartedAt:         c.StartedAt,
+			FinishedAt:        c.FinishedAt,
+			Ports:             c.Ports,
 		}
 
 		if response.Ports == nil {
@@ -717,6 +721,8 @@ func newHostContainerResponses(containers []model.HostContainer) []hostContainer
 				Status:      string(c.Tracking.Status),
 				PinnedTag:   c.Tracking.PinnedTag,
 				NeedsUpdate: c.Tracking.NeedsUpdate(),
+
+				InternalRegistry: c.Tracking.InternalRegistry,
 			}
 		}
 

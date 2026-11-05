@@ -301,7 +301,7 @@
                 {:else if group.updateAvailableTag}
                   <span class="badge badge-warning">
                     <TriangleAlert size={12} strokeWidth={2} />
-                    Update to {group.updateAvailableTag}
+                    <span><span class="badge-tag">{group.updateAvailableTag}</span> available</span>
                   </span>
                 {:else if group.updateAvailable}
                   <span
@@ -311,10 +311,10 @@
                       : undefined}
                   >
                     <TriangleAlert size={12} strokeWidth={2} />
-                    Update blocked
+                    Blocked
                   </span>
                 {:else}
-                  <span class="muted">Up to date</span>
+                  <span class="muted">Latest</span>
                 {/if}
                 <GroupPullNotice {group} />
               </td>

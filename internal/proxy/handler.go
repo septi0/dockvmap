@@ -7,7 +7,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
+	"net/netip"
+	"strconv"
 
 	"github.com/septi0/dockvmap/internal/blobcache"
 	"github.com/septi0/dockvmap/internal/config"
@@ -35,7 +36,10 @@ type tokenVerifier interface {
 
 type usageRecorder interface {
 	RecordImagePull(imageID int64, tag string)
-	RecordTagDigest(imageID int64, tag, digest string)
+}
+
+type servedDigestRecorder interface {
+	RecordServedDigest(imageID int64, tag, digest string)
 }
 
 type changeRecorder interface {
@@ -44,16 +48,18 @@ type changeRecorder interface {
 }
 
 type Proxy struct {
-	cfg          *config.Config
-	images       imageResolver
-	resolveCache *resolveCache
-	client       *oci.Client
-	cache        *blobcache.Cache
-	metrics      *Metrics
-	tokens       tokenVerifier
-	usage        usageRecorder
-	internal     *passthrough
-	trusted      ipmatch.Set
+	cfg           *config.Config
+	images        imageResolver
+	resolveCache  *resolveCache
+	client        *oci.Client
+	cache         *blobcache.Cache
+	metrics       *Metrics
+	tokens        tokenVerifier
+	usage         usageRecorder
+	servedDigests servedDigestRecorder
+	internal      *passthrough
+	trusted       ipmatch.Set
+	pushAllowed   ipmatch.Set
 }
 
 type Deps struct {
@@ -65,10 +71,13 @@ type Deps struct {
 	Tokens  tokenVerifier
 	Usage   usageRecorder
 
+	ServedDigests servedDigestRecorder
+
 	InternalRegistry    string
 	InternalRegistryTLS bool
 	Changes             changeRecorder
 	TrustedProxies      ipmatch.Set
+	PushAllowed         ipmatch.Set
 }
 
 func New(deps Deps) *Proxy {
@@ -89,82 +98,41 @@ func New(deps Deps) *Proxy {
 	}
 
 	return &Proxy{
-		internal:     internal,
-		trusted:      deps.TrustedProxies,
-		cfg:          deps.Config,
-		images:       deps.Images,
-		resolveCache: resolveCache,
-		client:       deps.Client,
-		cache:        deps.Cache,
-		metrics:      metrics,
-		tokens:       deps.Tokens,
-		usage:        deps.Usage,
+		internal:      internal,
+		trusted:       deps.TrustedProxies,
+		pushAllowed:   deps.PushAllowed,
+		cfg:           deps.Config,
+		images:        deps.Images,
+		resolveCache:  resolveCache,
+		client:        deps.Client,
+		cache:         deps.Cache,
+		metrics:       metrics,
+		tokens:        deps.Tokens,
+		usage:         deps.Usage,
+		servedDigests: deps.ServedDigests,
 	}
 }
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if p.internal == nil {
-		p.metrics.totalRequests.Add(1)
-		p.serveVirtual(w, r)
-
-		return
-	}
-
-	if !p.serveWithInternal(w, r) {
+	if !p.serve(w, r) {
 		p.metrics.totalRequests.Add(1)
 	}
 }
 
-func (p *Proxy) serveVirtual(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet, http.MethodHead:
-	default:
+func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) (forwarded bool) {
+	write := r.Method != http.MethodGet && r.Method != http.MethodHead
+
+	if write && p.internal == nil {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+		return false
 	}
 
-	if _, ok := p.requireAuth(w, r); !ok {
-		return
+	var controller *http.ResponseController
+
+	if p.internal != nil {
+		controller = setReadDeadline(w)
 	}
-
-	path := r.URL.Path
-
-	if path == "/v2/" || path == "/v2" {
-		writeBaseResponse(w)
-		return
-	}
-
-	if !strings.HasPrefix(path, "/v2/") {
-		http.NotFound(w, r)
-		return
-	}
-
-	parts := strings.Split(strings.TrimPrefix(path, "/v2/"), "/")
-
-	if len(parts) < 3 {
-		http.NotFound(w, r)
-		return
-	}
-
-	op := parts[len(parts)-2]
-	ref := parts[len(parts)-1]
-	name := strings.Join(parts[:len(parts)-2], "/")
-
-	switch op {
-	case "manifests":
-		p.metrics.manifestRequests.Add(1)
-		p.handleManifest(w, r, name, ref)
-	case "blobs":
-		p.metrics.blobRequests.Add(1)
-		p.handleBlob(w, r, name, ref)
-	default:
-		http.NotFound(w, r)
-	}
-}
-
-func (p *Proxy) serveWithInternal(w http.ResponseWriter, r *http.Request) (forwarded bool) {
-	controller := setReadDeadline(w)
 
 	token, ok := p.requireAuth(w, r)
 
@@ -184,8 +152,6 @@ func (p *Proxy) serveWithInternal(w http.ResponseWriter, r *http.Request) (forwa
 		return false
 	}
 
-	write := r.Method != http.MethodGet && r.Method != http.MethodHead
-
 	if parsed.kind != pathCatalog {
 		if !service.ValidRepositoryName(parsed.name) {
 			writeOCIError(w, http.StatusBadRequest, "NAME_INVALID", fmt.Sprintf("%q isn't a valid repository name", parsed.name))
@@ -200,13 +166,31 @@ func (p *Proxy) serveWithInternal(w http.ResponseWriter, r *http.Request) (forwa
 			return false
 		}
 
-		if img != nil && !(write && ownRepositoryOnInternal(img)) {
+		passThrough := img != nil && p.internal != nil && ownRepositoryOnInternal(img) && (write || parsed.kind == pathTags)
+
+		if img != nil && !passThrough {
 			p.serveVirtualPath(w, r, img, parsed, write)
 			return false
 		}
 
 		if img != nil && r.Method == http.MethodPut && parsed.kind == pathManifest && parsed.ref == p.cfg.VirtualTag {
 			writeOCIError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", fmt.Sprintf("%s is the virtual tag DockVMap manages for %s; push another tag", parsed.ref, img.Name))
+			return false
+		}
+	}
+
+	if p.internal == nil {
+		p.serveVirtualPath(w, r, nil, parsed, write)
+		return false
+	}
+
+	clientIP := ""
+
+	if write {
+		clientIP = httpmw.ClientIP(r, p.trusted)
+
+		if !p.pushAllowedFrom(clientIP) {
+			writeOCIError(w, http.StatusForbidden, "DENIED", fmt.Sprintf("pushes aren't allowed from %s; add it to internal_registry.push_allowed_ips", clientIP))
 			return false
 		}
 	}
@@ -242,13 +226,23 @@ func (p *Proxy) serveWithInternal(w http.ResponseWriter, r *http.Request) (forwa
 			reference:  parsed.ref,
 			token:      label,
 			deleted:    deleted,
-			info:       service.RequestInfo{IP: httpmw.ClientIP(r, p.trusted), UserAgent: r.UserAgent()},
+			info:       service.RequestInfo{IP: clientIP, UserAgent: r.UserAgent()},
 		}))
 	}
 
 	p.internal.proxy.ServeHTTP(w, r)
 
 	return true
+}
+
+func (p *Proxy) pushAllowedFrom(ip string) bool {
+	if p.pushAllowed.Empty() {
+		return true
+	}
+
+	addr, err := netip.ParseAddr(ip)
+
+	return err == nil && p.pushAllowed.Contains(addr)
 }
 
 func ownRepositoryOnInternal(img *model.Image) bool {
@@ -268,9 +262,36 @@ func (p *Proxy) serveVirtualPath(w http.ResponseWriter, r *http.Request, img *mo
 	case pathBlob:
 		p.metrics.blobRequests.Add(1)
 		p.handleBlob(w, r, parsed.name, parsed.ref)
+	case pathTags:
+		if img == nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		p.writeVirtualTagList(w, r, img)
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (p *Proxy) writeVirtualTagList(w http.ResponseWriter, r *http.Request, img *model.Image) {
+	setAccess(r, func(f *httpmw.AccessFields) {
+		f.VirtualImage = img.Name
+		f.Resource = "tags"
+	})
+
+	tags := []string{p.cfg.VirtualTag}
+	query := r.URL.Query()
+
+	if n, err := strconv.Atoi(query.Get("n")); (err == nil && n < 1) || query.Get("last") >= p.cfg.VirtualTag {
+		tags = []string{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(struct {
+		Name string   `json:"name"`
+		Tags []string `json:"tags"`
+	}{img.Name, tags})
 }
 
 func (p *Proxy) requireAuth(w http.ResponseWriter, r *http.Request) (*model.ProxyToken, bool) {
@@ -403,7 +424,7 @@ func (p *Proxy) recordTagDigest(w http.ResponseWriter, r *http.Request, img *mod
 		return
 	}
 
-	p.usage.RecordTagDigest(img.ID, img.Tag, digest)
+	p.servedDigests.RecordServedDigest(img.ID, img.Tag, digest)
 }
 
 func (p *Proxy) recordPull(r *http.Request, img *model.Image, upstreamRef string) {

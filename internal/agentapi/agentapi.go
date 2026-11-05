@@ -48,20 +48,21 @@ type HostInfo struct {
 }
 
 type Container struct {
-	ID             string `json:"id"`
-	Name           string `json:"name"`
-	Image          string `json:"image"`
-	ImageID        string `json:"imageId"`
-	RefImageID     string `json:"refImageId,omitempty"`
-	State          string `json:"state"`
-	Health         string `json:"health,omitempty"`
-	ExitCode       int    `json:"exitCode"`
-	ComposeProject string `json:"composeProject,omitempty"`
-	ComposeService string `json:"composeService,omitempty"`
-	Created        int64  `json:"created"`
-	StartedAt      int64  `json:"startedAt,omitempty"`
-	FinishedAt     int64  `json:"finishedAt,omitempty"`
-	Ports          []Port `json:"ports,omitempty"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Image             string `json:"image"`
+	ImageID           string `json:"imageId"`
+	RefImageID        string `json:"refImageId,omitempty"`
+	State             string `json:"state"`
+	Health            string `json:"health,omitempty"`
+	ExitCode          int    `json:"exitCode"`
+	ComposeProject    string `json:"composeProject,omitempty"`
+	ComposeService    string `json:"composeService,omitempty"`
+	ComposeWorkingDir string `json:"composeWorkingDir,omitempty"`
+	Created           int64  `json:"created"`
+	StartedAt         int64  `json:"startedAt,omitempty"`
+	FinishedAt        int64  `json:"finishedAt,omitempty"`
+	Ports             []Port `json:"ports,omitempty"`
 }
 
 type Port struct {
