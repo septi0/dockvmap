@@ -325,7 +325,10 @@ func firstRunDelay(ctx context.Context, job scheduledJob, worker *service.Worker
 	lastRun, ok, err := worker.LastRun(ctx, job.name)
 
 	if err != nil {
-		slog.Error("reading worker schedule failed, deferring first run by a full interval", "job", job.name, "error", err)
+		if ctx.Err() == nil {
+			slog.Error("reading worker schedule failed, deferring first run by a full interval", "job", job.name, "error", err)
+		}
+
 		return job.interval + offset
 	}
 

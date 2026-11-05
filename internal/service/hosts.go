@@ -76,10 +76,15 @@ type auditHostUpdateData struct {
 	OldAddress string `json:"oldAddress"`
 }
 
+type tagDigestOverlay interface {
+	ApplyTagDigest(image *model.Image)
+}
+
 type HostsDeps struct {
 	Store            hostStore
 	Audit            auditRecorder
 	Agents           agentDialer
+	Usage            tagDigestOverlay
 	PollInterval     time.Duration
 	ProxyHost        string
 	InternalRegistry bool
@@ -89,6 +94,7 @@ type Hosts struct {
 	store        hostStore
 	audit        auditRecorder
 	agents       agentDialer
+	usage        tagDigestOverlay
 	offlineAfter time.Duration
 	proxyHost    string
 
@@ -105,6 +111,7 @@ func NewHosts(deps HostsDeps) *Hosts {
 		store:        deps.Store,
 		audit:        deps.Audit,
 		agents:       deps.Agents,
+		usage:        deps.Usage,
 		offlineAfter: hostOfflineAfterPolls * deps.PollInterval,
 		proxyHost:    deps.ProxyHost,
 
@@ -554,6 +561,10 @@ func (h *Hosts) track(ctx context.Context, containers []model.HostContainer, pro
 
 			if image, err = h.store.GetImage(ctx, c.ImageRepository); err != nil {
 				return err
+			}
+
+			if image != nil {
+				h.usage.ApplyTagDigest(image)
 			}
 
 			images[c.ImageRepository] = image

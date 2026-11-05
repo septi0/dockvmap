@@ -452,7 +452,11 @@ func (s *Store) UpdateImageDigest(ctx context.Context, imageId int64, tag string
 		since = &seenAt
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	return updateImageDigest(ctx, s.db, imageId, tag, digest, since)
+}
+
+func updateImageDigest(ctx context.Context, db DBTX, imageId int64, tag string, digest *string, since *time.Time) error {
+	_, err := db.ExecContext(ctx, `
 		UPDATE images
 		SET current_digest = ?, current_digest_tag = ?, current_digest_since = ?
 		WHERE id = ? AND tag = ? AND (current_digest IS NOT ? OR current_digest_tag IS NOT ?)

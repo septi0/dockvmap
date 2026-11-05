@@ -35,6 +35,7 @@ type tokenVerifier interface {
 
 type usageRecorder interface {
 	RecordImagePull(imageID int64, tag string)
+	RecordTagDigest(imageID int64, tag, digest string)
 }
 
 type changeRecorder interface {
@@ -386,7 +387,22 @@ func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, ref
 
 	if p.proxyRequest(w, r, img, cache, upstreamURL, upstreamRef, "manifest", path) {
 		p.recordPull(r, img, upstreamRef)
+		p.recordTagDigest(w, r, img, upstreamRef)
 	}
+}
+
+func (p *Proxy) recordTagDigest(w http.ResponseWriter, r *http.Request, img *model.Image, upstreamRef string) {
+	digest := w.Header().Get("Docker-Content-Digest")
+
+	if upstreamRef != img.Tag || !oci.IsDigest(digest) || !oci.AcceptsIndex(r.Header.Values("Accept")) {
+		return
+	}
+
+	if known, _ := img.TagDigest(); known != nil && *known == digest {
+		return
+	}
+
+	p.usage.RecordTagDigest(img.ID, img.Tag, digest)
 }
 
 func (p *Proxy) recordPull(r *http.Request, img *model.Image, upstreamRef string) {

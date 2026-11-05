@@ -121,6 +121,7 @@ type hostFixture struct {
 	*groupFixture
 	hosts  *Hosts
 	agents *fakeAgents
+	usage  *ProxyUsage
 	clock  *stepClock
 }
 
@@ -128,10 +129,11 @@ func newHostFixture(t *testing.T) *hostFixture {
 	f := newGroupFixture(t)
 	clock := &stepClock{at: time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)}
 	agents := &fakeAgents{agents: make(map[string]*fakeAgent)}
-	hosts := NewHosts(HostsDeps{Store: f.store, Audit: f.audit, Agents: agents, PollInterval: time.Minute, ProxyHost: proxyHost})
+	usage := NewProxyUsage(f.store)
+	hosts := NewHosts(HostsDeps{Store: f.store, Audit: f.audit, Agents: agents, Usage: usage, PollInterval: time.Minute, ProxyHost: proxyHost})
 	hosts.now = clock.now
 
-	return &hostFixture{groupFixture: f, hosts: hosts, agents: agents, clock: clock}
+	return &hostFixture{groupFixture: f, hosts: hosts, agents: agents, usage: usage, clock: clock}
 }
 
 func (f *hostFixture) addHost(name string) (int64, string) {
@@ -771,6 +773,41 @@ func TestHostContainerTracking(t *testing.T) {
 		if c.Name == "web-current" && c.Tracking.Status != model.ContainerVersionUnknown {
 			t.Fatalf("a digest of the previous tag must not count: %+v", c.Tracking)
 		}
+	}
+}
+
+func TestHostContainerTrackingUsesTheDigestTheProxyJustServed(t *testing.T) {
+	f := newHostFixture(t)
+	id, _ := f.addHost("server2")
+	webID := f.addImage("web", "v2", "v1", "v2")
+	f.setDigest(webID, "v2", testDigest("a"))
+
+	web := proxyHost + "/web"
+	f.report(id,
+		[]agentapi.Container{container("c1", "web", web+":current", "rebuilt")},
+		[]agentapi.Image{{ID: "rebuilt", RepoDigests: []string{repoDigest(web, "b")}}},
+	)
+
+	status := func() model.ContainerVersionStatus {
+		t.Helper()
+
+		details, err := f.hosts.Get(f.ctx, id, testProxy)
+
+		if err != nil || len(details.Containers) != 1 || details.Containers[0].Tracking == nil {
+			t.Fatalf("details = %+v, err = %v", details, err)
+		}
+
+		return details.Containers[0].Tracking.Status
+	}
+
+	if got := status(); got != model.ContainerOutdated {
+		t.Fatalf("before the pull: %s, want outdated", got)
+	}
+
+	f.usage.RecordTagDigest(webID, "v2", testDigest("b"))
+
+	if got := status(); got != model.ContainerUpToDate {
+		t.Fatalf("after the pull: %s, want upToDate", got)
 	}
 }
 

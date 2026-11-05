@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -31,12 +32,15 @@ const maxRetryAfterDelay = 30 * time.Second
 
 var paramRe = regexp.MustCompile(`(\w+)="([^"]*)"`)
 
-var manifestMediaTypes = []string{
+var indexMediaTypes = []string{
 	"application/vnd.oci.image.index.v1+json",
 	"application/vnd.docker.distribution.manifest.list.v2+json",
+}
+
+var manifestMediaTypes = append(slices.Clone(indexMediaTypes),
 	"application/vnd.oci.image.manifest.v1+json",
 	"application/vnd.docker.distribution.manifest.v2+json",
-}
+)
 
 type Credentials struct {
 	Username   string
@@ -372,6 +376,20 @@ func (c *Client) ManifestDigest(ctx context.Context, registry, repository, refer
 	}
 
 	return digest, nil
+}
+
+func AcceptsIndex(accept []string) bool {
+	for _, header := range accept {
+		for _, value := range strings.Split(header, ",") {
+			mediaType, _, _ := strings.Cut(value, ";")
+
+			if slices.Contains(indexMediaTypes, strings.TrimSpace(mediaType)) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func IsDigest(digest string) bool {

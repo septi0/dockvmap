@@ -9,6 +9,8 @@ Changes people running DockVMap will notice, newest first. Upgrade notes call ou
 - **Real client address in the proxy**: `trusted_proxies` now also applies to the registry proxy, so the access log (`client_ip`) and the push audit show the real client behind a reverse proxy.
 - **Repository suggestions**: New virtual image suggests the repositories already in the internal registry.
 - **Clearer errors**: a virtual image whose tag was removed from its registry shows "tag v1 no longer exists in the registry; pick another tag" on the image and in Recent issues, instead of a failed digest lookup. A pull through a registry that doesn't answer gets an error naming that registry instead of a plain "bad gateway".
+- **Fixed**: a container pulled after its tag was republished upstream, for example a rebuilt `v1.9.0`, no longer shows as Outdated until the next tag check. When a pull through DockVMap gets a newer digest for an image's tag, DockVMap now uses that digest right away.
+- **Fixed**: when DockVMap can't start, for example because a port is already in use, it exits with an error code, so `restart: on-failure` and systemd restart it, and the log shows only the cause instead of an error for every background job.
 
 **Upgrade note:** this release migrates the database (migration 035). Run `dockvmap -backup <path>` before upgrading. Existing proxy tokens can't push; create a token with Can push for anything that pushes through DockVMap. Nothing changes until you turn on `internal_registry.enabled`.
 

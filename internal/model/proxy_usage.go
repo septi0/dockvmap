@@ -12,3 +12,10 @@ type ProxyTokenUsage struct {
 	TokenID int64
 	UsedAt  time.Time
 }
+
+type ImageDigest struct {
+	ImageID int64
+	Tag     string
+	Digest  string
+	SeenAt  time.Time
+}

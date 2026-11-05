@@ -107,6 +107,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Store:        db,
 		Audit:        audit,
 		Agents:       agentclient.New(agentIdentity, version),
+		Usage:        proxyUsage,
 		PollInterval: cfg.AgentsPollIntervalDuration(),
 		ProxyHost:    cfg.ProxyPublicAddress(),
 
@@ -214,8 +215,8 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		runScheduledJobs(workerCtx, jobs, worker)
 	}()
 
-	awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)
+	serverErr := awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)
 	internalRegistry.Stop()
 
-	return nil
+	return serverErr
 }

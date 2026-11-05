@@ -29,7 +29,7 @@ type failingUsageStore struct {
 	calls  int
 }
 
-func (s *failingUsageStore) RecordProxyUsage(context.Context, []model.ImageUsage, []model.ProxyTokenUsage) error {
+func (s *failingUsageStore) RecordProxyUsage(context.Context, []model.ImageUsage, []model.ImageDigest, []model.ProxyTokenUsage) error {
 	s.calls++
 
 	if s.during != nil {
@@ -130,6 +130,7 @@ func TestProxyUsageFailedFlushKeepsEntries(t *testing.T) {
 
 	usage.RecordImagePull(1, "v2.7")
 	usage.RecordImagePull(2, "v1.0")
+	usage.RecordTagDigest(3, "v1", testDigest("b"))
 	usage.RecordTokenUse(5)
 
 	store.during = func() {
@@ -147,6 +148,13 @@ func TestProxyUsageFailedFlushKeepsEntries(t *testing.T) {
 
 	if got := applied(usage, 2); got.LastPulledAt == nil || *got.LastPulledTag != "v1.0" {
 		t.Fatalf("pull from the failed flush lost: %+v", got)
+	}
+
+	pending := model.Image{ID: 3, Tag: "v1"}
+	usage.ApplyTagDigest(&pending)
+
+	if pending.CurrentDigest == nil || *pending.CurrentDigest != testDigest("b") {
+		t.Fatalf("digest from the failed flush lost: %+v", pending)
 	}
 
 	tokens := []model.ProxyToken{{ID: 5}}
@@ -236,5 +244,75 @@ func TestProxyTokenVerifyRecordsUseOnlyForValidTokens(t *testing.T) {
 
 	if len(used.ids) != 1 || used.ids[0] != id {
 		t.Fatalf("recorded = %v, want [%d]", used.ids, id)
+	}
+}
+
+func TestProxyUsageTagDigestOverlay(t *testing.T) {
+	usage, clock := newTestProxyUsage(&failingUsageStore{})
+	stored := testDigest("a")
+	storedTag := "v1"
+	storedSince := clock.at.Add(-48 * time.Hour)
+
+	image := func(tag string) model.Image {
+		return model.Image{ID: 1, Tag: tag, CurrentDigest: &stored, CurrentDigestTag: &storedTag, CurrentDigestSince: &storedSince}
+	}
+
+	usage.RecordTagDigest(1, "v1", testDigest("b"))
+	firstSeen := clock.at
+	clock.advance(time.Minute)
+	usage.RecordTagDigest(1, "v1", testDigest("b"))
+
+	images := []model.Image{image("v1")}
+	usage.ApplyToImages(images)
+
+	if digest, since := images[0].TagDigest(); digest == nil || *digest != testDigest("b") || !since.Equal(firstSeen) {
+		t.Fatalf("overlay = %v since %v, want %s since %v", digest, since, testDigest("b"), firstSeen)
+	}
+
+	retagged := image("v2")
+	usage.ApplyTagDigest(&retagged)
+
+	if retagged.CurrentDigest != &stored {
+		t.Fatalf("a digest seen for another tag was applied: %+v", retagged)
+	}
+
+	usage.RecordTagDigest(1, "v1", stored)
+	same := image("v1")
+	usage.ApplyTagDigest(&same)
+
+	if same.CurrentDigestSince != &storedSince {
+		t.Fatalf("the stored first seen time was replaced for the same digest: %+v", same)
+	}
+}
+
+func TestProxyUsageFlushSavesTheServedDigest(t *testing.T) {
+	f := newGroupFixture(t)
+	id := f.addImage("nextcloud", "v1", "v1")
+	usage, clock := newTestProxyUsage(f.store)
+	stored := testDigest("a")
+
+	if err := f.store.UpdateImageDigest(f.ctx, id, "v1", &stored, clock.at.Add(-48*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	usage.RecordTagDigest(id, "v1", testDigest("b"))
+	usage.RecordTagDigest(id+1, "v1", testDigest("c"))
+
+	if err := usage.Flush(f.ctx); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	if digest, since := f.image(id).TagDigest(); digest == nil || *digest != testDigest("b") || !since.Equal(clock.at) {
+		t.Fatalf("stored digest = %v since %v", digest, since)
+	}
+
+	usage.RecordTagDigest(id, "v0", testDigest("d"))
+
+	if err := usage.Flush(f.ctx); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	if digest, _ := f.image(id).TagDigest(); digest == nil || *digest != testDigest("b") {
+		t.Fatalf("a digest seen for another tag was saved: %v", digest)
 	}
 }

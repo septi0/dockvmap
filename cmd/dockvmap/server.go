@@ -54,18 +54,20 @@ func loadTLSConfig(cfg *config.Config) (*tls.Config, error) {
 	return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
 }
 
-func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFunc, workerDone <-chan struct{}, serverErrs <-chan error) {
+func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFunc, workerDone <-chan struct{}, serverErrs <-chan error) error {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 
 	defer signal.Stop(sig)
 
+	var serverErr error
+
 	select {
 	case <-sig:
-		slog.Info("shutting down")
-	case err := <-serverErrs:
-		slog.Error("server failed, shutting down", "error", err)
+	case serverErr = <-serverErrs:
 	}
+
+	slog.Info("shutting down")
 
 	workerCancel()
 
@@ -101,6 +103,8 @@ func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFun
 	shutdownWg.Wait()
 
 	slog.Info("stopped")
+
+	return serverErr
 }
 
 func newProxyServer(deps proxy.Deps, tlsConfig *tls.Config) *http.Server {

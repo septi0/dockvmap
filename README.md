@@ -59,7 +59,7 @@ docker pull dockvmap.local/myapp:current
 - **Pinning**: park an image on its current tag from the details page. Upstream tags are still fetched and recorded, but no update is flagged and no upgrade email is sent until you unpin.
 - **Tag discovery**: when adding a virtual image, scans the upstream repository in the background (result cached) so you pick from its real tags instead of typing one blind.
 - **Tag history**: per-image record of every real tag the virtual tag has resolved to, and when each change happened.
-- **Digest tracking**: the digest behind each image's current tag, checked on every tag sweep and right after a tag change, so a tag republished under the same name is noticed. Image details shows it with when it was first seen.
+- **Digest tracking**: the digest behind each image's current tag, checked on every tag sweep and right after a tag change, and updated when a pull through DockVMap gets a newer one, so a tag republished under the same name is noticed. Image details shows it with when it was first seen.
 - **Web UI**: Svelte SPA for managing registries, virtual images, and reviewing what changed and when.
 - **Notifications**: digest emails (SMTP) and/or generic webhooks when a tracked image's tags change. Email volume is selectable per account (every tag change / only when an upgrade becomes available / off); webhooks always fire and carry an `updateAvailable` flag.
 - **Optional blob cache**: on-disk manifest/blob cache keyed by digest, to cut repeated upstream pulls.

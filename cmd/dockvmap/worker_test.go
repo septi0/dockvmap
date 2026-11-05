@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,6 +86,43 @@ func (s *recordingScheduleStore) ListWorkerTicks(context.Context) ([]model.Worke
 func (s *recordingScheduleStore) RecordWorkerRun(_ context.Context, job string, _ time.Time, count int64, errText string) error {
 	s.runs = append(s.runs, recordedRun{job: job, count: count, err: errText})
 	return nil
+}
+
+type failingScheduleStore struct{ recordingScheduleStore }
+
+func (failingScheduleStore) GetWorkerTick(ctx context.Context, _ string) (time.Time, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return time.Time{}, false, err
+	}
+
+	return time.Time{}, false, errors.New("database is locked")
+}
+
+func TestFirstRunDelayLogsOnlyRealScheduleErrors(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	job := scheduledJob{name: "test-job", interval: time.Hour}
+	worker := service.NewWorker(&failingScheduleStore{})
+
+	stopping, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if got := firstRunDelay(stopping, job, worker, time.Second); got != time.Hour+time.Second {
+		t.Errorf("delay while stopping = %v, want a full interval", got)
+	}
+
+	if logs.Len() != 0 {
+		t.Errorf("logged while stopping: %q", logs.String())
+	}
+
+	firstRunDelay(context.Background(), job, worker, time.Second)
+
+	if !strings.Contains(logs.String(), "reading worker schedule failed") {
+		t.Errorf("a real schedule error wasn't logged: %q", logs.String())
+	}
 }
 
 func runExecuteJob(t *testing.T, ctx context.Context, run func(context.Context) (int, error)) []recordedRun {
