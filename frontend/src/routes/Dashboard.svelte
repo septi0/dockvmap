@@ -127,7 +127,9 @@
           trackedImages={sections.summary.data?.images.total ?? null}
           {onRetry}
         />
-        <ProblemsCard {...sections.issues} hosts={attention} {hasHosts} {onRetry} />
+        <div class="full-row">
+          <ProblemsCard {...sections.issues} hosts={attention} {hasHosts} {onRetry} />
+        </div>
       </div>
     </section>
 
@@ -193,13 +195,16 @@
   }
 
   .needs-attention {
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-    align-items: stretch;
+    grid-template-columns: 1fr;
+    align-items: start;
   }
 
   .needs-attention.with-hosts {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: start;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .full-row {
+    grid-column: 1 / -1;
   }
 
   .summary-line {
@@ -212,8 +217,7 @@
     gap: var(--space-4);
   }
 
-  @media (max-width: 1100px) {
-    .needs-attention,
+  @media (max-width: 900px) {
     .needs-attention.with-hosts {
       grid-template-columns: 1fr;
     }

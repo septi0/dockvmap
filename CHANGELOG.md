@@ -2,6 +2,10 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.12.1 (2026-11-07)
+
+- **Dashboard**: To redeploy and Updates available share the first row, and Problems has a full-width row of its own below them, so each card has room for its rows: a stack's Copy command sits next to its containers, and a failure fits on one line.
+
 ## v1.12.0 (2026-11-07)
 
 - **Dashboard, reorganized**: one sentence at the top says what needs you ("A redeploy, newer tags and a few problems need you", or "Everything is running as you set it"). Below it, Needs attention comes first as three cards with their counts: To redeploy, Updates available and Problems, which now also lists hosts that are offline, can't read Docker or never connected. The overview is three tiles (Virtual images, Hosts online, which now counts only hosts, and Tag checks), and every number appears once on the page: the Updates, Failed checks and Image pulls tiles are gone, since the cards and Proxy activity already show them.
