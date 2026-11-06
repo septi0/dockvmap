@@ -82,7 +82,6 @@ type ImageListFilters struct {
 }
 
 type ImageStatusCounts struct {
-	Total           int64
-	UpdateAvailable int64
-	FailedCheck     int64
+	Total      int64
+	Registries int64
 }

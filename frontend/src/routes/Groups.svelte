@@ -7,12 +7,12 @@
   import Pin from "@lucide/svelte/icons/pin";
   import Plus from "@lucide/svelte/icons/plus";
   import Sparkles from "@lucide/svelte/icons/sparkles";
-  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import X from "@lucide/svelte/icons/x";
   import AppShell from "../lib/components/AppShell.svelte";
   import AsyncState from "../lib/components/AsyncState.svelte";
   import Button from "../lib/components/Button.svelte";
   import GroupPullNotice from "../lib/components/GroupPullNotice.svelte";
+  import StateIndicator from "../lib/components/StateIndicator.svelte";
   import FilterBar from "../lib/components/FilterBar.svelte";
   import ImageGroupModal from "../lib/components/ImageGroupModal.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
@@ -294,27 +294,24 @@
               <td class="phone-hidden">{group.tag}</td>
               <td>
                 {#if group.pinned}
-                  <span class="badge badge-success">
+                  <span class="muted pinned" title="Pinned: new versions aren't flagged or emailed">
                     <Pin size={12} strokeWidth={2} />
                     Pinned
                   </span>
                 {:else if group.updateAvailableTag}
-                  <span class="badge badge-warning">
-                    <TriangleAlert size={12} strokeWidth={2} />
-                    <span><span class="badge-tag">{group.updateAvailableTag}</span> available</span>
-                  </span>
+                  <StateIndicator
+                    tone="warning"
+                    label="{group.updateAvailableTag} available"
+                    title="{group.updateAvailableTag} is newer than {group.tag}. Change the tag on Updates."
+                  />
                 {:else if group.updateAvailable}
-                  <span
-                    class="badge badge-warning"
+                  <StateIndicator
+                    tone="warning"
+                    label="Blocked"
                     title={group.partialTag
                       ? `${group.partialTag.tag} is missing from ${group.partialTag.missing.join(", ")}`
                       : undefined}
-                  >
-                    <TriangleAlert size={12} strokeWidth={2} />
-                    Blocked
-                  </span>
-                {:else}
-                  <span class="muted">Latest</span>
+                  />
                 {/if}
                 <GroupPullNotice {group} />
               </td>
@@ -359,6 +356,13 @@
 {/if}
 
 <style>
+  .pinned {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    white-space: nowrap;
+  }
+
   .suggestions {
     padding: var(--space-4);
     margin-bottom: var(--space-4);

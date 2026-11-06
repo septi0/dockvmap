@@ -8,6 +8,7 @@
     title,
     detailTitle,
     inline = false,
+    wrap = false,
   }: {
     tone: StateTone;
     label: string;
@@ -15,10 +16,11 @@
     title?: string;
     detailTitle?: string;
     inline?: boolean;
+    wrap?: boolean;
   } = $props();
 </script>
 
-<span class="state-indicator" class:inline {title}>
+<span class="state-indicator" class:inline class:wrap {title}>
   <span class="state-label">
     <span class="state-dot {tone}" aria-hidden="true"></span>
     {label}
@@ -40,6 +42,15 @@
     align-items: center;
     gap: var(--space-2);
     white-space: nowrap;
+  }
+
+  .wrap .state-label {
+    align-items: flex-start;
+    white-space: normal;
+  }
+
+  .wrap .state-dot {
+    margin-top: 0.45em;
   }
 
   .state-detail {

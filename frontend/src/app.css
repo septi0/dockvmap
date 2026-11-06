@@ -442,21 +442,6 @@ select.filter-control {
   color: var(--color-accent);
 }
 
-.badge-warning {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-}
-
-.badge-danger {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-}
-
-.badge-success {
-  background: color-mix(in srgb, var(--color-success) 12%, transparent);
-  color: var(--color-success);
-}
-
 .muted {
   color: var(--color-text-muted);
 }

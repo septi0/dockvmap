@@ -30,7 +30,7 @@
   let total = $derived(data?.total ?? 0);
 </script>
 
-<DashboardCard title="Updates available">
+<DashboardCard title="Updates available" count={total}>
   {#snippet icon()}<CircleArrowUp size={16} strokeWidth={1.75} />{/snippet}
 
   <CardBody

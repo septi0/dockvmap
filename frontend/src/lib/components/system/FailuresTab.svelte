@@ -89,7 +89,12 @@
           <tr>
             <td class="time-cell">{formatDate(failure.occurredAt)}</td>
             <td>{sourceLabel(failure.source)}</td>
-            <td class="message-cell">{failure.message}</td>
+            <td class="message-cell">
+              {failure.message}
+              {#if !failure.message.includes(failure.error)}
+                <span class="raw-error">{failure.error}</span>
+              {/if}
+            </td>
           </tr>
         {/each}
       </tbody>
@@ -108,5 +113,13 @@
   .message-cell {
     color: var(--color-danger);
     overflow-wrap: anywhere;
+  }
+
+  .raw-error {
+    display: block;
+    margin-top: 2px;
+    color: var(--color-text-muted);
+    font-family: ui-monospace, monospace;
+    font-size: 0.75rem;
   }
 </style>

@@ -640,6 +640,7 @@ func trackContainer(c model.HostContainer, image *model.Image, virtualTag string
 	}
 
 	tracking.ImageID = &image.ID
+	tracking.Tag = &image.Tag
 	digest, _ := image.TagDigest()
 
 	if digest == nil || len(c.RunningDigests) == 0 {

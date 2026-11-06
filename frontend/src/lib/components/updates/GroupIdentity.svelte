@@ -19,7 +19,7 @@
   class="group-link"
   onclick={onOpenGroup}>{group.name}</button
 >
-<span class="badge">Group · {groupSize} images</span>
+<span class="muted group-size">Group of {groupSize} images</span>
 
 <style>
   .group-link {
@@ -30,6 +30,10 @@
     font: inherit;
     font-weight: 500;
     cursor: pointer;
+  }
+
+  .group-size {
+    font-size: 0.875rem;
   }
 
   .group-icon {

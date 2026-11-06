@@ -51,6 +51,7 @@ export interface ContainerPort {
 export interface ContainerTracking {
   imageId?: number
   imageName: string
+  tag?: string
   status: ContainerVersionStatus
   pinnedTag?: string
   needsUpdate: boolean

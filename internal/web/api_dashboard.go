@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -11,10 +12,12 @@ import (
 )
 
 const (
-	dashboardBehindLimit   = 5
+	dashboardBehindLimit   = 200
 	dashboardUpdatesLimit  = 5
 	dashboardActivityLimit = 5
+	dashboardActivityFetch = 20
 	dashboardIssuesLimit   = 5
+	dashboardIssuesCounted = 100
 )
 
 type dashboardSection[T any] struct {
@@ -32,9 +35,8 @@ func dashboardError[T any](message string) dashboardSection[T] {
 
 type dashboardSummaryData struct {
 	Images struct {
-		Total           int64 `json:"total"`
-		UpdateAvailable int64 `json:"updateAvailable"`
-		FailedCheck     int64 `json:"failedCheck"`
+		Total      int64 `json:"total"`
+		Registries int64 `json:"registries"`
 	} `json:"images"`
 }
 
@@ -51,6 +53,7 @@ type dashboardActivityData struct {
 
 type dashboardIssuesData struct {
 	Failures []failureResponse `json:"failures"`
+	Distinct int               `json:"distinct"`
 	Total    int64             `json:"total"`
 }
 
@@ -59,6 +62,12 @@ type dashboardHostsData struct {
 	Total    int                       `json:"total"`
 	Outdated int                       `json:"outdated"`
 	Behind   []dashboardBehindResponse `json:"behind"`
+
+	TrackedContainers int `json:"trackedContainers"`
+	TrackedHosts      int `json:"trackedHosts"`
+	RunningContainers int `json:"runningContainers"`
+
+	Attention []hostResponse `json:"attention"`
 }
 
 type dashboardBehindResponse struct {
@@ -103,7 +112,7 @@ func (w *Web) dashboardHosts(ctx context.Context, proxy service.ProxyTarget) das
 		return dashboardError[dashboardHostsData]("failed to load hosts")
 	}
 
-	data := dashboardHostsData{Total: len(hosts), Behind: []dashboardBehindResponse{}}
+	data := dashboardHostsData{Total: len(hosts), Behind: []dashboardBehindResponse{}, Attention: []hostResponse{}}
 	names := make(map[int64]string, len(hosts))
 
 	for _, host := range hosts {
@@ -111,6 +120,14 @@ func (w *Web) dashboardHosts(ctx context.Context, proxy service.ProxyTarget) das
 
 		if host.Current() {
 			data.Online++
+			data.RunningContainers += host.RunningContainers
+		} else {
+			data.Attention = append(data.Attention, newHostResponse(host))
+		}
+
+		if host.Rollout.Total > 0 {
+			data.TrackedContainers += host.Rollout.Total
+			data.TrackedHosts++
 		}
 
 		data.Outdated += host.Rollout.Outdated()
@@ -138,8 +155,7 @@ func (w *Web) dashboardSummary(ctx context.Context) dashboardSection[dashboardSu
 
 	var data dashboardSummaryData
 	data.Images.Total = counts.Total
-	data.Images.UpdateAvailable = counts.UpdateAvailable
-	data.Images.FailedCheck = counts.FailedCheck
+	data.Images.Registries = counts.Registries
 
 	return dashboardData(data)
 }
@@ -202,7 +218,7 @@ func (w *Web) dashboardIssues(ctx context.Context) dashboardSection[dashboardIss
 		Pagination: model.Pagination{Offset: 0, Limit: dashboardIssuesLimit},
 	}
 
-	failures, err := w.failures.LatestDistinct(ctx, dashboardIssuesLimit)
+	failures, err := w.failures.LatestDistinct(ctx, dashboardIssuesCounted)
 
 	if err != nil {
 		return dashboardError[dashboardIssuesData]("failed to load recent issues")
@@ -214,18 +230,19 @@ func (w *Web) dashboardIssues(ctx context.Context) dashboardSection[dashboardIss
 		return dashboardError[dashboardIssuesData]("failed to load recent issues")
 	}
 
-	responses := make([]failureResponse, 0, len(failures))
+	shown := failures[:min(len(failures), dashboardIssuesLimit)]
+	responses := make([]failureResponse, 0, len(shown))
 
-	for _, failure := range failures {
+	for _, failure := range shown {
 		responses = append(responses, newFailureResponse(failure))
 	}
 
-	return dashboardData(dashboardIssuesData{Failures: responses, Total: total})
+	return dashboardData(dashboardIssuesData{Failures: responses, Distinct: len(failures), Total: total})
 }
 
 func (w *Web) dashboardActivity(ctx context.Context) dashboardSection[dashboardActivityData] {
 	filters := model.ImageEventListFilters{
-		Pagination: model.Pagination{Offset: 0, Limit: dashboardActivityLimit},
+		Pagination: model.Pagination{Offset: 0, Limit: dashboardActivityFetch},
 	}
 
 	events, err := w.events.List(ctx, filters)
@@ -240,11 +257,33 @@ func (w *Web) dashboardActivity(ctx context.Context) dashboardSection[dashboardA
 		return dashboardError[dashboardActivityData]("failed to load tag activity")
 	}
 
-	if events == nil {
-		events = []model.ImageEvent{}
+	events = withoutAddedUpgrades(events)
+
+	return dashboardData(dashboardActivityData{Events: events[:min(len(events), dashboardActivityLimit)], Total: total})
+}
+
+func withoutAddedUpgrades(events []model.ImageEvent) []model.ImageEvent {
+	result := make([]model.ImageEvent, 0, len(events))
+
+	for _, event := range events {
+		if event.Type != service.EventTypeTagAdded || !slices.ContainsFunc(events, func(other model.ImageEvent) bool {
+			return other.Type == service.EventTypeUpgradeAvailable && other.ImageID == event.ImageID && containsAll(other.Data.Tags, event.Data.Tags)
+		}) {
+			result = append(result, event)
+		}
 	}
 
-	return dashboardData(dashboardActivityData{Events: events, Total: total})
+	return result
+}
+
+func containsAll(set, items []string) bool {
+	for _, item := range items {
+		if !slices.Contains(set, item) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (w *Web) dashboardMetrics(ctx context.Context) dashboardSection[proxyMetricsResponse] {

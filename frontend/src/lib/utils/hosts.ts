@@ -80,22 +80,86 @@ function portAddress(ip = ''): string {
   return ip.includes(':') ? `[${ip}]:` : `${ip}:`
 }
 
+export interface RedeployEntry {
+  hostId: number
+  hostName: string
+  container: HostContainer
+}
+
+export interface RedeployGroup {
+  key: string
+  hostId: number
+  hostName: string
+  name: string
+  detail: string
+  command: string | null
+  commandTitle: string
+}
+
 export function redeployCommand(container: HostContainer): string | null {
-  const { tracking, composeWorkingDir: dir, composeService: service } = container
+  return composeCommand([container])
+}
 
-  if (!tracking?.needsUpdate || !dir || !service) return null
+function composeCommand(containers: HostContainer[]): string | null {
+  const dir = containers[0]?.composeWorkingDir
+  const services = containers.map((c) => c.composeService)
 
-  const cd = `cd ${shellQuote(dir)}`
-  const name = shellQuote(service)
+  if (!dir || !containers.every((c) => c.tracking?.needsUpdate && c.composeService)) return null
 
-  switch (tracking.status) {
-    case 'outdated':
-      return `${cd} && docker compose pull ${name} && docker compose up -d ${name}`
-    case 'pulledNotRecreated':
-      return `${cd} && docker compose up -d ${name}`
-    default:
-      return null
+  const names = services.map((s) => shellQuote(s ?? '')).join(' ')
+  const up = `docker compose up -d ${names}`
+
+  return needsPull(containers) ? `cd ${shellQuote(dir)} && docker compose pull ${names} && ${up}` : `cd ${shellQuote(dir)} && ${up}`
+}
+
+function needsPull(containers: HostContainer[]): boolean {
+  return containers.some((c) => c.tracking?.status === 'outdated')
+}
+
+export function redeployGroups(entries: RedeployEntry[]): RedeployGroup[] {
+  const groups = new Map<string, { hostId: number; hostName: string; project: string | null; containers: HostContainer[] }>()
+
+  for (const { hostId, hostName, container } of entries) {
+    if (!container.tracking?.needsUpdate) continue
+
+    const project = container.composeProject ?? null
+    const key = project ? `${hostId}:${project}:${container.composeWorkingDir ?? ''}` : `${hostId}:#${container.id}`
+    const group = groups.get(key) ?? { hostId, hostName, project, containers: [] }
+
+    group.containers.push(container)
+    groups.set(key, group)
   }
+
+  const result = [...groups.entries()].map(([key, { hostId, hostName, project, containers }]) => {
+    const command = project ? composeCommand(containers) : null
+    const members = containers.map((c) => c.name)
+    const action = needsPull(containers) ? 'Pulls and recreates' : 'Recreates'
+
+    return {
+      key,
+      hostId,
+      hostName,
+      name: project ?? containers[0].name,
+      detail: command
+        ? members.join(', ')
+        : project
+          ? `Update the agent on ${hostName} to get the command`
+          : 'Started without Compose, so redeploy it by hand',
+      command,
+      commandTitle: command ? `${command}\n${action} ${joinNames(members)}. The rest of the stack keeps running.` : '',
+    }
+  })
+
+  return result.sort(
+    (a, b) =>
+      Number(!a.command) - Number(!b.command) ||
+      a.hostName.localeCompare(b.hostName) ||
+      a.name.localeCompare(b.name),
+  )
+}
+
+function joinNames(names: string[]): string {
+  return names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
 
 function shellQuote(value: string): string {

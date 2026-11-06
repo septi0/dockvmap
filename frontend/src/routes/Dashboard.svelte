@@ -5,9 +5,9 @@
   import AppShell from "../lib/components/AppShell.svelte";
   import PageTitle from "../lib/components/PageTitle.svelte";
   import StatStrip from "../lib/components/dashboard/StatStrip.svelte";
-  import RecentIssuesCard from "../lib/components/dashboard/RecentIssuesCard.svelte";
+  import ProblemsCard from "../lib/components/dashboard/ProblemsCard.svelte";
   import UpdatesAvailableCard from "../lib/components/dashboard/UpdatesAvailableCard.svelte";
-  import BehindOnHostsCard from "../lib/components/dashboard/BehindOnHostsCard.svelte";
+  import RedeployCard from "../lib/components/dashboard/RedeployCard.svelte";
   import RecentTagActivityCard from "../lib/components/dashboard/RecentTagActivityCard.svelte";
   import ProxyActivityCard from "../lib/components/dashboard/ProxyActivityCard.svelte";
   import { dashboard, dashboardSections } from "../lib/services/dashboard";
@@ -39,9 +39,31 @@
     void tagRefreshStatus.refresh();
   };
 
-  let showBehind = $derived(
-    sections.hosts.data ? sections.hosts.data.total > 0 : !!sections.hosts.error,
-  );
+  let hosts = $derived(sections.hosts.data);
+  let hasHosts = $derived(!!hosts && hosts.total > 0);
+  let attention = $derived(hosts?.attention ?? []);
+
+  let summaryLine = $derived.by(() => {
+    const updates = sections.updates.data;
+    const issues = sections.issues.data;
+
+    if (!hosts || !updates || !issues) return "";
+
+    const problems = attention.length + issues.distinct;
+    const items: { text: string; plural: boolean }[] = [];
+
+    if (hosts.outdated > 0) items.push({ text: "a redeploy", plural: false });
+    if (updates.total > 0) items.push({ text: "newer tags", plural: true });
+    if (problems > 0) items.push({ text: problems === 1 ? "a problem" : "a few problems", plural: problems > 1 });
+
+    if (items.length === 0) return "Everything is running as you set it.";
+
+    const names = items.map((item) => item.text);
+    const list = names.length < 2 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+    const verb = items.length === 1 && !items[0].plural ? "needs" : "need";
+
+    return `${list.charAt(0).toUpperCase()}${list.slice(1)} ${verb} you.`;
+  });
 
   let hasErrors = $derived(
     Object.values(sections).some((section) => section.error !== null),
@@ -61,9 +83,12 @@
 
 <AppShell>
   <div class="page-header dashboard-header">
-    <div class="title-row">
-      <LayoutDashboard size={20} strokeWidth={1.75} />
-      <h1>Dashboard</h1>
+    <div>
+      <div class="title-row">
+        <LayoutDashboard size={20} strokeWidth={1.75} />
+        <h1>Dashboard</h1>
+      </div>
+      {#if summaryLine}<p class="subtitle summary-line">{summaryLine}</p>{/if}
     </div>
 
     <div class="header-actions">
@@ -92,28 +117,23 @@
 
   <div class="dashboard">
     <section class="dash-band">
-      <h2 class="band-label">Overview</h2>
-      <StatStrip
-        summary={sections.summary}
-        metrics={sections.metrics}
-        hosts={sections.hosts}
-        tagRefresh={$tagRefreshStatus}
-      />
-    </section>
-
-    <section class="dash-band">
       <h2 class="band-label">Needs attention</h2>
-      <div class="band-grid needs-attention" class:with-hosts={showBehind}>
+      <div class="band-grid needs-attention" class:with-hosts={hasHosts}>
+        {#if hasHosts}
+          <RedeployCard {...sections.hosts} {onRetry} />
+        {/if}
         <UpdatesAvailableCard
           {...sections.updates}
           trackedImages={sections.summary.data?.images.total ?? null}
           {onRetry}
         />
-        {#if showBehind}
-          <BehindOnHostsCard {...sections.hosts} {onRetry} />
-        {/if}
-        <RecentIssuesCard {...sections.issues} {onRetry} />
+        <ProblemsCard {...sections.issues} hosts={attention} {hasHosts} {onRetry} />
       </div>
+    </section>
+
+    <section class="dash-band">
+      <h2 class="band-label">Overview</h2>
+      <StatStrip summary={sections.summary} hosts={sections.hosts} tagRefresh={$tagRefreshStatus} />
     </section>
 
     <section class="dash-band">
@@ -178,7 +198,12 @@
   }
 
   .needs-attention.with-hosts {
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .summary-line {
+    margin: var(--space-1) 0 0;
   }
 
   .band-stack {
@@ -188,13 +213,8 @@
   }
 
   @media (max-width: 1100px) {
+    .needs-attention,
     .needs-attention.with-hosts {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  @media (max-width: 900px) {
-    .needs-attention {
       grid-template-columns: 1fr;
     }
   }

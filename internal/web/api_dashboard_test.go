@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/septi0/dockvmap/internal/config"
@@ -152,6 +153,10 @@ func TestDashboardAllSectionsSucceed(t *testing.T) {
 		t.Errorf("updates images = %+v, want 1", resp.Updates.Data)
 	}
 
+	if resp.Issues.Data == nil || resp.Issues.Data.Distinct != 1 || len(resp.Issues.Data.Failures) != 1 {
+		t.Errorf("issues = %+v, want 1 distinct failure", resp.Issues.Data)
+	}
+
 	if resp.Activity.Data == nil || len(resp.Activity.Data.Events) != 1 {
 		t.Errorf("activity = %+v, want 1 event", resp.Activity.Data)
 	}
@@ -160,8 +165,16 @@ func TestDashboardAllSectionsSucceed(t *testing.T) {
 		t.Errorf("hosts = %+v, want 1 of 3 reporting, with a Docker failure not counted, and 3 outdated containers", resp.Hosts.Data)
 	}
 
-	if shown := resp.Hosts.Data.Behind; len(shown) != 5 || shown[0].HostName != "nas" || shown[0].Container.Name != "web-0" {
-		t.Errorf("behind = %+v, want the first 5 with their host name", shown)
+	if shown := resp.Hosts.Data.Behind; len(shown) != 6 || shown[0].HostName != "nas" || shown[0].Container.Name != "web-0" {
+		t.Errorf("behind = %+v, want all 6 with their host name", shown)
+	}
+
+	if attention := resp.Hosts.Data.Attention; len(attention) != 2 || attention[0].ID != 2 || attention[1].ID != 3 {
+		t.Errorf("attention = %+v, want the host that can't read Docker and the offline one", attention)
+	}
+
+	if resp.Hosts.Data.TrackedContainers != 5 || resp.Hosts.Data.TrackedHosts != 1 {
+		t.Errorf("tracked = %d containers on %d hosts, want 5 on 1", resp.Hosts.Data.TrackedContainers, resp.Hosts.Data.TrackedHosts)
 	}
 }
 
@@ -233,5 +246,36 @@ func TestDashboardUpdatesCountsGroupsAsOneRow(t *testing.T) {
 
 	if len(section.Data.Groups) != 2 || len(section.Data.Images) != 1 || section.Data.Total != 3 {
 		t.Fatalf("data = %+v", section.Data)
+	}
+}
+
+func TestDashboardActivityShowsANewUpgradeTagOnce(t *testing.T) {
+	tags := func(t ...string) model.TagsEventData { return model.TagsEventData{Tags: t} }
+
+	w := &Web{
+		images:              fakeImages{},
+		failures:            fakeFailures{},
+		proxyMetricsHistory: fakeMetrics{},
+		hosts:               fakeHosts{},
+		cfg:                 &config.Config{ProxyServerListen: ":5000"},
+		events: fakeEvents{list: []model.ImageEvent{
+			{ID: 6, ImageID: 1, Type: service.EventTypeUpgradeAvailable, Data: tags("v2")},
+			{ID: 5, ImageID: 1, Type: service.EventTypeTagAdded, Data: tags("v2")},
+			{ID: 4, ImageID: 2, Type: service.EventTypeTagAdded, Data: tags("v9", "latest-rc")},
+			{ID: 3, ImageID: 2, Type: service.EventTypeUpgradeAvailable, Data: tags("v9")},
+			{ID: 2, ImageID: 3, Type: service.EventTypeTagRemoved, Data: tags("old")},
+		}},
+	}
+
+	resp := dashboardFor(t, w)
+
+	var ids []int64
+
+	for _, event := range resp.Activity.Data.Events {
+		ids = append(ids, event.ID)
+	}
+
+	if !slices.Equal(ids, []int64{6, 4, 3, 2}) || resp.Activity.Data.Total != 5 {
+		t.Errorf("events = %v (total %d), want the tag added with its upgrade hidden, others kept", ids, resp.Activity.Data.Total)
 	}
 }

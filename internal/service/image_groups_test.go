@@ -668,7 +668,7 @@ func TestCommonTags(t *testing.T) {
 	}
 }
 
-func TestStatusCountsTreatAGroupAsOneUpdate(t *testing.T) {
+func TestStatusCountsAndPerImageUpdateCounts(t *testing.T) {
 	f := newGroupFixture(t)
 
 	a := f.addImage("a", "1.0.0", "1.0.0", "1.1.0")
@@ -683,8 +683,8 @@ func TestStatusCountsTreatAGroupAsOneUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if counts.Total != 4 || counts.UpdateAvailable != 2 {
-		t.Fatalf("counts = %+v, want 4 images and 2 updates", counts)
+	if counts.Total != 4 || counts.Registries != 1 {
+		t.Fatalf("counts = %+v, want 4 images on 1 registry", counts)
 	}
 
 	all, err := f.images.Count(f.ctx, model.ImageListFilters{Status: model.ImageStatusUpdateAvailable})

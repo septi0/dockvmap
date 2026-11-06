@@ -20,6 +20,7 @@
   import ImageGroupModal from "../lib/components/ImageGroupModal.svelte";
   import { listImages, IMAGES_PAGE_SIZE } from "../lib/api/images";
   import CopyButton from "../lib/components/CopyButton.svelte";
+  import StateIndicator from "../lib/components/StateIndicator.svelte";
   import { getPullInfo } from "../lib/api/metrics";
   import { listImageRollouts } from "../lib/api/hosts";
   import type { PullInfo } from "../lib/api/types/metrics";
@@ -92,7 +93,6 @@
     errorFallback: "Failed to load images",
     sortFields: {
       name: "asc",
-      lastChecked: "desc",
       lastPulled: "desc",
       status: "asc",
     },
@@ -212,9 +212,9 @@
   }
 </script>
 
-{#snippet rolloutInfo(rollout: ImageRollout, compact: boolean)}
+{#snippet rolloutInfo(rollout: ImageRollout)}
   {#if rollout.total > 0}
-    <RolloutSummary {rollout} {compact} />
+    <RolloutSummary {rollout} />
   {/if}
   {#if rollout.hostsOffline > 0}
     <div class="source muted" title="These hosts ran this image when they were last online">
@@ -346,18 +346,12 @@
             />
             <th>Tag</th>
             <SortableHeader
-              label="Last checked"
-              class="phone-hidden time-cell"
-              direction={view.sortDirection("lastChecked")}
-              onSort={() => view.toggleSort("lastChecked")}
-            />
-            <SortableHeader
               label="Last pulled"
               class="phone-hidden time-cell"
               direction={view.sortDirection("lastPulled")}
               onSort={() => view.toggleSort("lastPulled")}
             />
-            {#if rollouts.size > 0}<th class="phone-hidden">Deployed</th>{/if}
+            {#if rollouts.size > 0}<th class="phone-hidden">Containers</th>{/if}
             <SortableHeader
               label="Newer tag"
               direction={view.sortDirection("status")}
@@ -401,18 +395,10 @@
                   {#each imageParts(imageSource(image)) as part, index (index)}{part}<wbr />{/each}
                 </div>
                 {#if rollout}
-                  <div class="phone-only source">{@render rolloutInfo(rollout, false)}</div>
+                  <div class="phone-only source">{@render rolloutInfo(rollout)}</div>
                 {/if}
               </td>
               <td>{image.tag}</td>
-              <td class="phone-hidden time-cell">
-                <span
-                  title={image.lastChecked
-                    ? formatDate(image.lastChecked)
-                    : undefined}
-                  >{formatRelativeTime(image.lastChecked, "Never")}</span
-                >
-              </td>
               <td class="phone-hidden time-cell">
                 {#if image.lastPulledAt}
                   <span title={`${formatDate(image.lastPulledAt)} (${image.lastPulledTag})`}
@@ -425,35 +411,24 @@
               {#if rollouts.size > 0}
                 <td class="phone-hidden time-cell">
                   {#if rollout}
-                    {@render rolloutInfo(rollout, true)}
+                    {@render rolloutInfo(rollout)}
                   {/if}
                 </td>
               {/if}
               <td>
                 {#if image.pinned}
-                  <span
-                    class="badge badge-success"
-                    title="Pinned: new versions aren't flagged or emailed"
-                  >
+                  <span class="muted pinned" title="Pinned: new versions aren't flagged or emailed">
                     <Pin size={12} strokeWidth={2} />
                     Pinned
                   </span>
                 {:else if image.updateAvailable}
-                  <span
-                    class="badge badge-warning"
-                    title={image.updateAvailableTag
-                      ? `${image.updateAvailableTag} is newer than ${image.tag}`
-                      : undefined}
-                  >
-                    <TriangleAlert size={12} strokeWidth={2} />
-                    {#if image.updateAvailableTag}
-                      <span><span class="badge-tag">{image.updateAvailableTag}</span> available</span>
-                    {:else}
-                      Newer tag available
-                    {/if}
-                  </span>
-                {:else}
-                  <span class="muted">Latest</span>
+                  <StateIndicator
+                    tone="warning"
+                    label={image.updateAvailableTag ? `${image.updateAvailableTag} available` : "Newer tag available"}
+                    title="{image.updateAvailableTag
+                      ? `${image.updateAvailableTag} is newer than ${image.tag}. `
+                      : ''}Change the tag on Updates or Image details."
+                  />
                 {/if}
               </td>
               {#if pullInfo}
@@ -509,8 +484,10 @@
     white-space: normal;
   }
 
-  .badge-tag {
-    text-transform: none;
+  .pinned {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
     white-space: nowrap;
   }
 

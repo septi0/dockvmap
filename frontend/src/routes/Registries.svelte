@@ -14,6 +14,7 @@
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
   import type { Registry } from "../lib/api/types/registries";
+  import { registryOptions } from "../lib/utils/registries";
 
   let registries = $state<Registry[]>([]);
   let loading = $state(true);
@@ -164,17 +165,7 @@
                 {/if}
               </td>
               <td class="phone-hidden">
-                {#if registry.internal && registry.options.insecure}
-                  <span class="muted">Stack network</span>
-                {:else if registry.options.insecure}
-                  <span class="badge badge-warning">Insecure</span>
-                {/if}
-                {#if registry.options.allow_self_signed_certs}
-                  <span class="badge badge-warning">Self-signed</span>
-                {/if}
-                {#if !registry.options.insecure && !registry.options.allow_self_signed_certs}
-                  <span class="muted">-</span>
-                {/if}
+                <span class="muted">{registryOptions(registry)}</span>
               </td>
               <td class="browse-cell">
                 <div class="table-actions">

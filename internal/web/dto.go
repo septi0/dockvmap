@@ -519,6 +519,7 @@ type failureResponse struct {
 	OccurredAt  time.Time `json:"occurredAt"`
 	Source      string    `json:"source"`
 	Message     string    `json:"message"`
+	Error       string    `json:"error"`
 	Occurrences int       `json:"occurrences"`
 }
 
@@ -527,11 +528,35 @@ func newFailureResponse(failure service.Failure) failureResponse {
 		OccurredAt:  failure.OccurredAt,
 		Source:      string(failure.Source),
 		Message:     failureMessage(failure),
+		Error:       failure.Error,
 		Occurrences: failure.Occurrences,
 	}
 }
 
 func failureMessage(failure service.Failure) string {
+	if cause, ok := recognizeFailure(failure.Error); ok {
+		switch failure.Source {
+		case service.FailureSourceWebhook:
+			return "Webhook not sent: " + cause.sentence("the webhook server")
+
+		case service.FailureSourceEmail:
+			if cause.host != "" {
+				cause.host = "the SMTP server " + cause.host
+			}
+
+			return "Email not sent: " + cause.sentence("the SMTP server")
+
+		case service.FailureSourceRefresh:
+			return fmt.Sprintf("%s: %s", failure.Detail, cause.sentence("the registry"))
+
+		case service.FailureSourceDiscovery:
+			return fmt.Sprintf("Tag discovery for %s: %s", failure.Detail, cause.sentence("the registry"))
+
+		case service.FailureSourceDigest:
+			return fmt.Sprintf("%s digest lookup: %s", failure.Detail, cause.sentence("the registry"))
+		}
+	}
+
 	switch failure.Source {
 	case service.FailureSourceWebhook:
 		return fmt.Sprintf("Webhook to %s failed: %s", failure.Detail, failure.Error)
@@ -620,6 +645,7 @@ type hostContainerResponse struct {
 type containerTrackingResponse struct {
 	ImageID     *int64  `json:"imageId,omitempty"`
 	ImageName   string  `json:"imageName"`
+	Tag         *string `json:"tag,omitempty"`
 	Status      string  `json:"status"`
 	PinnedTag   *string `json:"pinnedTag,omitempty"`
 	NeedsUpdate bool    `json:"needsUpdate"`
@@ -718,6 +744,7 @@ func newHostContainerResponses(containers []model.HostContainer) []hostContainer
 			response.Tracking = &containerTrackingResponse{
 				ImageID:     c.Tracking.ImageID,
 				ImageName:   c.Tracking.ImageName,
+				Tag:         c.Tracking.Tag,
 				Status:      string(c.Tracking.Status),
 				PinnedTag:   c.Tracking.PinnedTag,
 				NeedsUpdate: c.Tracking.NeedsUpdate(),

@@ -76,7 +76,7 @@
   {#if !host.current}
     <span class="muted" title="This host can't be checked right now">Unknown</span>
   {:else if container.tracking}
-    <ContainerVersion tracking={container.tracking} />
+    <ContainerVersion tracking={container.tracking} showCurrent />
   {/if}
 {/snippet}
 

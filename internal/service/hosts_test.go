@@ -756,6 +756,10 @@ func TestHostContainerTracking(t *testing.T) {
 		if pinned != expected.pinned {
 			t.Errorf("%s pinned = %q, want %q", c.Name, pinned, expected.pinned)
 		}
+
+		if c.Name == "web-old" && (c.Tracking.Tag == nil || *c.Tracking.Tag != "v2") {
+			t.Errorf("web-old should be told to run v2, tag = %v", c.Tracking.Tag)
+		}
 	}
 
 	if len(details.Containers) != len(containers) {

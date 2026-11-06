@@ -49,7 +49,7 @@ Tools that list tags, like skopeo, crane, Renovate or diun, see only the virtual
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/hosts.png" width="800" alt="Hosts page with agent status, containers and deployed counts">
+  <img src="docs/screenshots/hosts.png" width="800" alt="Hosts page with agent status and containers">
 </p>
 
 ## Features
@@ -176,11 +176,11 @@ Never environment variables, mounts, other labels or logs. DockVMap asks every a
 
 ### Versions
 
-A container whose image comes through DockVMap's proxy, like `dockvmap.local:5000/myapp:current`, is matched to its virtual image by digest and shows as **Up to date**, **Outdated**, or **Pulled, not recreated** (the new version is on the host, but the container still runs the old one). A container using another tag through the proxy shows which tag it is pinned to.
+A container whose image comes through DockVMap's proxy, like `dockvmap.local:5000/myapp:current`, is matched to its virtual image by digest. One that runs the version you chose shows nothing extra; one that doesn't shows **Needs a redeploy to run 1.4.2**, whether it still has to pull the new version or only be recreated. A container using another tag through the proxy shows which tag it is pinned to.
 
-Image details lists every host and container running that image, and the dashboard lists the containers that are behind. A container started with Docker Compose gets a copy icon with the command that fixes it, like `cd /srv/shop && docker compose pull web && docker compose up -d web`, run on its host. The Virtual Images list shows in its Deployed column how many containers are behind the current version, like "3 behind" or "Current", the Hosts list shows the same per host, and the dashboard counts them. On Virtual Images, the Newer tag column is about the other step: whether the upstream has a tag newer than the one the virtual tag points to. Numbers refresh by themselves, so you can watch a deploy reach every host. Only running or crash-looping containers that use the virtual tag count: a pinned or stopped container stays visible but never holds the number back. Hosts that are offline or can't read Docker can't be checked, so Virtual Images shows how many were left out, and why.
+The dashboard opens with what needs you: a To redeploy card ("Every container runs the version you chose" when nothing does), with the containers grouped by stack and one command per stack, like `cd /srv/shop && docker compose pull web api && docker compose up -d web api`, to run on that host. It pulls and recreates only those containers; the rest of the stack keeps running. Containers started without Compose are listed without a command. A host's page shows the same summary for that host when it has something to redeploy. Image details lists every host and container running that image. The Virtual Images list shows in its Containers column how many still need a redeploy, like "2 of 5 to redeploy", and the Hosts list shows "3 to redeploy" under a host's containers when it applies. On Virtual Images, the Newer tag column is about the other step: whether the upstream has a tag newer than the one the virtual tag points to. Numbers refresh by themselves, so you can watch a deploy reach every host. Only running or crash-looping containers that use the virtual tag count: a pinned or stopped container stays visible but never holds the number back. Hosts that are offline or can't read Docker can't be checked, so Virtual Images shows how many were left out, and why.
 
-A host's crashed badge counts containers that keep restarting or crashed in the last 7 days. Exit codes 137 and 143 come from a normal `docker stop`, so they don't count.
+On the Hosts list, "crashed" counts containers that keep restarting or crashed in the last 7 days. Exit codes 137 and 143 come from a normal `docker stop`, so they don't count.
 
 Matching uses the proxy address clients pull from, so set [`proxy_public_host`](#networking); without it, DockVMap guesses from the address you opened the web UI on.
 
@@ -254,20 +254,20 @@ Every pushed tag is recorded in the audit log as `IMAGE_PUSHED`, and every delet
 
 A pushed tag starts a tag check for the virtual images built on that repository, about 5 seconds after the last push to it, so a new tag shows as an update within seconds and several tags pushed together cause one check. Re-pushing an existing tag shows its new digest.
 
-Containers that run a real name through DockVMap, like `dockvmap.lan:5000/team/web:latest`, show as from the internal registry on the host's page, with the same versions as virtual images: **Up to date**, **Outdated** once a new image is pushed to that tag, or **Pulled, not recreated**. They count in the Hosts page and dashboard "behind" numbers, but not in any virtual image's Deployed. Pushing through DockVMap updates this within one host check; a push straight to the registry shows within 5 minutes.
+Containers that run a real name through DockVMap, like `dockvmap.lan:5000/team/web:latest`, show as from the internal registry on the host's page, and show **Needs a redeploy to run the new image** once a new image is pushed to that tag. They count in the Hosts page and the dashboard summary, but not in any virtual image's Containers column. Pushing through DockVMap updates this within one host check; a push straight to the registry shows within 5 minutes.
 
 ### Startup and address changes
 
 At startup DockVMap makes sure a registry entry exists for `internal_registry.address` and marks it as internal: it takes over an existing entry with that address, or adds one. If the address changes, the entry moves with it and its virtual images follow. DockVMap refuses to start if the address isn't `host:port`, or if another registry entry already has the new address. Turning the setting off keeps the entry as a normal registry.
 
-If the registry doesn't answer at startup, DockVMap starts anyway, shows it in Recent issues, and checks again every 10 seconds; until then, pushes and real pulls get an error that says so.
+If the registry doesn't answer at startup, DockVMap starts anyway, shows it under Problems on the dashboard, and checks again every 10 seconds; until then, pushes and real pulls get an error that says so.
 
 ### Good to know
 
 - Back up the registry's volume separately: `dockvmap -backup` covers DockVMap's database only.
 - Garbage collection stays the registry's job: `docker compose exec registry registry garbage-collect --delete-untagged /etc/distribution/config.yml`, when nothing is pushing. `--delete-untagged` also removes the images left behind when you push a tag again, like `latest`, so the volume doesn't keep growing; multi-arch images stay complete (checked with `registry:3` 3.1.2). On `registry:2` the config is `/etc/docker/registry/config.yml`.
 - If DockVMap's own image lives in the internal registry, don't pull it through DockVMap, or DockVMap can't be deployed while it's down. Publish the registry on DockVMap's host for loopback only (`127.0.0.1:5000:5000`) and pull DockVMap as `127.0.0.1:5000/<name>`: Docker allows plain HTTP to `127.0.0.1`, and the registry stays unreachable from the network.
-- If you turn on deletes in the registry, don't delete the tag a virtual image points to, or pulls of its virtual tag break. A delete through DockVMap starts a tag check for that repository, so a virtual image whose tag is gone shows in Recent issues within seconds.
+- If you turn on deletes in the registry, don't delete the tag a virtual image points to, or pulls of its virtual tag break. A delete through DockVMap starts a tag check for that repository, so a virtual image whose tag is gone shows in Problems on the dashboard within seconds.
 - If DockVMap is down, nothing can push or pull real names; the registry itself isn't reachable from outside.
 
 ## Configuration

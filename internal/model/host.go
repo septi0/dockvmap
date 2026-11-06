@@ -123,6 +123,7 @@ const (
 type ContainerTracking struct {
 	ImageID   *int64
 	ImageName string
+	Tag       *string
 	Status    ContainerVersionStatus
 	PinnedTag *string
 	InRollout bool

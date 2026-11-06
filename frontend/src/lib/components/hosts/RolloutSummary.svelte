@@ -1,30 +1,31 @@
 <script lang="ts">
+  import StateIndicator from "../StateIndicator.svelte";
   import type { Rollout } from "../../api/types/hosts";
   import { formatCount } from "../../utils/format";
 
   let {
     rollout,
-    compact = false,
+    ofTotal = true,
     quiet = false,
-  }: { rollout: Rollout; compact?: boolean; quiet?: boolean } = $props();
+  }: { rollout: Rollout; ofTotal?: boolean; quiet?: boolean } = $props();
 
-  let outdated = $derived(rollout.total - rollout.upToDate);
-  let label = $derived.by(() => {
-    if (outdated === 0) return compact ? "Current" : "All current";
-
-    return compact ? `${outdated} behind` : `${formatCount(outdated, "container")} behind`;
-  });
+  let behind = $derived(rollout.total - rollout.upToDate);
+  let label = $derived(
+    ofTotal && behind < rollout.total ? `${behind} of ${rollout.total} to redeploy` : `${behind} to redeploy`,
+  );
   let title = $derived(
-    outdated > 0
-      ? `${outdated} of ${rollout.total} running containers aren't on the current version yet`
-      : `All ${rollout.total} running containers are on the current version`,
+    `${behind} of ${rollout.total} running containers don't run the version you chose yet`,
   );
 </script>
 
-{#if outdated === 0 || quiet}
-  <span class="muted rollout" {title}>{label}</span>
-{:else}
-  <span class="badge badge-warning rollout" {title}>{label}</span>
+{#if behind > 0}
+  {#if quiet}
+    <span class="muted rollout" {title}>{label}</span>
+  {:else}
+    <StateIndicator tone="warning" {label} {title} />
+  {/if}
+{:else if ofTotal && !quiet}
+  <span class="muted rollout">{formatCount(rollout.total, "container")}</span>
 {/if}
 
 <style>

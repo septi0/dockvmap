@@ -2,6 +2,7 @@ export interface Failure {
   occurredAt: string
   source: string
   message: string
+  error: string
   occurrences: number
 }
 

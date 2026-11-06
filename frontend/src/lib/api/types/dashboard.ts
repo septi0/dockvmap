@@ -3,7 +3,7 @@ import type { ImageGroup } from './imageGroups'
 import type { ImageEvent } from './events'
 import type { Failure } from './failures'
 import type { ProxyMetrics } from './metrics'
-import type { HostContainer } from './hosts'
+import type { Host, HostContainer } from './hosts'
 
 export interface DashboardSection<T> {
   data: T | null
@@ -13,8 +13,7 @@ export interface DashboardSection<T> {
 export interface DashboardSummary {
   images: {
     total: number
-    updateAvailable: number
-    failedCheck: number
+    registries: number
   }
 }
 
@@ -31,6 +30,7 @@ export interface DashboardActivity {
 
 export interface DashboardIssues {
   failures: Failure[]
+  distinct: number
   total: number
 }
 
@@ -39,6 +39,10 @@ export interface DashboardHosts {
   total: number
   outdated: number
   behind: DashboardBehind[]
+  trackedContainers: number
+  trackedHosts: number
+  runningContainers: number
+  attention: Host[]
 }
 
 export interface DashboardBehind {

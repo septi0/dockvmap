@@ -20,12 +20,12 @@
   import HostModal from "../lib/components/hosts/HostModal.svelte";
   import ContainerState from "../lib/components/hosts/ContainerState.svelte";
   import ContainerVersion from "../lib/components/hosts/ContainerVersion.svelte";
-  import RedeployButton from "../lib/components/hosts/RedeployButton.svelte";
+  import RedeployBanner from "../lib/components/hosts/RedeployBanner.svelte";
   import { deleteHost, getHost, trustHostAgent } from "../lib/api/hosts";
   import { errorMessage } from "../lib/api/client";
   import { toast } from "../lib/services/toast";
   import { capitalize, formatBytes, formatDate, formatRelativeTime, imageParts, shortDigest } from "../lib/utils/format";
-  import { formatPorts, redeployCommand } from "../lib/utils/hosts";
+  import { formatPorts, redeployGroups } from "../lib/utils/hosts";
   import { createVisibilityPoller } from "../lib/utils/visibilityPoller";
   import type { HostConnection, HostContainer, HostDetails } from "../lib/api/types/hosts";
 
@@ -111,15 +111,11 @@
       .sort((a, b) => a.name.localeCompare(b.name));
   });
 
-  let commands = $derived(
-    new Map(
-      host?.current
-        ? (details?.containers ?? []).map((c) => [c.id, redeployCommand(c)] as const)
-        : [],
-    ),
+  let currentContainers = $derived(host?.current ? (details?.containers ?? []) : []);
+  let redeployCount = $derived(currentContainers.filter((c) => c.tracking?.needsUpdate).length);
+  let redeploy = $derived(
+    host ? redeployGroups(currentContainers.map((container) => ({ hostId: host.id, hostName: host.name, container }))) : [],
   );
-
-  let hasCommands = $derived([...commands.values()].some((command) => command));
 
   let filtersActive = $derived(!!search || !!show || !!stack);
 
@@ -338,6 +334,15 @@
         </p>
       {/if}
 
+      {#if redeployCount > 0}
+        <RedeployBanner
+          groups={redeploy}
+          count={redeployCount}
+          hostName={host.name}
+          checked="Checked {formatRelativeTime(host.lastSeenAt)}"
+        />
+      {/if}
+
       {#if host.lastSeenAt}
         <div class="card section-card">
           <h2 class="heading-with-count">
@@ -404,7 +409,6 @@
                     <th>State</th>
                     <th class="phone-hidden">Image</th>
                     <th class="phone-hidden ports-cell">Ports</th>
-                    {#if hasCommands}<th aria-label="Copy command"></th>{/if}
                   </tr>
                 </thead>
                 <tbody>
@@ -437,14 +441,6 @@
                           <span class="port">{port}</span>
                         {/each}
                       </td>
-                      {#if hasCommands}
-                        {@const command = commands.get(container.id)}
-                        <td class="copy-cell">
-                          {#if command}
-                            <RedeployButton {container} {command} />
-                          {/if}
-                        </td>
-                      {/if}
                     </tr>
                   {/each}
                 </tbody>
@@ -553,11 +549,6 @@
 
   .image-cell.proxied {
     color: var(--color-accent);
-  }
-
-  .copy-cell {
-    width: 1%;
-    text-align: right;
   }
 
   .ports-cell {

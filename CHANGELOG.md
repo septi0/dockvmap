@@ -2,6 +2,18 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.12.0 (2026-11-07)
+
+- **Dashboard, reorganized**: one sentence at the top says what needs you ("A redeploy, newer tags and a few problems need you", or "Everything is running as you set it"). Below it, Needs attention comes first as three cards with their counts: To redeploy, Updates available and Problems, which now also lists hosts that are offline, can't read Docker or never connected. The overview is three tiles (Virtual images, Hosts online, which now counts only hosts, and Tag checks), and every number appears once on the page: the Updates, Failed checks and Image pulls tiles are gone, since the cards and Proxy activity already show them.
+- **Redeploys, said once and fixed in one paste**: the dashboard's To redeploy card lists the containers that need a redeploy, grouped by stack, with one command per stack that pulls and recreates just those containers (its tooltip shows the command and what it does). When nothing does, it reads "Every container runs the version you chose". A host's page shows the same list for that host when it has something to redeploy. Containers started without Compose, or reported by an agent older than v1.11.0, are listed without a command.
+- **Quieter lists**: a container that runs the version you chose shows no status at all; one that doesn't shows "Needs a redeploy to run 8.0.3". Virtual Images replaces the Deployed column with Containers ("2 of 5 to redeploy", or "4 containers"), and Hosts drops the column, showing "3 to redeploy" under the container count only when it applies. The uppercase Outdated, Pulled, not recreated and "N behind" badges are gone.
+- **Newer tag and Groups**: "1.28.1 available" and "Blocked" are a dot with text instead of a badge, with a tooltip that says where to change the tag; an image or group with no newer tag shows nothing instead of "Latest", and Pinned is grey text.
+- **Failures in plain words**: on the dashboard's Problems card and System › Failures, a failure with a common cause now reads like "myapp: registry.example.com couldn't be found. Check its address." or "Email not sent: the SMTP server 192.0.2.25:587 didn't answer." The raw error is a hover away on the dashboard and shown under the message on System › Failures.
+- **Less repetition**: Virtual Images drops the Last checked column, which showed the same time on every row (the time stays on Image details and the Tag checks tile). The dashboard's Recent tag activity shows a new tag once, as "v1.121.0 available", instead of a "Tag added" and an "Upgrade available" row; the Tag activity page keeps both events.
+- **Fewer badges elsewhere**: the Hosts list shows crashed and unhealthy containers as "● 1 crashed" and "● 2 unhealthy", on the same line as "3 to redeploy". Registries lists connection options as plain text ("Plain HTTP · Self-signed certificate"). Profile marks your own session "This session" instead of a blue badge, and the Updates page labels a group "Group of 2 images".
+
+**Upgrade note:** nothing to do. There are no database, config or agent changes; agents older than v1.11.0 keep working, without the redeploy commands.
+
 ## v1.11.0 (2026-11-05)
 
 - **Browse a registry**: a Browse icon on Registries opens the repositories and tags of any registry that lists them, shows which repositories have no virtual image yet, and starts Add virtual image with the repository and tag filled in. DockVMap checks which registries list their repositories, so Docker Hub and GHCR simply have no Browse icon. See "Browse a registry" in the README.

@@ -10,6 +10,7 @@
   import HostModal from "../lib/components/hosts/HostModal.svelte";
   import HostConnectModal from "../lib/components/hosts/HostConnectModal.svelte";
   import HostStatus from "../lib/components/hosts/HostStatus.svelte";
+  import StateIndicator from "../lib/components/StateIndicator.svelte";
   import RolloutSummary from "../lib/components/hosts/RolloutSummary.svelte";
   import { listHosts } from "../lib/api/hosts";
   import { errorMessage } from "../lib/api/client";
@@ -121,7 +122,6 @@
             <th>Host</th>
             <th class="phone-hidden">Status</th>
             <th>Containers</th>
-            <th class="phone-hidden">Deployed</th>
           </tr>
         </thead>
         <tbody>
@@ -153,27 +153,26 @@
                         >last restart {formatRelativeTime(host.lastStartedAt)}</span
                       >
                     {/if}
-                    {#if host.unhealthyContainers > 0}
-                      <span class="badge badge-warning">{host.unhealthyContainers} unhealthy</span>
-                    {/if}
-                    {#if host.crashedContainers > 0}
-                      <span
-                        class="badge badge-danger"
-                        title="Containers that crashed in the last 7 days or keep restarting"
-                        >{host.crashedContainers} crashed</span
-                      >
-                    {/if}
                   </div>
-                  {#if host.rollout.total > 0}
-                    <div class="phone-only host-rollout"><RolloutSummary rollout={host.rollout} /></div>
+                  {#if host.crashedContainers > 0 || host.unhealthyContainers > 0 || (host.current && host.rollout.upToDate < host.rollout.total)}
+                    <div class="host-issues">
+                      {#if host.crashedContainers > 0}
+                        <StateIndicator
+                          tone="failed"
+                          label="{host.crashedContainers} crashed"
+                          title="Containers that crashed in the last 7 days or keep restarting"
+                        />
+                      {/if}
+                      {#if host.unhealthyContainers > 0}
+                        <StateIndicator tone="warning" label="{host.unhealthyContainers} unhealthy" />
+                      {/if}
+                      {#if host.current}
+                        <RolloutSummary rollout={host.rollout} ofTotal={false} />
+                      {/if}
+                    </div>
                   {/if}
                 {:else}
                   <span class="muted">-</span>
-                {/if}
-              </td>
-              <td class="phone-hidden">
-                {#if host.rollout.total > 0}
-                  <RolloutSummary rollout={host.rollout} compact />
                 {/if}
               </td>
             </tr>
@@ -211,16 +210,16 @@
     font-size: 0.8125rem;
   }
 
-  .cell-detail .badge {
-    white-space: nowrap;
-  }
-
   .host-status {
     margin-top: var(--space-1);
   }
 
-  .host-rollout {
+  .host-issues {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-3);
     margin-top: var(--space-1);
+    font-size: 0.8125rem;
   }
 
   .proxy-hint {

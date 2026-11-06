@@ -265,7 +265,7 @@
                 </span>
               </div>
               {#if session.current}
-                <span class="badge badge-accent">Current</span>
+                <span class="muted current-session">This session</span>
               {:else}
                 <button
                   type="button"
@@ -310,6 +310,11 @@
 />
 
 <style>
+  .current-session {
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+
   .profile-header {
     display: flex;
     align-items: center;

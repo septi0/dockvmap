@@ -12,6 +12,7 @@
     formatRelativeTime,
   } from "../../utils/format";
   import type { DashboardActivity } from "../../api/types/dashboard";
+  import type { ImageEvent } from "../../api/types/events";
   import type { DashboardCardProps } from "./types";
 
   let {
@@ -23,6 +24,12 @@
   }: DashboardCardProps<DashboardActivity> = $props();
 
   let events = $derived(data?.events ?? []);
+
+  function describe(event: ImageEvent): string {
+    const tags = event.data.tags.join(", ");
+
+    return event.type === "UPGRADE_AVAILABLE" ? `${tags} available` : `${formatAuditType(event.type)}: ${tags}`;
+  }
   let total = $derived(data?.total ?? 0);
 </script>
 
@@ -54,14 +61,7 @@
           >
             <span class="item-main">
               <span class="item-title">{event.imageName}</span>
-              <span
-                class="item-sub muted"
-                title="{formatAuditType(event.type)}: {event.data.tags.join(
-                  ', ',
-                )}"
-              >
-                {formatAuditType(event.type)}: {event.data.tags.join(", ")}
-              </span>
+              <span class="item-sub muted" title={describe(event)}>{describe(event)}</span>
             </span>
             <span class="item-time muted" title={formatDate(event.createdAt)}>
               {formatRelativeTime(event.createdAt)}

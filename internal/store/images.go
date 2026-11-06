@@ -223,13 +223,8 @@ func (s *Store) ImageStatusCounts(ctx context.Context) (model.ImageStatusCounts,
 	var counts model.ImageStatusCounts
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT
-			COUNT(*),
-			COALESCE(SUM(CASE WHEN update_available = 1 AND group_id IS NULL THEN 1 ELSE 0 END), 0)
-				+ COUNT(DISTINCT CASE WHEN update_available = 1 THEN group_id END),
-			COALESCE(SUM(CASE WHEN last_check_error IS NOT NULL THEN 1 ELSE 0 END), 0)
-		FROM images
-	`).Scan(&counts.Total, &counts.UpdateAvailable, &counts.FailedCheck)
+		SELECT COUNT(*), COUNT(DISTINCT registry_id) FROM images
+	`).Scan(&counts.Total, &counts.Registries)
 
 	if err != nil {
 		return model.ImageStatusCounts{}, fmt.Errorf("counting image statuses: %w", err)

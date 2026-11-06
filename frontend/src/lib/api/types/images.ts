@@ -32,7 +32,7 @@ export const IMAGE_STATUS_FILTERS = ['updateAvailable', 'failedCheck', 'pinned']
 
 export type ImageStatusFilter = (typeof IMAGE_STATUS_FILTERS)[number]
 
-export type ImageSortField = 'name' | 'lastChecked' | 'lastPulled' | 'status'
+export type ImageSortField = 'name' | 'lastPulled' | 'status'
 
 export interface ImageListParams extends SortParams<ImageSortField> {
   offset: number

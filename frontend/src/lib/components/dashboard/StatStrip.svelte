@@ -1,12 +1,10 @@
 <script lang="ts">
   import Boxes from "@lucide/svelte/icons/boxes";
-  import CircleArrowUp from "@lucide/svelte/icons/circle-arrow-up";
-  import CircleX from "@lucide/svelte/icons/circle-x";
-  import ArrowLeftRight from "@lucide/svelte/icons/arrow-left-right";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import HardDrive from "@lucide/svelte/icons/hard-drive";
   import StatTile from "./StatTile.svelte";
   import {
+    formatCount,
     formatDate,
     formatNumber,
     formatRelativeTime,
@@ -15,35 +13,20 @@
     DashboardHosts,
     DashboardSummary,
   } from "../../api/types/dashboard";
-  import type { ProxyMetrics } from "../../api/types/metrics";
   import type { DashboardSectionView } from "../../services/dashboard";
   import type { TagRefreshStatusState } from "../../services/tagRefreshStatus";
 
   let {
     summary,
-    metrics,
     hosts,
     tagRefresh,
   }: {
     summary: DashboardSectionView<DashboardSummary>;
-    metrics: DashboardSectionView<ProxyMetrics>;
     hosts: DashboardSectionView<DashboardHosts>;
     tagRefresh: TagRefreshStatusState;
   } = $props();
 
   let hostCounts = $derived(hosts.data);
-
-  let hostsCaption = $derived.by(() => {
-    if (!hostCounts) return "";
-
-    const parts = [];
-    const needAttention = hostCounts.total - hostCounts.online;
-
-    if (needAttention > 0) parts.push(`${needAttention} need attention`);
-    if (hostCounts.outdated > 0) parts.push(`${hostCounts.outdated} behind`);
-
-    return parts.join(" · ");
-  });
 
   let counts = $derived(summary.data);
   let loading = $derived(summary.loading);
@@ -116,51 +99,32 @@
     return parts.length > 0 ? parts.join("\n") : undefined;
   });
 
-  let week = $derived(metrics.data?.windows.last7d ?? null);
 </script>
 
 <div class="stat-strip" class:busy-dim={busy}>
   <StatTile
-    label="Tracked images"
+    label="Virtual images"
     value={counts ? formatNumber(counts.images.total) : "-"}
+    caption={counts && counts.images.total > 0
+      ? `on ${counts.images.registries} ${counts.images.registries === 1 ? "registry" : "registries"}`
+      : undefined}
     href="/images"
     {loading}
   >
     {#snippet icon()}<Boxes size={13} strokeWidth={1.75} />{/snippet}
   </StatTile>
 
-  <StatTile
-    label="Updates available"
-    value={counts ? formatNumber(counts.images.updateAvailable) : "-"}
-    tone={counts && counts.images.updateAvailable > 0 ? "accent" : "neutral"}
-    href="/updates"
-    {loading}
-  >
-    {#snippet icon()}<CircleArrowUp size={13} strokeWidth={1.75} />{/snippet}
-  </StatTile>
-
-  <StatTile
-    label="Failed checks"
-    value={counts ? formatNumber(counts.images.failedCheck) : "-"}
-    tone={counts && counts.images.failedCheck > 0 ? "danger" : "neutral"}
-    href="/images?status=failedCheck"
-    {loading}
-  >
-    {#snippet icon()}<CircleX size={13} strokeWidth={1.75} />{/snippet}
-  </StatTile>
-
-  <StatTile
-    label="Image pulls · 7d"
-    href="/images?sort=lastPulled&order=desc"
-    value={week ? formatNumber(week.manifestRequests) : "-"}
-    caption={week && week.upstreamFailures > 0
-      ? `${formatNumber(week.upstreamFailures)} upstream failures`
-      : undefined}
-    captionTone={week && week.upstreamFailures > 0 ? "danger" : "muted"}
-    {loading}
-  >
-    {#snippet icon()}<ArrowLeftRight size={13} strokeWidth={1.75} />{/snippet}
-  </StatTile>
+  {#if hostCounts && hostCounts.total > 0}
+    <StatTile
+      label="Hosts online"
+      value={`${hostCounts.online} / ${hostCounts.total}`}
+      caption={formatCount(hostCounts.runningContainers, "container")}
+      href="/hosts"
+      {loading}
+    >
+      {#snippet icon()}<HardDrive size={13} strokeWidth={1.75} />{/snippet}
+    </StatTile>
+  {/if}
 
   <StatTile
     label="Tag checks"
@@ -174,23 +138,6 @@
   >
     {#snippet icon()}<RefreshCw size={13} strokeWidth={1.75} />{/snippet}
   </StatTile>
-
-  {#if hostCounts && hostCounts.total > 0}
-    <StatTile
-      label="Hosts"
-      value={`${hostCounts.online} / ${hostCounts.total}`}
-      tone={hostCounts.online < hostCounts.total ? "warning" : "neutral"}
-      caption={hostsCaption || "all online"}
-      captionTone={hostsCaption ? "warning" : "muted"}
-      title={hostCounts.outdated > 0
-        ? "Running containers that aren't on the current version yet"
-        : undefined}
-      href="/hosts"
-      {loading}
-    >
-      {#snippet icon()}<HardDrive size={13} strokeWidth={1.75} />{/snippet}
-    </StatTile>
-  {/if}
 </div>
 
 <style>
