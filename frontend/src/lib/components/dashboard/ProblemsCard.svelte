@@ -33,7 +33,7 @@
 <DashboardCard title="Problems" count={hosts.length + distinct}>
   {#snippet icon()}<TriangleAlert size={16} strokeWidth={1.75} />{/snippet}
 
-  <CardBody {loading} {busy} hasError={!!error} empty={hosts.length === 0 && total === 0}>
+  <CardBody {loading} {busy} hasError={!!error} empty={hosts.length === 0 && distinct === 0}>
     {#snippet errorState()}
       <CardErrorState title="Couldn’t load problems" {error} {onRetry} />
     {/snippet}
