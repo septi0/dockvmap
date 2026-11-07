@@ -19,13 +19,9 @@
   import RefreshingIndicator from "../lib/components/RefreshingIndicator.svelte";
   import ImageGroupModal from "../lib/components/ImageGroupModal.svelte";
   import { listImages, IMAGES_PAGE_SIZE } from "../lib/api/images";
-  import CopyButton from "../lib/components/CopyButton.svelte";
   import StateIndicator from "../lib/components/StateIndicator.svelte";
-  import { getPullInfo } from "../lib/api/metrics";
   import { listImageRollouts } from "../lib/api/hosts";
-  import type { PullInfo } from "../lib/api/types/metrics";
   import type { ImageRollout } from "../lib/api/types/hosts";
-  import { pullCommand } from "../lib/utils/pullInfo";
   import { getImageGroup, IMAGE_GROUPS_MAX_LIMIT, listImageGroups } from "../lib/api/imageGroups";
   import { listRegistries } from "../lib/api/registries";
   import type { Registry } from "../lib/api/types/registries";
@@ -70,7 +66,6 @@
   const ROLLOUT_REFRESH_INTERVAL_MS = 15_000;
 
   let groups = $state<ImageGroup[]>([]);
-  let pullInfo = $state<PullInfo | null>(null);
   let rollouts = $state(new Map<number, ImageRollout>());
   let managedGroup = $state<ImageGroup | null>(null);
   let usedRegistries = $state<Registry[]>([]);
@@ -162,11 +157,6 @@
       intervalMs: ROLLOUT_REFRESH_INTERVAL_MS,
     }).start(),
   );
-  onMount(() => {
-    getPullInfo()
-      .then((info) => (pullInfo = info))
-      .catch(() => {});
-  });
   onMount(() => tagRefreshStatus.watch());
   onMount(() =>
     tagRefreshStatus.onCompleted(() => {
@@ -357,7 +347,6 @@
               direction={view.sortDirection("status")}
               onSort={() => view.toggleSort("status")}
             />
-            {#if pullInfo}<th class="phone-hidden" aria-label="Copy pull command"></th>{/if}
           </tr>
         </thead>
         <tbody>
@@ -431,15 +420,6 @@
                   />
                 {/if}
               </td>
-              {#if pullInfo}
-                <td class="phone-hidden copy-cell row-reveal">
-                  <CopyButton
-                    text={pullCommand(pullInfo, image.name)}
-                    label={`Copy pull command for ${image.name}`}
-                    copiedMessage="Pull command copied to clipboard."
-                  />
-                </td>
-              {/if}
             </tr>
           {/each}
         </tbody>
@@ -489,11 +469,6 @@
     align-items: center;
     gap: var(--space-1);
     white-space: nowrap;
-  }
-
-  .copy-cell {
-    width: 1%;
-    text-align: right;
   }
 
   .row-link {
