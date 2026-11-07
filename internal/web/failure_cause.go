@@ -24,6 +24,8 @@ func recognizeFailure(raw string) (failureCause, bool) {
 	switch {
 	case strings.Contains(raw, "no such host"):
 		cause.phrase, cause.hint = "couldn't be found", "Check its address."
+	case strings.Contains(raw, "server misbehaving"):
+		cause.phrase, cause.hint = "couldn't be looked up", "Check the DNS server."
 	case strings.Contains(raw, "connection refused"):
 		cause.phrase, cause.hint = "refused the connection", "Check that it's running."
 	case containsAny(raw, "i/o timeout", "deadline exceeded", "Client.Timeout", "TLS handshake timeout"):

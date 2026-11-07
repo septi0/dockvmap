@@ -196,7 +196,6 @@
 
   .needs-attention {
     grid-template-columns: 1fr;
-    align-items: start;
   }
 
   .needs-attention.with-hosts {

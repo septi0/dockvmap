@@ -51,6 +51,8 @@ func TestFailureMessagesSayTheCauseInPlainWords(t *testing.T) {
 	}{
 		{"unknown host", service.Failure{Source: service.FailureSourceRefresh, Detail: "myapp", Error: `Get "https://registry.example.com/v2/apps/myapp/tags/list?n=1000": dial tcp: lookup registry.example.com: no such host`},
 			"myapp: registry.example.com couldn't be found. Check its address."},
+		{"dns server failing", service.Failure{Source: service.FailureSourceRefresh, Detail: "nextcloud", Error: `requesting registry: Get "https://ghcr.io/v2/nextcloud-releases/aio-nextcloud/tags/list?n=1000": dial tcp: lookup ghcr.io on 127.0.0.11:53: server misbehaving`},
+			"nextcloud: ghcr.io couldn't be looked up. Check the DNS server."},
 		{"smtp timeout", service.Failure{Source: service.FailureSourceEmail, Error: "dialing smtp server 192.0.2.25:587: dial tcp 192.0.2.25:587: i/o timeout"},
 			"Email not sent: the SMTP server 192.0.2.25:587 didn't answer. Check that it's running and reachable."},
 		{"smtp login", service.Failure{Source: service.FailureSourceEmail, Error: "authenticating: 535 5.7.8 bad credentials"},

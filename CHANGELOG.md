@@ -2,6 +2,12 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## Unreleased
+
+- **Problems shows what still fails**: a failed tag check leaves the dashboard's Problems card once that image checks fine again, so a short DNS or network outage no longer fills it for 30 days. System › Failures still keeps every failure.
+- **DNS failures in plain words**: a tag check whose DNS server didn't answer now reads "ghcr.io couldn't be looked up. Check the DNS server." instead of the raw Go error.
+- **Dashboard**: To redeploy and Updates available have the same height when side by side.
+
 ## v1.12.1 (2026-11-07)
 
 - **Dashboard**: To redeploy and Updates available share the first row, and Problems has a full-width row of its own below them, so each card has room for its rows: a stack's Copy command sits next to its containers, and a failure fits on one line.

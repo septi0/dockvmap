@@ -84,6 +84,10 @@ func (s *Store) ListLatestDistinctBackgroundFailures(ctx context.Context, limit 
 			FROM background_failures
 			GROUP BY source, detail, error
 		) latest ON latest.id = f.id
+		-- a tag check failure counts only while that image's last check still fails
+		WHERE f.source != 'refresh' OR EXISTS (
+			SELECT 1 FROM images i WHERE i.name = f.detail AND i.last_check_error IS NOT NULL
+		)
 		ORDER BY f.occurred_at DESC, f.id DESC
 		LIMIT ?
 	`, limit)
