@@ -22,6 +22,7 @@ var (
 	ErrImageNotFound         = errors.New("image not found")
 	ErrTagUnavailable        = errors.New("image tag is not available")
 	ErrTagRefreshFailed      = errors.New("tag refresh failed")
+	ErrTagChecksFailed       = errors.New("images failed their tag check")
 	ErrUpstreamNotFound      = errors.New("upstream repository not found")
 	ErrUpstreamUnauthorized  = errors.New("upstream repository requires authentication")
 	ErrUpstreamUnavailable   = errors.New("upstream registry unavailable")
@@ -29,10 +30,7 @@ var (
 	ErrFailedToRegisterEvent = errors.New("failed to register event")
 )
 
-var (
-	repositoryNameRE = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$`)
-	tagRE            = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
-)
+var repositoryNameRE = regexp.MustCompile(`^[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*$`)
 
 type imageStore interface {
 	BeginTx(ctx context.Context) (store.Transaction, error)
@@ -198,7 +196,7 @@ func (i *Images) Create(ctx context.Context, img model.Image, availableTags []st
 		return fmt.Errorf("%w: registry must be a valid host", ErrInvalidImage)
 	}
 
-	if !tagRE.MatchString(img.Tag) {
+	if !oci.ValidTag(img.Tag) {
 		return fmt.Errorf("%w: tag must be a valid tag", ErrInvalidImage)
 	}
 
@@ -224,7 +222,7 @@ func (i *Images) Create(ctx context.Context, img model.Image, availableTags []st
 		availableTags = i.tagFilter.Apply(tags)
 	}
 
-	if !containsTag(availableTags, img.Tag) {
+	if !slices.Contains(availableTags, img.Tag) {
 		return fmt.Errorf("%w: %q", ErrTagUnavailable, img.Tag)
 	}
 
@@ -338,7 +336,7 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string, sourc
 		return fmt.Errorf("%w: tag is required", ErrInvalidImage)
 	}
 
-	if !tagRE.MatchString(tag) {
+	if !oci.ValidTag(tag) {
 		return fmt.Errorf("%w: tag must be a valid tag", ErrInvalidImage)
 	}
 
@@ -689,10 +687,6 @@ func (i *Images) MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, erro
 	}
 
 	return marked, nil
-}
-
-func containsTag(tags []string, tag string) bool {
-	return slices.Contains(tags, tag)
 }
 
 func hasImageTag(tags []model.ImageTag, tag string) bool {

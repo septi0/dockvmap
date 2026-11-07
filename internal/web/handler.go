@@ -227,7 +227,7 @@ func New(deps Dependencies) (http.Handler, error) {
 
 	mux.HandleFunc("/health", w.apiHealth)
 
-	mux.Handle("/api/", http.StripPrefix("/api", w.withRequestInfo(w.requireAuth(apiMux))))
+	mux.Handle("/api/", http.StripPrefix("/api", w.withRequestInfo(requireAPIHeader(w.requireAuth(apiMux)))))
 
 	w.registerFrontendRoutes(mux)
 

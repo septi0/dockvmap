@@ -2,6 +2,16 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.13.0 (2026-11-07)
+
+- **Safer web API**: requests that change data must carry the `X-DockVMap` header, which the web UI sends. A page on another site, or on another app under the same domain, can no longer make changes with your login. It works the same on localhost, a LAN address, behind a reverse proxy, and over HTTP or HTTPS.
+- **Audit log says what changed**: a Details column shows the image and its old and new tag, the host, token, registry or pushed `repository:tag`, and opening an entry lists its data as plain rows instead of JSON.
+- **Tag check failures in one line**: System › Tasks shows "2 of 42 images failed their tag check" with a link to Failures, instead of every image's raw error. `-refresh-tags` prints the same summary, with each failure in the log. While a task runs, the Tasks list keeps itself up to date and shows the result when it finishes.
+- **Tag activity shows a new upgrade once**: the page and an image's Upstream tag activity no longer list "Tag added" next to "Upgrade available" for the same tag, like the dashboard. Filtering by "Tag added" still lists every added tag.
+- **Clearer ages**: container ages and task schedules show the largest unit and the next one, so "6d 4s" is now "6d". Counts of 1,000 or more get a thousands separator everywhere.
+
+**Upgrade note:** scripts that call DockVMap's web API (`/api/...`) with POST, PUT or DELETE must add the header `X-DockVMap: 1`. Reading with GET is unchanged, and `docker pull`/`push` through the proxy is not affected.
+
 ## v1.12.2 (2026-11-07)
 
 - **Problems shows what still fails**: a failed tag check leaves the dashboard's Problems card once that image checks fine again, so a short DNS or network outage no longer fills it for 30 days. System › Failures still keeps every failure.

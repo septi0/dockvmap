@@ -6,6 +6,7 @@ export interface AuditLog {
   userAgent?: string
   userId?: number
   username?: string
+  summary?: string
   createdAt: string
 }
 

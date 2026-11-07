@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/septi0/dockvmap/internal/model"
+	"github.com/septi0/dockvmap/internal/oci"
 	"github.com/septi0/dockvmap/internal/store"
 )
 
@@ -550,7 +551,7 @@ func normalizeGroupInput(input ImageGroupInput) (ImageGroupInput, error) {
 		return input, fmt.Errorf("%w: a group needs at least %d images", ErrInvalidImageGroup, imageGroupMinImages)
 	}
 
-	if !tagRE.MatchString(input.Tag) {
+	if !oci.ValidTag(input.Tag) {
 		return input, fmt.Errorf("%w: a shared tag is required", ErrInvalidImageGroup)
 	}
 

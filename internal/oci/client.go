@@ -455,6 +455,12 @@ func AcceptsIndex(accept []string) bool {
 	return false
 }
 
+var tagRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
+
+func ValidTag(tag string) bool {
+	return tagRE.MatchString(tag)
+}
+
 func IsDigest(digest string) bool {
 	algorithm, value, found := strings.Cut(digest, ":")
 

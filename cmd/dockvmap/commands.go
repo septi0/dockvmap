@@ -58,11 +58,7 @@ func cmdRefreshTags(ctx context.Context, db *store.Store, tagFilter *tagfilter.F
 
 	fmt.Printf("Refreshed tags for %d image(s).\n", refreshed)
 
-	if err != nil {
-		return fmt.Errorf("some images failed to refresh: %w", err)
-	}
-
-	return nil
+	return err
 }
 
 func cmdBackup(ctx context.Context, dbPath, credentialEncryptionKey, destPath string, cfg *config.Config, dataPath string) error {

@@ -106,7 +106,7 @@
     label="Virtual images"
     value={counts ? formatNumber(counts.images.total) : "-"}
     caption={counts && counts.images.total > 0
-      ? `on ${counts.images.registries} ${counts.images.registries === 1 ? "registry" : "registries"}`
+      ? `on ${formatCount(counts.images.registries, "registry", "registries")}`
       : undefined}
     href="/images"
     {loading}

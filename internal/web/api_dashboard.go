@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"net/http"
-	"slices"
 	"sync"
 	"time"
 
@@ -15,7 +14,6 @@ const (
 	dashboardBehindLimit   = 200
 	dashboardUpdatesLimit  = 5
 	dashboardActivityLimit = 5
-	dashboardActivityFetch = 20
 	dashboardIssuesLimit   = 5
 	dashboardIssuesCounted = 100
 )
@@ -242,7 +240,7 @@ func (w *Web) dashboardIssues(ctx context.Context) dashboardSection[dashboardIss
 
 func (w *Web) dashboardActivity(ctx context.Context) dashboardSection[dashboardActivityData] {
 	filters := model.ImageEventListFilters{
-		Pagination: model.Pagination{Offset: 0, Limit: dashboardActivityFetch},
+		Pagination: model.Pagination{Offset: 0, Limit: dashboardActivityLimit},
 	}
 
 	events, err := w.events.List(ctx, filters)
@@ -257,33 +255,7 @@ func (w *Web) dashboardActivity(ctx context.Context) dashboardSection[dashboardA
 		return dashboardError[dashboardActivityData]("failed to load tag activity")
 	}
 
-	events = withoutAddedUpgrades(events)
-
-	return dashboardData(dashboardActivityData{Events: events[:min(len(events), dashboardActivityLimit)], Total: total})
-}
-
-func withoutAddedUpgrades(events []model.ImageEvent) []model.ImageEvent {
-	result := make([]model.ImageEvent, 0, len(events))
-
-	for _, event := range events {
-		if event.Type != service.EventTypeTagAdded || !slices.ContainsFunc(events, func(other model.ImageEvent) bool {
-			return other.Type == service.EventTypeUpgradeAvailable && other.ImageID == event.ImageID && containsAll(other.Data.Tags, event.Data.Tags)
-		}) {
-			result = append(result, event)
-		}
-	}
-
-	return result
-}
-
-func containsAll(set, items []string) bool {
-	for _, item := range items {
-		if !slices.Contains(set, item) {
-			return false
-		}
-	}
-
-	return true
+	return dashboardData(dashboardActivityData{Events: events, Total: total})
 }
 
 func (w *Web) dashboardMetrics(ctx context.Context) dashboardSection[proxyMetricsResponse] {

@@ -4,6 +4,7 @@
   import Button from "../Button.svelte";
   import TagFamilyPicker from "../TagFamilyPicker.svelte";
   import type { TagGroup } from "../../api/types/images";
+  import { formatCount } from "../../utils/format";
 
   let {
     registryLabel,
@@ -40,8 +41,7 @@
 </p>
 
 <p class="discovery-summary">
-  {tagCount}
-  {tagCount === 1 ? "tag" : "tags"} found
+  {formatCount(tagCount, "tag")} found
   {#if ignoredCount > 0}
     &middot; {ignoredCount} filtered out
   {/if}

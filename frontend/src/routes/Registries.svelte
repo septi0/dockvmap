@@ -15,6 +15,7 @@
   import { toast } from "../lib/services/toast";
   import type { Registry } from "../lib/api/types/registries";
   import { registryOptions } from "../lib/utils/registries";
+  import { formatCount } from "../lib/utils/format";
 
   let registries = $state<Registry[]>([]);
   let loading = $state(true);
@@ -127,7 +128,7 @@
                   {#if registry.failedChecks > 0}
                     <span
                       class="check-error-icon"
-                      title={`${registry.failedChecks} ${registry.failedChecks === 1 ? "image" : "images"} failed the last tag check`}
+                      title={`${formatCount(registry.failedChecks, "image")} failed the last tag check`}
                       aria-label={`${registry.failedChecks} failed tag checks`}
                     >
                       <CircleAlert size={14} strokeWidth={2} />
@@ -140,7 +141,7 @@
                 {#if registry.imageCount > 0}
                   <p class="phone-only registry-note">
                     <a class="row-link accent" href={imagesHref(registry)} use:link
-                      >{registry.imageCount} virtual {registry.imageCount === 1 ? "image" : "images"}</a
+                      >{formatCount(registry.imageCount, "virtual image")}</a
                     >
                   </p>
                 {/if}

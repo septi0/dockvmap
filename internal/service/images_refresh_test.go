@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 
@@ -12,6 +13,33 @@ type listedTags []string
 
 func (l listedTags) ListTags(context.Context, string, string) ([]string, error) {
 	return l, nil
+}
+
+type unreachableRepository string
+
+func (u unreachableRepository) ListTags(_ context.Context, _ string, repository string) ([]string, error) {
+	if repository == string(u) {
+		return nil, errors.New("lookup registry.test: no such host")
+	}
+
+	return []string{"v1", "v2"}, nil
+}
+
+func TestRefreshAllSummarizesFailedTagChecks(t *testing.T) {
+	f, _, failures := newDigestFixture(t)
+	f.addImage("web", "v1", "v1", "v2")
+	f.addImage("api", "v1", "v1", "v2")
+	f.images.tagLister = unreachableRepository("stack/api")
+
+	refreshed, err := f.images.RefreshAll(f.ctx)
+
+	if refreshed != 1 || !errors.Is(err, ErrTagChecksFailed) || err.Error() != "1 of 2 images failed their tag check" {
+		t.Fatalf("RefreshAll = %d, %v; want 1 and \"1 of 2 images failed their tag check\"", refreshed, err)
+	}
+
+	if !slices.ContainsFunc(failures.entries, func(e string) bool { return e == "refresh api: lookup registry.test: no such host" }) {
+		t.Errorf("failures = %q, want the api failure recorded on its own", failures.entries)
+	}
 }
 
 func TestRefreshReportsACurrentTagThatIsGone(t *testing.T) {

@@ -74,15 +74,15 @@ export function formatDuration(seconds: number): string {
     ['s', 1],
   ]
 
-  const parts: string[] = []
-  let remaining = Math.round(seconds)
+  const rounded = Math.max(1, Math.round(seconds))
+  const largest = units.findIndex(([, size]) => rounded >= size)
+  const [suffix, size] = units[largest]
+  const parts = [`${Math.floor(rounded / size)}${suffix}`]
+  const next = units[largest + 1]
 
-  for (const [suffix, size] of units) {
-    if (remaining >= size) {
-      parts.push(`${Math.floor(remaining / size)}${suffix}`)
-      remaining %= size
-    }
-    if (parts.length === 2) break
+  if (next) {
+    const amount = Math.floor((rounded % size) / next[1])
+    if (amount > 0) parts.push(`${amount}${next[0]}`)
   }
 
   return parts.join(' ')
@@ -100,8 +100,8 @@ export function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-export function formatCount(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? '' : 's'}`
+export function formatCount(count: number, noun: string, plural = `${noun}s`): string {
+  return `${formatNumber(count)} ${count === 1 ? noun : plural}`
 }
 
 export function allCount(count: number): string {

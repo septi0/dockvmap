@@ -9,18 +9,16 @@
     valueStyle = "number",
     href,
     caption,
-    captionTone = "muted",
     loading = false,
     title,
     icon,
   }: {
     label: string;
     value: string | number;
-    tone?: "neutral" | "accent" | "danger" | "warning";
+    tone?: "neutral" | "accent" | "warning";
     valueStyle?: "number" | "badge";
     href?: string;
     caption?: string;
-    captionTone?: "muted" | "danger" | "warning";
     loading?: boolean;
     title?: string;
     icon?: Snippet;
@@ -37,10 +35,10 @@
   {:else if valueStyle === "badge"}
     <span class="tile-badge tone-{tone}">{value}</span>
   {:else}
-    <span class="tile-value tone-{tone}">{value}</span>
+    <span class="tile-value">{value}</span>
   {/if}
   {#if caption && !loading}
-    <span class="tile-caption caption-{captionTone}">{caption}</span>
+    <span class="tile-caption">{caption}</span>
   {/if}
 {/snippet}
 
@@ -97,18 +95,6 @@
     letter-spacing: -0.02em;
   }
 
-  .tile-value.tone-accent {
-    color: var(--color-accent);
-  }
-
-  .tile-value.tone-danger {
-    color: var(--color-danger);
-  }
-
-  .tile-value.tone-warning {
-    color: var(--color-warning);
-  }
-
   .tile-badge {
     align-self: flex-start;
     margin: var(--space-1) 0;
@@ -131,25 +117,9 @@
     color: var(--color-warning);
   }
 
-  .tile-badge.tone-danger {
-    background: var(--color-danger-bg);
-    color: var(--color-danger);
-  }
-
   .tile-caption {
     font-size: 0.75rem;
-  }
-
-  .caption-muted {
     color: var(--color-text-muted);
-  }
-
-  .caption-danger {
-    color: var(--color-danger);
-  }
-
-  .caption-warning {
-    color: var(--color-warning);
   }
 
   .tile-skeleton {

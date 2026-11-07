@@ -11,6 +11,7 @@
   import { AUDIT_TYPES } from "../../api/types/audit";
   import type { AuditLog } from "../../api/types/audit";
   import {
+    capitalize,
     formatDate,
     formatAuditType,
     toRfc3339DayStart,
@@ -46,6 +47,28 @@
     }
 
     return entry.username ?? "System";
+  }
+
+  function dataLabel(key: string): string {
+    return capitalize(key.replace(/([A-Z])/g, " $1").toLowerCase());
+  }
+
+  function dataValue(value: unknown): string {
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (Array.isArray(value)) return value.join(", ");
+    if (value && typeof value === "object") {
+      return Object.entries(value)
+        .map(([key, nested]) => `${dataLabel(key)}: ${dataValue(nested)}`)
+        .join(", ");
+    }
+
+    return String(value);
+  }
+
+  function dataRows(data: Record<string, unknown> | undefined): [string, string][] {
+    return Object.entries(data ?? {})
+      .filter(([, value]) => value !== null && value !== "")
+      .map(([key, value]) => [dataLabel(key), dataValue(value)]);
   }
 
   function selectRow(event: MouseEvent, entry: AuditLog) {
@@ -86,7 +109,7 @@
   error={view.error}
   empty={view.items.length === 0}
   emptyMessage="No audit events yet."
-  columns={4}
+  columns={5}
 >
   <div class="card table-wrap">
     <table class="table">
@@ -94,6 +117,7 @@
         <tr>
           <th>Time</th>
           <th>Event</th>
+          <th class="phone-hidden">Details</th>
           <th>User</th>
           <th>IP</th>
         </tr>
@@ -110,7 +134,13 @@
                 {formatDate(entry.createdAt)}
               </button>
             </td>
-            <td>{formatAuditType(entry.type)}</td>
+            <td>
+              {formatAuditType(entry.type)}
+              {#if entry.summary}
+                <div class="phone-only muted summary">{entry.summary}</div>
+              {/if}
+            </td>
+            <td class="phone-hidden summary">{entry.summary ?? ""}</td>
             <td>{actor(entry)}</td>
             <td>{entry.ip ?? "-"}</td>
           </tr>
@@ -150,11 +180,9 @@
       {/if}
     </DetailRow>
 
-    {#if selectedEntry.data && Object.keys(selectedEntry.data).length > 0}
-      <DetailRow label="Details">
-        <pre class="data">{JSON.stringify(selectedEntry.data, null, 2)}</pre>
-      </DetailRow>
-    {/if}
+    {#each dataRows(selectedEntry.data) as [label, value] (label)}
+      <DetailRow {label}>{value}</DetailRow>
+    {/each}
   {/if}
 </Modal>
 
@@ -175,17 +203,8 @@
     border-radius: 2px;
   }
 
-  .data {
-    margin: 0;
-    padding: var(--space-3);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-x: auto;
+  .summary {
+    overflow-wrap: anywhere;
   }
 
   .ua-line {

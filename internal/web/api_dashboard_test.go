@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"testing"
 
 	"github.com/septi0/dockvmap/internal/config"
@@ -246,36 +245,5 @@ func TestDashboardUpdatesCountsGroupsAsOneRow(t *testing.T) {
 
 	if len(section.Data.Groups) != 2 || len(section.Data.Images) != 1 || section.Data.Total != 3 {
 		t.Fatalf("data = %+v", section.Data)
-	}
-}
-
-func TestDashboardActivityShowsANewUpgradeTagOnce(t *testing.T) {
-	tags := func(t ...string) model.TagsEventData { return model.TagsEventData{Tags: t} }
-
-	w := &Web{
-		images:              fakeImages{},
-		failures:            fakeFailures{},
-		proxyMetricsHistory: fakeMetrics{},
-		hosts:               fakeHosts{},
-		cfg:                 &config.Config{ProxyServerListen: ":5000"},
-		events: fakeEvents{list: []model.ImageEvent{
-			{ID: 6, ImageID: 1, Type: service.EventTypeUpgradeAvailable, Data: tags("v2")},
-			{ID: 5, ImageID: 1, Type: service.EventTypeTagAdded, Data: tags("v2")},
-			{ID: 4, ImageID: 2, Type: service.EventTypeTagAdded, Data: tags("v9", "latest-rc")},
-			{ID: 3, ImageID: 2, Type: service.EventTypeUpgradeAvailable, Data: tags("v9")},
-			{ID: 2, ImageID: 3, Type: service.EventTypeTagRemoved, Data: tags("old")},
-		}},
-	}
-
-	resp := dashboardFor(t, w)
-
-	var ids []int64
-
-	for _, event := range resp.Activity.Data.Events {
-		ids = append(ids, event.ID)
-	}
-
-	if !slices.Equal(ids, []int64{6, 4, 3, 2}) || resp.Activity.Data.Total != 5 {
-		t.Errorf("events = %v (total %d), want the tag added with its upgrade hidden, others kept", ids, resp.Activity.Data.Total)
 	}
 }

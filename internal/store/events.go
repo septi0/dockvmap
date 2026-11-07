@@ -31,6 +31,16 @@ func tagsEventListWhere(filters model.ImageEventListFilters) (string, []any) {
 
 	if filters.Type != "" {
 		b.add("ie.type = ?", filters.Type)
+	} else {
+		// an added tag that is also the new upgrade shows once, as the upgrade
+		b.add(`NOT (ie.type = 'TAG_ADDED' AND EXISTS (
+			SELECT 1 FROM tags_events u
+			WHERE u.image_id = ie.image_id AND u.type = 'UPGRADE_AVAILABLE'
+				AND NOT EXISTS (
+					SELECT 1 FROM json_each(ie.data, '$.tags') added
+					WHERE added.value NOT IN (SELECT value FROM json_each(u.data, '$.tags'))
+				)
+		))`)
 	}
 
 	if filters.ImageID != 0 {

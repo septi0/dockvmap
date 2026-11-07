@@ -1,11 +1,13 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
+  import { link } from "svelte-spa-router";
   import Play from "@lucide/svelte/icons/play";
   import AsyncState from "../AsyncState.svelte";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { getSystemTasks, runSystemTask } from "../../api/system";
   import { errorMessage } from "../../api/client";
   import { toast } from "../../services/toast";
+  import { createPoller } from "../../utils/poller";
   import type { SystemTask } from "../../api/types/system";
   import {
     formatDate,
@@ -20,7 +22,15 @@
   let actionError = $state<string | null>(null);
   let running = $state<Set<string>>(new Set());
 
+  const POLL_INTERVAL_MS = 2000;
+
+  const poller = createPoller(async () => {
+    tasks = (await getSystemTasks()).tasks;
+    return tasks.some((task) => task.running);
+  }, POLL_INTERVAL_MS);
+
   onMount(load);
+  onDestroy(() => poller.stop());
 
   async function load() {
     loading = true;
@@ -28,6 +38,7 @@
 
     try {
       tasks = (await getSystemTasks()).tasks;
+      if (tasks.some((task) => task.running)) poller.start();
     } catch (err) {
       error = errorMessage(err, "Failed to load background tasks");
     } finally {
@@ -43,7 +54,7 @@
     try {
       await runSystemTask(task.name);
       toast.success(`Triggered ${task.name}.`);
-      setTimeout(load, 2000);
+      poller.start();
     } catch (err) {
       actionError = errorMessage(err, `Failed to trigger ${task.name}`);
     } finally {
@@ -112,6 +123,9 @@
                   <div class="last-error" title={task.lastError}>
                     {task.lastError}
                   </div>
+                  {#if task.name === "image-tag-refresh"}
+                    <a class="link small" href="/system/failures?source=refresh" use:link>View failures</a>
+                  {/if}
                 {:else if task.lastCount != null && task.lastCount > 0}
                   <div class="muted small">{task.lastCount} affected</div>
                 {:else}

@@ -30,6 +30,7 @@
     type ImageGroupSuggestion,
   } from "../lib/utils/imageGroupSuggestions";
   import { createListView } from "../lib/utils/listView.svelte";
+  import { formatCount } from "../lib/utils/format";
 
   const DISMISSED_KEY = "dockvmap-dismissed-group-suggestions";
   const VISIBLE_MEMBERS = 4;
@@ -277,7 +278,7 @@
                   {#if failed > 0}
                     <span
                       class="check-error-icon"
-                      title={`${failed} ${failed === 1 ? "image" : "images"} failed the last tag check`}
+                      title={`${formatCount(failed, "image")} failed the last tag check`}
                       aria-label={`${failed} failed tag checks`}
                     >
                       <CircleAlert size={14} strokeWidth={2} />

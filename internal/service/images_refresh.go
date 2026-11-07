@@ -127,14 +127,6 @@ type RefreshTagsOpts struct {
 	Tags          []string // already fetched and filtered; if nil, tags are fetched and filtered internally
 }
 
-func (i *Images) commitUpdateAvailable(ctx context.Context, tx store.Transaction, image *model.Image, updateAvailable bool, updateAvailableTag string) error {
-	if err := i.writeUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
-		return err
-	}
-
-	return tx.Commit()
-}
-
 func (i *Images) writeUpdateAvailable(ctx context.Context, tx store.DBTX, image *model.Image, updateAvailable bool, updateAvailableTag string) error {
 	var targetTag *string
 	if updateAvailableTag != "" {
@@ -375,7 +367,11 @@ func (i *Images) RefreshAvailableTags(ctx context.Context, imageId int64, option
 
 	updateAvailable, updateAvailableTag := effectiveUpdateAvailable(image.Pinned, tags, image.Tag)
 
-	if err := i.commitUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
+	if err := i.writeUpdateAvailable(ctx, tx, image, updateAvailable, updateAvailableTag); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 
@@ -458,8 +454,7 @@ func (i *Images) RefreshAll(ctx context.Context) (int, error) {
 
 	var afterID int64
 	refreshed := 0
-
-	var refreshErrors []error
+	failed := 0
 
 	for {
 		images, err := i.store.ListImagesAfterID(ctx, afterID, batchSize)
@@ -495,12 +490,17 @@ func (i *Images) RefreshAll(ctx context.Context) (int, error) {
 				refreshed++
 
 			default:
-				refreshErrors = append(refreshErrors, fmt.Errorf("refreshing image %d: %w", image.ID, err))
+				failed++
+				slog.Warn("tag check failed", "image", image.Name, "error", err)
 			}
 		}
 	}
 
-	return refreshed, errors.Join(refreshErrors...)
+	if failed > 0 {
+		return refreshed, fmt.Errorf("%d of %d %w", failed, refreshed+failed, ErrTagChecksFailed)
+	}
+
+	return refreshed, nil
 }
 
 func tagSetHash(tags []string) string {

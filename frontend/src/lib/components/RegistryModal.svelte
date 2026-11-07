@@ -16,6 +16,7 @@
   } from "../api/registries";
   import { errorMessage } from "../api/client";
   import type { Registry } from "../api/types/registries";
+  import { formatCount } from "../utils/format";
 
   let {
     open,
@@ -246,7 +247,7 @@
     {#if isEdit && !managed && inUse}
       <p class="section-hint muted in-use-note">
         Used by <a class="row-link accent" href={`/images?registry=${registry?.id}`} use:link
-          >{registry?.imageCount} virtual {registry?.imageCount === 1 ? "image" : "images"}</a
+          >{formatCount(registry?.imageCount ?? 0, "virtual image")}</a
         >. Delete them first to delete this registry.
       </p>
     {/if}

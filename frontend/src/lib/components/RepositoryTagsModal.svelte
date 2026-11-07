@@ -11,6 +11,7 @@
   import { writeListQuery } from "../utils/listQuery";
   import type { TagGroup, DiscoveryResult } from "../api/types/images";
   import type { Registry, RegistryRepository } from "../api/types/registries";
+  import { formatCount } from "../utils/format";
 
   let {
     registry,
@@ -91,8 +92,7 @@
       </p>
     {:else if loaded}
       <p class="muted summary">
-        {tagCount}
-        {tagCount === 1 ? "tag" : "tags"} found
+        {formatCount(tagCount, "tag")} found
         {#if ignoredCount > 0}
           &middot; {ignoredCount} filtered out
         {/if}

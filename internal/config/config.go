@@ -8,14 +8,13 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
-)
 
-var virtualTagRE = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
+	"github.com/septi0/dockvmap/internal/oci"
+)
 
 type Config struct {
 	VirtualTag              string                 `yaml:"virtual_tag" env:"DOCKVMAP_VIRTUAL_TAG" default:"current"`
@@ -174,7 +173,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("blob_cache.max_size: %w", err)
 	}
 
-	if !virtualTagRE.MatchString(c.VirtualTag) {
+	if !oci.ValidTag(c.VirtualTag) {
 		return fmt.Errorf("invalid virtual_tag %q: must be a valid image tag", c.VirtualTag)
 	}
 

@@ -32,7 +32,7 @@ async function request<T>(
     res = await fetch(`/api${path}`, {
       method,
       credentials: 'include',
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      headers: { 'X-DockVMap': '1', ...(body !== undefined && { 'Content-Type': 'application/json' }) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch {

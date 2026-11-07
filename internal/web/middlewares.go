@@ -28,6 +28,23 @@ func (w *Web) withRequestInfo(next http.Handler) http.Handler {
 	})
 }
 
+const apiRequestHeader = "X-DockVMap"
+
+func requireAPIHeader(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if r.Header.Get(apiRequestHeader) == "" {
+				apiError(rw, http.StatusForbidden, "requests that change data need the "+apiRequestHeader+" header; the DockVMap web UI sends it")
+				return
+			}
+		}
+
+		next.ServeHTTP(rw, r)
+	})
+}
+
 var publicAPIPaths = map[string]bool{
 	"/setup":  true,
 	"/login":  true,

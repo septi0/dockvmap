@@ -9,8 +9,8 @@ import (
 )
 
 type listAuditLogsResponse struct {
-	AuditLogs []model.AuditLog `json:"auditLogs"`
-	Total     int64            `json:"total"`
+	AuditLogs []auditLogResponse `json:"auditLogs"`
+	Total     int64              `json:"total"`
 }
 
 const maxAuditLogsLimit = 200
@@ -57,7 +57,7 @@ func (w *Web) apiListAuditLogs(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	apiJSON(rw, http.StatusOK, listAuditLogsResponse{
-		AuditLogs: logs,
+		AuditLogs: newAuditLogResponses(logs),
 		Total:     total,
 	})
 }

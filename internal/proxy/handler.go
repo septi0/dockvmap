@@ -258,16 +258,27 @@ func (p *Proxy) serveVirtualPath(w http.ResponseWriter, r *http.Request, img *mo
 	switch parsed.kind {
 	case pathManifest:
 		p.metrics.manifestRequests.Add(1)
-		p.handleManifest(w, r, parsed.name, parsed.ref)
 	case pathBlob:
 		p.metrics.blobRequests.Add(1)
-		p.handleBlob(w, r, parsed.name, parsed.ref)
-	case pathTags:
-		if img == nil {
+	}
+
+	if img == nil {
+		if parsed.kind == pathManifest || parsed.kind == pathBlob {
+			slog.Info("virtual image not found", "method", r.Method, "name", parsed.name)
+			writeOCIError(w, http.StatusNotFound, "NAME_UNKNOWN", fmt.Sprintf("virtual image %q not configured", parsed.name))
+		} else {
 			http.NotFound(w, r)
-			return
 		}
 
+		return
+	}
+
+	switch parsed.kind {
+	case pathManifest:
+		p.handleManifest(w, r, img, parsed.ref)
+	case pathBlob:
+		p.handleBlob(w, r, img, parsed.ref)
+	case pathTags:
 		p.writeVirtualTagList(w, r, img)
 	default:
 		http.NotFound(w, r)
@@ -340,23 +351,8 @@ func (p *Proxy) authenticate(r *http.Request) *model.ProxyToken {
 	return token
 }
 
-func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, name, reference string) {
-	img, err := p.resolveCache.resolve(r.Context(), name, p.images.Resolve)
-
-	if err != nil {
-		slog.Error("manifest lookup failed", "method", r.Method, "name", name, "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if img == nil {
-		slog.Info("manifest virtual image not found", "method", r.Method, "name", name)
-		writeOCIError(w, http.StatusNotFound, "NAME_UNKNOWN", fmt.Sprintf("virtual image %q not configured", name))
-
-		return
-	}
-
+func (p *Proxy) handleManifest(w http.ResponseWriter, r *http.Request, img *model.Image, reference string) {
+	name := img.Name
 	upstreamRef := reference
 
 	if reference == p.cfg.VirtualTag {
@@ -441,21 +437,8 @@ func (p *Proxy) recordPull(r *http.Request, img *model.Image, upstreamRef string
 	p.usage.RecordImagePull(img.ID, tag)
 }
 
-func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, name, digest string) {
-	img, err := p.resolveCache.resolve(r.Context(), name, p.images.Resolve)
-
-	if err != nil {
-		slog.Error("blob lookup failed", "method", r.Method, "name", name, "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
-		return
-	}
-
-	if img == nil {
-		slog.Info("blob virtual image not found", "method", r.Method, "name", name)
-		writeOCIError(w, http.StatusNotFound, "NAME_UNKNOWN", fmt.Sprintf("virtual image %q not configured", name))
-		return
-	}
-
+func (p *Proxy) handleBlob(w http.ResponseWriter, r *http.Request, img *model.Image, digest string) {
+	name := img.Name
 	host := oci.RegistryAPIHost(img.Registry)
 	path := oci.RepositoryPath(img.Registry, img.Repository)
 	upstreamURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", host, path, digest)

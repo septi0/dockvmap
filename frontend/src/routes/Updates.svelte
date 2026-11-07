@@ -17,7 +17,7 @@
   import { tagRefreshStatus } from "../lib/services/tagRefreshStatus";
   import type { Image } from "../lib/api/types/images";
   import type { ImageGroup } from "../lib/api/types/imageGroups";
-  import { formatNumber } from "../lib/utils/format";
+  import { formatCount } from "../lib/utils/format";
   import { writeListQuery } from "../lib/utils/listQuery";
   import { createListView } from "../lib/utils/listView.svelte";
 
@@ -82,8 +82,8 @@
   );
   let summary = $derived(
     remainingGroups > 0
-      ? `${formatNumber(remainingGroups)} ${remainingGroups === 1 ? "group" : "groups"} and ${formatNumber(remainingImages)} ${remainingImages === 1 ? "image" : "images"} with an update available`
-      : `${formatNumber(remainingImages)} ${remainingImages === 1 ? "image" : "images"} with an update available`,
+      ? `${formatCount(remainingGroups, "group")} and ${formatCount(remainingImages, "image")} with an update available`
+      : `${formatCount(remainingImages, "image")} with an update available`,
   );
   let detailsQuery = $derived(
     writeListQuery({ from: "updates", ...view.filters }),
