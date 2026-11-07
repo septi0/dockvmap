@@ -43,8 +43,8 @@
         tone="success"
         title="No problems"
         description={hasHosts
-          ? "Every host answers, and nothing failed in the last 30 days."
-          : "Nothing failed in the last 30 days."}
+          ? "Every host answers and nothing is failing."
+          : "Nothing is failing."}
       >
         {#snippet icon()}<CircleCheck size={30} strokeWidth={1.5} />{/snippet}
       </CardState>
