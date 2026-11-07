@@ -84,6 +84,7 @@
         text={compose}
         label="Copy compose file"
         copiedMessage="Compose file copied to clipboard."
+        bordered
       />
     </div>
 

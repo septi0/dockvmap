@@ -9,7 +9,8 @@
     label,
     copiedMessage,
     buttonText,
-  }: { text: string; label: string; copiedMessage: string; buttonText?: string } = $props();
+    bordered = false,
+  }: { text: string; label: string; copiedMessage: string; buttonText?: string; bordered?: boolean } = $props();
 
   let failed = $state(false);
 
@@ -33,6 +34,7 @@
   <button
     type="button"
     class="icon-button"
+    class:bordered
     onclick={copy}
     aria-label={failed ? "Could not copy" : label}
     title={failed ? "Could not copy" : label}

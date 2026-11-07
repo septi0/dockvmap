@@ -8,6 +8,7 @@ Changes people running DockVMap will notice, newest first. Upgrade notes call ou
 - **DNS failures in plain words**: a tag check whose DNS server didn't answer now reads "ghcr.io couldn't be looked up. Check the DNS server." instead of the raw Go error.
 - **Dashboard**: To redeploy and Updates available have the same height when side by side.
 - **Virtual Images**: the copy pull command button is gone from the list; copy it from the image's page.
+- **Copy buttons**: every copy next to a command or token box looks and works the same, with a tooltip saying what it copies; the compose file in Connect host now has the same bordered button.
 
 ## v1.12.1 (2026-11-07)
 

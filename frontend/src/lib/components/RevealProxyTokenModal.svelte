@@ -1,10 +1,8 @@
 <script lang="ts">
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
-  import Copy from '@lucide/svelte/icons/copy'
   import Modal from './Modal.svelte'
   import Button from './Button.svelte'
-  import { copyText } from '../services/clipboard'
-  import { toast } from '../services/toast'
+  import CopyButton from './CopyButton.svelte'
   import type { CreateProxyTokenResult } from '../api/types/proxyTokens'
 
   let {
@@ -14,20 +12,6 @@
     result: CreateProxyTokenResult | null
     onClose: () => void
   } = $props()
-
-  let copyError = $state<string | null>(null)
-
-  async function copyToken() {
-    if (!result) return
-
-    copyError = null
-
-    if (await copyText(result.token)) {
-      toast.success('Token copied to clipboard.')
-    } else {
-      copyError = 'Could not copy automatically - select and copy the token manually.'
-    }
-  }
 </script>
 
 <Modal open={result !== null} {onClose} title="Token created" size="lg">
@@ -39,22 +23,8 @@
 
     <div class="command-row">
       <code class="command">{result.token}</code>
-      <button
-        type="button"
-        class="icon-button bordered"
-        onclick={copyToken}
-        aria-label="Copy token"
-      >
-        <Copy size={16} strokeWidth={1.75} />
-      </button>
+      <CopyButton text={result.token} label="Copy token" copiedMessage="Token copied to clipboard." bordered />
     </div>
-
-    {#if copyError}
-      <p class="error">
-        <TriangleAlert size={16} strokeWidth={2} />
-        {copyError}
-      </p>
-    {/if}
 
     <div class="modal-actions spaced">
       <Button onclick={onClose}>Done</Button>
