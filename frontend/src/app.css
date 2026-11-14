@@ -487,6 +487,11 @@ select.filter-control {
   margin-top: 1px;
 }
 
+.mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+}
+
 .inline-code {
   padding: 1px var(--space-1);
   border-radius: var(--radius-sm);

@@ -113,6 +113,23 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/proxy-tokens/{id}", apiMethod(http.MethodDelete, w.apiDeleteProxyToken))
 
+	mux.HandleFunc("/replication/status", apiMethod(http.MethodGet, w.apiReplicationStatus))
+
+	mux.HandleFunc("/replication/tokens", func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.apiListReplicationTokens(rw, r)
+
+		case http.MethodPost:
+			w.apiCreateReplicationToken(rw, r)
+
+		default:
+			apiError(rw, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
+
+	mux.HandleFunc("/replication/tokens/{id}", apiMethod(http.MethodDelete, w.apiDeleteReplicationToken))
+
 	mux.HandleFunc("/hosts", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:

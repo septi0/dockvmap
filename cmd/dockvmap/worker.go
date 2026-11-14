@@ -26,6 +26,8 @@ const backgroundFailureRetention = 30 * 24 * time.Hour
 const proxyMetricsFlushInterval = 5 * time.Minute
 const proxyMetricsCleanupInterval = 24 * time.Hour
 const proxyMetricsRetention = 30 * 24 * time.Hour
+const replicationChangesCleanupInterval = 24 * time.Hour
+const replicationChangesRetention = 30 * 24 * time.Hour
 
 const workerStartStagger = 10 * time.Second
 const maxWorkerStartStagger = 30 * time.Second
@@ -58,6 +60,8 @@ type workerDeps struct {
 	proxyMetrics        *proxy.Metrics
 	proxyMetricsHistory *service.ProxyMetricsHistory
 	proxyUsage          *service.ProxyUsage
+	replication         *service.Replication
+	follower            *service.Follower
 }
 
 func scheduledJobs(deps workerDeps) []scheduledJob {
@@ -94,57 +98,63 @@ func scheduledJobs(deps workerDeps) []scheduledJob {
 		},
 	}
 
-	const tagRefreshDesc = "Poll every tracked image's upstream registry for tag changes."
+	// tag checks, notifications and host polling are the primary's; a follower has no UI to list them
+	if !cfg.Follower.Enabled {
+		const tagRefreshDesc = "Poll every tracked image's upstream registry for tag changes."
 
-	if interval := cfg.TagsCheckIntervalDuration(); interval > 0 {
+		if interval := cfg.TagsCheckIntervalDuration(); interval > 0 {
+			jobs = append(jobs, scheduledJob{
+				name:        service.WorkerJobTagRefresh,
+				description: tagRefreshDesc,
+				interval:    interval,
+				enabled:     true,
+				trigger:     deps.worker.Register(service.WorkerJobTagRefresh),
+				run:         func(ctx context.Context) (int, error) { return runImageTagRefresh(ctx, deps.images) },
+			})
+		} else {
+			jobs = append(jobs, scheduledJob{
+				name:           service.WorkerJobTagRefresh,
+				description:    tagRefreshDesc,
+				enabled:        false,
+				disabledReason: "tags_check_interval is not a positive duration",
+			})
+		}
+
 		jobs = append(jobs, scheduledJob{
-			name:        service.WorkerJobTagRefresh,
-			description: tagRefreshDesc,
-			interval:    interval,
+			name:        "agent-poll",
+			description: "Read every host's containers from its agent.",
+			interval:    cfg.AgentsPollIntervalDuration(),
 			enabled:     true,
-			trigger:     deps.worker.Register(service.WorkerJobTagRefresh),
-			run:         func(ctx context.Context) (int, error) { return runImageTagRefresh(ctx, deps.images) },
-		})
-	} else {
-		jobs = append(jobs, scheduledJob{
-			name:           service.WorkerJobTagRefresh,
-			description:    tagRefreshDesc,
-			enabled:        false,
-			disabledReason: "tags_check_interval is not a positive duration",
+			run:         deps.hosts.PollAll,
 		})
 	}
-
-	jobs = append(jobs, scheduledJob{
-		name:        "agent-poll",
-		description: "Read every host's containers from its agent.",
-		interval:    cfg.AgentsPollIntervalDuration(),
-		enabled:     true,
-		run:         deps.hosts.PollAll,
-	})
 
 	jobs = append(jobs, blobCacheJobs(deps)...)
 
-	const tagNotificationDesc = "Send pending email and webhook notifications for tag changes."
+	if !cfg.Follower.Enabled {
+		const tagNotificationDesc = "Send pending email and webhook notifications for tag changes."
 
-	if cfg.SMTP.Enabled || len(cfg.Webhooks) > 0 {
-		jobs = append(jobs, scheduledJob{
-			name:        "tag-notification",
-			description: tagNotificationDesc,
-			interval:    tagNotificationInterval,
-			enabled:     true,
-			doneMsg:     "sent tag notifications",
-			run:         func(ctx context.Context) (int, error) { return runTagNotifications(ctx, deps) },
-		})
-	} else {
-		jobs = append(jobs, scheduledJob{
-			name:           "tag-notification",
-			description:    tagNotificationDesc,
-			enabled:        false,
-			disabledReason: "no SMTP host and no webhooks are configured",
-		})
+		if cfg.SMTP.Enabled || len(cfg.Webhooks) > 0 {
+			jobs = append(jobs, scheduledJob{
+				name:        "tag-notification",
+				description: tagNotificationDesc,
+				interval:    tagNotificationInterval,
+				enabled:     true,
+				doneMsg:     "sent tag notifications",
+				run:         func(ctx context.Context) (int, error) { return runTagNotifications(ctx, deps) },
+			})
+		} else {
+			jobs = append(jobs, scheduledJob{
+				name:           "tag-notification",
+				description:    tagNotificationDesc,
+				enabled:        false,
+				disabledReason: "no SMTP host and no webhooks are configured",
+			})
+		}
 	}
 
 	jobs = append(jobs, proxyMetricsJobs(deps)...)
+	jobs = append(jobs, replicationJobs(deps)...)
 
 	return jobs
 }
@@ -227,6 +237,48 @@ func proxyMetricsJobs(deps workerDeps) []scheduledJob {
 			},
 		},
 	}
+}
+
+// a standalone DockVMap has no replication jobs at all, as a follower has none of the primary's
+func replicationJobs(deps workerDeps) []scheduledJob {
+	switch {
+	case deps.follower != nil:
+		return []scheduledJob{reconcileJob(deps)}
+	case deps.replication == nil:
+		return nil
+	}
+
+	return []scheduledJob{{
+		name:        "replication-changes-cleanup",
+		description: "Drop recorded pushes and deletes older than 30 days; a follower down longer compares whole repositories and keeps what was deleted meanwhile.",
+		interval:    replicationChangesCleanupInterval,
+		enabled:     true,
+		doneMsg:     "removed old recorded changes",
+		run: func(ctx context.Context) (int, error) {
+			return counted(deps.replication.CleanupChanges(ctx, replicationChangesRetention))
+		},
+	}}
+}
+
+func reconcileJob(deps workerDeps) scheduledJob {
+	reconcile := scheduledJob{
+		name:        "replication-reconcile",
+		description: "Copy every image on the primary's internal registry that this follower lacks; it never deletes.",
+	}
+
+	switch interval := deps.cfg.Follower.ReconcileIntervalDuration(); {
+	case !deps.cfg.InternalRegistry.Enabled:
+		reconcile.disabledReason = "internal_registry is off"
+	case interval == 0:
+		reconcile.disabledReason = "follower.reconcile_interval is 0"
+	default:
+		reconcile.interval = interval
+		reconcile.enabled = true
+		reconcile.doneMsg = "copied images from the primary"
+		reconcile.run = deps.follower.Reconcile
+	}
+
+	return reconcile
 }
 
 func jobDescriptors(jobs []scheduledJob) []service.WorkerJobDescriptor {

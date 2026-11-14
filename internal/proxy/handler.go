@@ -60,6 +60,7 @@ type Proxy struct {
 	internal      *passthrough
 	trusted       ipmatch.Set
 	pushAllowed   ipmatch.Set
+	followerOf    string
 }
 
 type Deps struct {
@@ -78,6 +79,9 @@ type Deps struct {
 	Changes             changeRecorder
 	TrustedProxies      ipmatch.Set
 	PushAllowed         ipmatch.Set
+
+	// the primary's address when this DockVMap is a read-only follower
+	FollowerOf string
 }
 
 func New(deps Deps) *Proxy {
@@ -101,6 +105,7 @@ func New(deps Deps) *Proxy {
 		internal:      internal,
 		trusted:       deps.TrustedProxies,
 		pushAllowed:   deps.PushAllowed,
+		followerOf:    deps.FollowerOf,
 		cfg:           deps.Config,
 		images:        deps.Images,
 		resolveCache:  resolveCache,
@@ -121,6 +126,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (p *Proxy) serve(w http.ResponseWriter, r *http.Request) (forwarded bool) {
 	write := r.Method != http.MethodGet && r.Method != http.MethodHead
+
+	if write && p.followerOf != "" {
+		w.Header().Set("Allow", "GET, HEAD")
+		writeOCIError(w, http.StatusMethodNotAllowed, "UNSUPPORTED", fmt.Sprintf("this DockVMap is a read-only follower of %s; push to the primary", p.followerOf))
+		return false
+	}
 
 	if write && p.internal == nil {
 		w.Header().Set("Allow", "GET, HEAD")

@@ -71,16 +71,20 @@ func newPassthrough(address string, useTLS bool, changes changeRecorder) *passth
 		ErrorHandler:   pt.errorHandler,
 		ErrorLog:       slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug),
 		FlushInterval:  -1,
-		Transport: &http.Transport{
-			DialContext:           (&net.Dialer{Timeout: passthroughDialTimeout}).DialContext,
-			TLSHandshakeTimeout:   passthroughTLSHandshakeTimeout,
-			ResponseHeaderTimeout: passthroughResponseHeaderTimeout,
-			MaxIdleConnsPerHost:   passthroughIdleConns,
-			IdleConnTimeout:       90 * time.Second,
-		},
+		Transport:      InternalRegistryTransport(),
 	}
 
 	return pt
+}
+
+func InternalRegistryTransport() *http.Transport {
+	return &http.Transport{
+		DialContext:           (&net.Dialer{Timeout: passthroughDialTimeout}).DialContext,
+		TLSHandshakeTimeout:   passthroughTLSHandshakeTimeout,
+		ResponseHeaderTimeout: passthroughResponseHeaderTimeout,
+		MaxIdleConnsPerHost:   passthroughIdleConns,
+		IdleConnTimeout:       90 * time.Second,
+	}
 }
 
 type uploadBody struct {

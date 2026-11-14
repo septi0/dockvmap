@@ -124,11 +124,6 @@
     color: var(--color-danger);
   }
 
-  .mono {
-    font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
-  }
-
   .warnings {
     list-style: none;
     margin: 0;

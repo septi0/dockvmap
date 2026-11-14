@@ -38,7 +38,7 @@ var indexMediaTypes = []string{
 	"application/vnd.docker.distribution.manifest.list.v2+json",
 }
 
-var manifestMediaTypes = append(slices.Clone(indexMediaTypes),
+var ManifestMediaTypes = append(slices.Clone(indexMediaTypes),
 	"application/vnd.oci.image.manifest.v1+json",
 	"application/vnd.docker.distribution.manifest.v2+json",
 )
@@ -255,7 +255,7 @@ func (c *Client) listTags(ctx context.Context, registry, repository string, onPa
 		if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 			err := registryStatusError(response)
 
-			drainAndClose(response)
+			DrainAndClose(response)
 
 			return nil, err
 		}
@@ -265,9 +265,9 @@ func (c *Client) listTags(ctx context.Context, registry, repository string, onPa
 		}
 
 		decodeErr := json.NewDecoder(response.Body).Decode(&page)
-		next := nextPageURL(response.Request.URL, response.Header.Get("Link"))
+		next := NextPageURL(response.Request.URL, response.Header.Get("Link"))
 
-		drainAndClose(response)
+		DrainAndClose(response)
 
 		if decodeErr != nil {
 			return nil, fmt.Errorf("decoding tag list from %s: %w", response.Request.URL.Host, decodeErr)
@@ -307,7 +307,7 @@ func (c *Client) ListRepositories(ctx context.Context, registry string, limit in
 		if response.StatusCode != http.StatusOK {
 			err := registryStatusError(response)
 
-			drainAndClose(response)
+			DrainAndClose(response)
 
 			return nil, false, err
 		}
@@ -317,9 +317,9 @@ func (c *Client) ListRepositories(ctx context.Context, registry string, limit in
 		}
 
 		decodeErr := json.NewDecoder(response.Body).Decode(&page)
-		next := nextPageURL(response.Request.URL, response.Header.Get("Link"))
+		next := NextPageURL(response.Request.URL, response.Header.Get("Link"))
 
-		drainAndClose(response)
+		DrainAndClose(response)
 
 		if decodeErr != nil {
 			return nil, false, fmt.Errorf("decoding repository list from %s: %w", response.Request.URL.Host, decodeErr)
@@ -364,7 +364,7 @@ func (c *Client) CheckRegistry(ctx context.Context, registry string) error {
 		return err
 	}
 
-	defer drainAndClose(response)
+	defer DrainAndClose(response)
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return registryStatusError(response)
@@ -391,7 +391,7 @@ func (c *Client) CheckRepository(ctx context.Context, registry, repository strin
 		return err
 	}
 
-	defer drainAndClose(response)
+	defer DrainAndClose(response)
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return registryStatusError(response)
@@ -412,7 +412,7 @@ func (c *Client) ManifestDigest(ctx context.Context, registry, repository, refer
 		return "", fmt.Errorf("creating registry request: %w", err)
 	}
 
-	for _, mediaType := range manifestMediaTypes {
+	for _, mediaType := range ManifestMediaTypes {
 		req.Header.Add("Accept", mediaType)
 	}
 
@@ -422,7 +422,7 @@ func (c *Client) ManifestDigest(ctx context.Context, registry, repository, refer
 		return "", err
 	}
 
-	defer drainAndClose(response)
+	defer DrainAndClose(response)
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return "", registryStatusError(response)
@@ -480,8 +480,8 @@ func registryStatusError(response *http.Response) error {
 	}
 }
 
-// drainAndClose drains the body before closing so the connection can be reused for keep-alive.
-func drainAndClose(response *http.Response) {
+// DrainAndClose drains the body before closing so the connection can be reused for keep-alive.
+func DrainAndClose(response *http.Response) {
 	_, _ = io.Copy(io.Discard, response.Body)
 	_ = response.Body.Close()
 }
@@ -724,7 +724,7 @@ func (c *Client) do(req *http.Request, registry string, options *RegistryOptions
 		}
 
 		delay := retryDelay(attempt, response)
-		drainAndClose(response)
+		DrainAndClose(response)
 
 		select {
 		case <-time.After(delay):
@@ -879,7 +879,7 @@ func RepositoryPath(registry, repository string) string {
 	return repository
 }
 
-func nextPageURL(base *url.URL, link string) string {
+func NextPageURL(base *url.URL, link string) string {
 	for _, value := range splitLinkValues(link) {
 		parts := strings.Split(value, ";")
 

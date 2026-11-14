@@ -2,6 +2,14 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
+## v1.14.0 (unreleased)
+
+- **Replication and follower mode**: run a second DockVMap as a read-only follower of the primary, as a failover standby (with a floating IP moved by keepalived) or as a mirror at another site. The follower connects out to the primary's replication port, keeps a copy of virtual images, groups, pins, registries with their logins and proxy token hashes, and copies every image pushed to the internal registry, all platforms, checked against their digests. Changes arrive within about a second, and a follower that was down catches up by itself. A follower has no web UI; it serves pulls, and clients can use it as a read replica while the primary is up. Pulls it serves are reported back, so the primary's pull tracking stays true. Turn it on with `replication.enabled` on the primary, with `replication.allowed_ips` to accept only your followers' addresses, and `follower.enabled` on the follower; tokens are on the primary's new System › Replication page, with a ready follower config. See "Replication and follower mode" in the README.
+- **Safe by default**: a follower refuses every push, and stops instead of following a primary that was restored from an older backup, or that belongs to another cluster, until you run `dockvmap -resync` on it. Deletes are applied only when the primary recorded them. A follower whose setup differs from its primary's (virtual tag, proxy auth, TLS, internal registry, registry deletes) stops and names the setting.
+- **Readiness check**: `GET /health/ready` answers `200` or `503` with JSON details on every DockVMap, for keepalived, Uptime Kuma and other monitors: database and registry checks, and on a follower its sync state, versions, last contact and pending copies.
+
+**Upgrade note:** this release migrates the database (migration 037). Run `dockvmap -backup <path>` before upgrading. Nothing changes until you turn on `replication.enabled` or `follower.enabled`. Upgrade followers before their primary. On a primary, back up `replication.pem` with the database.
+
 ## v1.13.0 (2026-11-07)
 
 - **Safer web API**: requests that change data must carry the `X-DockVMap` header, which the web UI sends. A page on another site, or on another app under the same domain, can no longer make changes with your login. It works the same on localhost, a LAN address, behind a reverse proxy, and over HTTP or HTTPS.

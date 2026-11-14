@@ -82,3 +82,74 @@ func TestInternalRegistryWarnsWithoutProxyAuth(t *testing.T) {
 		t.Errorf("warning with proxy_auth on: %v", cfg.DerivedWarnings)
 	}
 }
+
+var testToken = "dvmr1-" + strings.Repeat("ab", 32) + "-" + strings.Repeat("cd", 32)
+
+func TestReplicationValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"primary and follower", map[string]string{"DOCKVMAP_REPLICATION_ENABLED": "true", "DOCKVMAP_FOLLOWER_ENABLED": "true", "DOCKVMAP_FOLLOWER_PRIMARY": "10.0.0.11:9003", "DOCKVMAP_FOLLOWER_TOKEN": "t"}, "can't also serve replication"},
+		{"bad listen", map[string]string{"DOCKVMAP_REPLICATION_ENABLED": "true", "DOCKVMAP_REPLICATION_LISTEN": "9003"}, "replication.listen"},
+		{"follower without primary", map[string]string{"DOCKVMAP_FOLLOWER_ENABLED": "true", "DOCKVMAP_FOLLOWER_TOKEN": "t"}, "follower.primary"},
+		{"follower without token", map[string]string{"DOCKVMAP_FOLLOWER_ENABLED": "true", "DOCKVMAP_FOLLOWER_PRIMARY": "10.0.0.11:9003"}, "follower.token"},
+		{"follower with a malformed token", map[string]string{"DOCKVMAP_FOLLOWER_ENABLED": "true", "DOCKVMAP_FOLLOWER_PRIMARY": "10.0.0.11:9003", "DOCKVMAP_FOLLOWER_TOKEN": "abc"}, "isn't a replication token"},
+		{"negative reconcile", map[string]string{"DOCKVMAP_FOLLOWER_ENABLED": "true", "DOCKVMAP_FOLLOWER_PRIMARY": "10.0.0.11:9003", "DOCKVMAP_FOLLOWER_TOKEN": testToken, "DOCKVMAP_FOLLOWER_RECONCILE_INTERVAL": "-1h"}, "follower.reconcile_interval"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for key, value := range tt.env {
+				t.Setenv(key, value)
+			}
+
+			_, err := Load("")
+
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Errorf("Load() error = %v, want one mentioning %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestFollowerReconcileCanBeTurnedOff(t *testing.T) {
+	t.Setenv("DOCKVMAP_FOLLOWER_ENABLED", "true")
+	t.Setenv("DOCKVMAP_FOLLOWER_PRIMARY", "10.0.0.11:9003")
+	t.Setenv("DOCKVMAP_FOLLOWER_TOKEN", testToken)
+	t.Setenv("DOCKVMAP_FOLLOWER_RECONCILE_INTERVAL", "0")
+
+	cfg, err := Load("")
+
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Follower.ReconcileIntervalDuration() != 0 {
+		t.Errorf("reconcile interval = %v, want 0 (off)", cfg.Follower.ReconcileIntervalDuration())
+	}
+
+	if cfg.Replication.Listen != ":9003" {
+		t.Errorf("replication.listen default = %q, want :9003", cfg.Replication.Listen)
+	}
+}
+
+func TestFollowerDoesNotWarnAboutOpenPushes(t *testing.T) {
+	t.Setenv("DOCKVMAP_INTERNAL_REGISTRY_ENABLED", "true")
+	t.Setenv("DOCKVMAP_FOLLOWER_ENABLED", "true")
+	t.Setenv("DOCKVMAP_FOLLOWER_PRIMARY", "10.0.0.11:9003")
+	t.Setenv("DOCKVMAP_FOLLOWER_TOKEN", testToken)
+
+	cfg, err := Load("")
+
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	for _, warning := range cfg.DerivedWarnings {
+		if strings.Contains(warning, "accepts pushes from anyone") {
+			t.Errorf("follower warns %q, want no push warning since it refuses every push", warning)
+		}
+	}
+}

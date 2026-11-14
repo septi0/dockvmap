@@ -579,6 +579,9 @@ func failureMessage(failure service.Failure) string {
 	case service.FailureSourceInternalRegistry:
 		return fmt.Sprintf("Internal registry %s %s", failure.Detail, failure.Error)
 
+	case service.FailureSourceReplication:
+		return fmt.Sprintf("Replication of %s: %s", failure.Detail, failure.Error)
+
 	default:
 		return failure.Error
 	}

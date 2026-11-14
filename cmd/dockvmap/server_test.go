@@ -14,7 +14,7 @@ func TestAwaitShutdownReturnsTheServerError(t *testing.T) {
 	workerDone := make(chan struct{})
 	close(workerDone)
 
-	err := awaitShutdown(&http.Server{}, &http.Server{}, func() {}, workerDone, serverErrs)
+	err := awaitShutdown(map[string]*http.Server{"proxy": {}, "web": {}}, func() {}, workerDone, serverErrs)
 
 	if !errors.Is(err, failed) {
 		t.Errorf("awaitShutdown() = %v, want the server error so the process exits non-zero", err)

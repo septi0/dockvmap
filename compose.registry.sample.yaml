@@ -11,12 +11,21 @@ services:
       DOCKVMAP_INTERNAL_REGISTRY_ENABLED: "true"
       # DOCKVMAP_PROXY_AUTH_ENABLED: "true"   # require a proxy token; pushes need one with Can push
 
+      # replication (README, "Replication and follower mode"), on the primary:
+      # DOCKVMAP_REPLICATION_ENABLED: "true"
+      # DOCKVMAP_REPLICATION_ALLOWED_IPS: "10.0.0.12"   # only followers from these addresses
+      # or on a follower, with a token from the primary's System > Replication page:
+      # DOCKVMAP_FOLLOWER_ENABLED: "true"
+      # DOCKVMAP_FOLLOWER_PRIMARY: "10.0.0.11:9003"   # the primary's own address
+      # DOCKVMAP_FOLLOWER_TOKEN: "dvmr1-..."
+
     volumes:
       - dockvmap-data:/data
 
     ports:
       - "5000:5000"   # the proxy: push and pull here
       - "8080:8080"   # the web UI
+      # - "10.0.0.11:9003:9003"   # on a primary: replication, on its own address, for followers only
 
     depends_on:
       - registry
@@ -34,6 +43,8 @@ services:
 
     # plain HTTP and no login: only DockVMap reaches it, over this stack's network,
     # so don't publish its port; DockVMap handles TLS and logins
+    # environment:
+    #   REGISTRY_STORAGE_DELETE_ENABLED: "true"   # with replication, the same on the primary and its followers
     volumes:
       - registry-data:/var/lib/registry   # every pushed image; back it up separately from DockVMap
 

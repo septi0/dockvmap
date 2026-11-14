@@ -19,6 +19,7 @@ const (
 	FailureSourceEventRegistration FailureSource = "event_registration"
 	FailureSourceDigest            FailureSource = "digest"
 	FailureSourceInternalRegistry  FailureSource = "internal_registry"
+	FailureSourceReplication       FailureSource = "replication"
 )
 
 var FailureSources = []FailureSource{
@@ -29,6 +30,7 @@ var FailureSources = []FailureSource{
 	FailureSourceEventRegistration,
 	FailureSourceDigest,
 	FailureSourceInternalRegistry,
+	FailureSourceReplication,
 }
 
 func IsValidFailureSource(s string) bool {

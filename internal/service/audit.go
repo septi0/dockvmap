@@ -46,6 +46,9 @@ const (
 
 	AuditTypeImagePushed     = "IMAGE_PUSHED"
 	AuditTypeManifestDeleted = "MANIFEST_DELETED"
+
+	AuditTypeReplicationTokenCreated = "REPLICATION_TOKEN_CREATED"
+	AuditTypeReplicationTokenDeleted = "REPLICATION_TOKEN_DELETED"
 )
 
 var AuditTypes = []string{
@@ -85,6 +88,8 @@ var AuditTypes = []string{
 
 	AuditTypeImagePushed,
 	AuditTypeManifestDeleted,
+	AuditTypeReplicationTokenCreated,
+	AuditTypeReplicationTokenDeleted,
 }
 
 func IsValidAuditType(t string) bool {

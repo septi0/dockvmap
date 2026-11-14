@@ -463,6 +463,13 @@ func (i *Images) auditTagChange(ctx context.Context, image model.Image, tag stri
 	})
 }
 
+// TagsReplaced tells the proxy about images a follower sync changed in the database directly
+func (i *Images) TagsReplaced(names ...string) {
+	if i.tagChanged != nil {
+		i.tagChanged(names...)
+	}
+}
+
 func (i *Images) notifyTagChanged(names ...string) {
 	if len(names) == 0 {
 		return

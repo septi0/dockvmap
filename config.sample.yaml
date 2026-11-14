@@ -27,3 +27,17 @@ trusted_proxies: []
 #   address: registry:5000
 #   tls: false
 #   push_allowed_ips: ["10.0.0.5"]   # only these addresses can push; empty allows all
+
+# Let read-only followers copy this DockVMap (README, "Replication and follower mode").
+# Followers need a replication token from System > Replication; publish the port on this host's own address only.
+# replication:
+#   enabled: true
+#   listen: ":9003"
+#   allowed_ips: ["10.0.0.12"]     # only followers from these addresses; empty allows all
+
+# Or make this DockVMap a read-only follower of a primary (not both).
+# follower:
+#   enabled: true
+#   primary: 10.0.0.11:9003        # the primary's own address, never a floating IP
+#   token: dvmr1-...               # from the primary's System > Replication page
+#   reconcile_interval: 24h        # 0 turns the daily safety-net compare off

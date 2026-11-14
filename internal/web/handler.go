@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -107,6 +108,19 @@ type internalRegistryService interface {
 	Address() string
 }
 
+type followerService interface {
+	Status(ctx context.Context) (*service.FollowerStatus, error)
+	Ready(ctx context.Context, status *service.FollowerStatus) (bool, map[string]string)
+}
+
+type replicationService interface {
+	Status(ctx context.Context) (*service.ReplicationStatus, error)
+	Ready(ctx context.Context) (bool, map[string]string)
+	ListTokens(ctx context.Context) ([]model.ReplicationToken, error)
+	CreateToken(ctx context.Context, label string) (int64, string, error)
+	DeleteToken(ctx context.Context, id int64) (bool, error)
+}
+
 type registryBrowserService interface {
 	Browsable(ctx context.Context) ([]int64, error)
 	Repositories(ctx context.Context, registryID int64) (*model.RegistryRepositories, error)
@@ -157,6 +171,8 @@ type Web struct {
 	cacheUsage           cacheUsageReader
 	failures             failureLister
 	worker               workerService
+	replication          replicationService
+	follower             followerService
 	cfg                  *config.Config
 	trustedProxies       ipmatch.Set
 	resolvedProxies      []string
@@ -187,6 +203,8 @@ type Dependencies struct {
 	CacheUsage           cacheUsageReader
 	Failures             failureLister
 	Worker               workerService
+	Replication          replicationService
+	Follower             followerService
 	LoginRateLimitWindow time.Duration
 	Version              string
 	DataPath             string
@@ -211,6 +229,8 @@ func New(deps Dependencies) (http.Handler, error) {
 		cacheUsage:           deps.CacheUsage,
 		failures:             deps.Failures,
 		worker:               deps.Worker,
+		replication:          deps.Replication,
+		follower:             deps.Follower,
 		cfg:                  deps.Config,
 		trustedProxies:       deps.TrustedProxies,
 		resolvedProxies:      deps.ResolvedProxies,
@@ -221,17 +241,37 @@ func New(deps Dependencies) (http.Handler, error) {
 	}
 
 	mux := http.NewServeMux()
-	apiMux := http.NewServeMux()
-
-	w.registerAPIRoutes(apiMux)
 
 	mux.HandleFunc("/health", w.apiHealth)
+	mux.HandleFunc("GET /health/ready", w.apiHealthReady)
+
+	if w.follower != nil {
+		mux.HandleFunc("/", w.followerPage)
+
+		return securityHeaders(mux), nil
+	}
+
+	apiMux := http.NewServeMux()
+	w.registerAPIRoutes(apiMux)
 
 	mux.Handle("/api/", http.StripPrefix("/api", w.withRequestInfo(requireAPIHeader(w.requireAuth(apiMux)))))
 
 	w.registerFrontendRoutes(mux)
 
 	return securityHeaders(mux), nil
+}
+
+// a follower has no web UI or API: it serves pulls on its proxy port and is managed on its primary
+func (w *Web) followerPage(rw http.ResponseWriter, r *http.Request) {
+	status := http.StatusOK
+
+	if r.URL.Path != "/" {
+		status = http.StatusNotFound
+	}
+
+	rw.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	rw.WriteHeader(status)
+	fmt.Fprintf(rw, "This DockVMap is a read-only follower of %s. It serves pulls on its proxy port; manage it on the primary.\nIts state is at /health/ready.\n", w.cfg.Follower.Primary)
 }
 
 func (w *Web) registerFrontendRoutes(mux *http.ServeMux) {

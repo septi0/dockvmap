@@ -78,6 +78,9 @@ func auditSummary(entry model.AuditLog) string {
 	case service.AuditTypeRegistryCreated, service.AuditTypeRegistryUpdated, service.AuditTypeRegistryDeleted:
 		return f.Registry
 
+	case service.AuditTypeReplicationTokenCreated, service.AuditTypeReplicationTokenDeleted:
+		return f.Label
+
 	case service.AuditTypeProxyTokenCreated, service.AuditTypeProxyTokenDeleted:
 		if f.CanPush {
 			return f.Label + " (can push)"

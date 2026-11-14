@@ -327,7 +327,7 @@ func TestInternalRegistryCheckReportsALogin(t *testing.T) {
 
 	registry := NewInternalRegistry(InternalRegistryDeps{Enabled: true, Address: strings.TrimPrefix(server.URL, "http://")})
 
-	if err := registry.ping(context.Background()); !errors.Is(err, errInternalRegistryLogin) {
+	if err := registry.Ping(context.Background()); !errors.Is(err, errInternalRegistryLogin) {
 		t.Errorf("ping error = %v, want the login message", err)
 	}
 }
@@ -335,7 +335,7 @@ func TestInternalRegistryCheckReportsALogin(t *testing.T) {
 func TestInternalRegistryCheckReportsNoAnswer(t *testing.T) {
 	registry := NewInternalRegistry(InternalRegistryDeps{Enabled: true, Address: "127.0.0.1:1"})
 
-	if err := registry.ping(context.Background()); err == nil || !strings.Contains(err.Error(), "didn't answer; check that its container is running") {
+	if err := registry.Ping(context.Background()); err == nil || !strings.Contains(err.Error(), "didn't answer; check that its container is running") {
 		t.Errorf("ping error = %v, want the no-answer message", err)
 	}
 }
@@ -350,13 +350,13 @@ func TestInternalRegistryCheckOverTLS(t *testing.T) {
 
 	registry := NewInternalRegistry(InternalRegistryDeps{Enabled: true, Address: strings.TrimPrefix(server.URL, "https://"), TLS: true})
 
-	if err := registry.ping(context.Background()); err == nil || !strings.Contains(err.Error(), "has a certificate DockVMap doesn't accept") {
+	if err := registry.Ping(context.Background()); err == nil || !strings.Contains(err.Error(), "has a certificate DockVMap doesn't accept") {
 		t.Errorf("untrusted certificate: ping error = %v, want the certificate message", err)
 	}
 
 	registry.client = server.Client()
 
-	if err := registry.ping(context.Background()); err != nil {
+	if err := registry.Ping(context.Background()); err != nil {
 		t.Errorf("trusted certificate: ping error = %v, want none", err)
 	}
 }

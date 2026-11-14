@@ -169,8 +169,6 @@
   }
 
   .mono {
-    font-family: ui-monospace, monospace;
-    font-size: 0.8125rem;
     font-weight: 500;
   }
 

@@ -62,7 +62,7 @@ func (p *ProxyTokens) Create(ctx context.Context, label string, canPush bool) (i
 		return 0, "", err
 	}
 
-	id, err := p.store.CreateProxyToken(ctx, label, hashProxyToken(token), canPush)
+	id, err := p.store.CreateProxyToken(ctx, label, hashToken(token), canPush)
 
 	if err != nil {
 		return 0, "", err
@@ -82,7 +82,7 @@ func (p *ProxyTokens) Verify(ctx context.Context, token string) (*model.ProxyTok
 		return nil, nil
 	}
 
-	matched, err := p.store.ProxyTokenByHash(ctx, hashProxyToken(token))
+	matched, err := p.store.ProxyTokenByHash(ctx, hashToken(token))
 
 	if err != nil || matched == nil {
 		return nil, err
@@ -133,7 +133,7 @@ func generateProxyToken() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func hashProxyToken(token string) string {
+func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }

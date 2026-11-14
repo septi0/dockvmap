@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/septi0/dockvmap/internal/config"
 	"github.com/septi0/dockvmap/internal/oci"
@@ -14,6 +17,10 @@ import (
 )
 
 func cmdResetPassword(ctx context.Context, db *store.Store, cfg *config.Config, username string) error {
+	if cfg.Follower.Enabled {
+		return fmt.Errorf("this DockVMap is a follower of %s and has no web UI or accounts; reset the password on the primary", cfg.Follower.Primary)
+	}
+
 	loginRateLimiter, err := service.NewLoginRateLimiter(*cfg.LoginRateLimit.Enabled, cfg.LoginRateLimit.MaxAttempts, cfg.LoginRateLimit.WindowDuration(), cfg.LoginRateLimit.BypassIPs)
 
 	if err != nil {
@@ -92,7 +99,45 @@ func cmdBackup(ctx context.Context, dbPath, credentialEncryptionKey, destPath st
 	fmt.Println("    (without it, stored registry credentials cannot be decrypted)")
 	fmt.Printf("  - the agent client identity %s\n", filepath.Join(dataPath, agentClientIdentityFile))
 	fmt.Println("    (without it, every host agent has to be reset and adopted again)")
+
+	if cfg.Replication.Enabled {
+		fmt.Printf("  - the replication identity %s\n", filepath.Join(dataPath, replicationIdentityFile))
+		fmt.Println("    (without it, every follower needs a new replication token)")
+	}
+
 	fmt.Println("  - your config.yaml, which is not part of this backup")
+
+	return nil
+}
+
+func cmdResync(ctx context.Context, db *store.Store, cfg *config.Config, yes bool) error {
+	if !cfg.Follower.Enabled {
+		return errors.New("-resync only works on a follower; this DockVMap has follower.enabled off")
+	}
+
+	local, err := db.ReplicationSnapshot(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Resyncing replaces this follower's %d virtual images, %d groups, %d registries and %d proxy tokens with the primary's at %s.\n",
+		len(local.Images), len(local.Groups), len(local.Registries), len(local.ProxyTokens), cfg.Follower.Primary)
+
+	if !yes {
+		fmt.Print("Type yes to continue: ")
+		answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+
+		if strings.TrimSpace(answer) != "yes" {
+			return errors.New("resync cancelled")
+		}
+	}
+
+	if err := db.RequestResync(ctx); err != nil {
+		return err
+	}
+
+	fmt.Println("Resync requested. A running follower resyncs within half a minute; one that is not running, when it next starts.")
 
 	return nil
 }

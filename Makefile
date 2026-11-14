@@ -8,7 +8,7 @@ LDFLAGS           := -X main.version=$(VERSION) -X main.defaultDataPath=$(DEFAUL
 
 .DEFAULT_GOAL := help
 .PHONY: build build-server build-agent build-frontend frontend-deps dev dev-backend dev-frontend dev-agent \
-        test vet fmt lint check verify clean help
+        test test-integration vet fmt lint check verify clean help
 
 build: build-server build-agent ## Build the frontend and both binaries (bin/dockvmap, bin/dockvmap-agent)
 
@@ -50,6 +50,9 @@ verify: lint test check ## lint + Go tests + frontend check
 # frontend/embed.go embeds frontend/dist, so Go can't compile without it
 test: build-frontend ## go test -race ./...
 	go test -race ./...
+
+test-integration: build-frontend ## Replication end-to-end tests: two DockVMap + registry:3 pairs in Docker (containers dvm-testlab-*)
+	go test -tags integration -run Integration -count=1 -timeout 15m -v ./internal/replication/
 
 vet: build-frontend ## go vet ./...
 	go vet ./...

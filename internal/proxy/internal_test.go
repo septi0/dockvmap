@@ -654,3 +654,29 @@ func TestUpstreamFailureMessages(t *testing.T) {
 		}
 	}
 }
+
+func TestFollowerRefusesPushesAndServesPulls(t *testing.T) {
+	registry := newFakeRegistry(t)
+	p := newInternalProxy(registry.address(), false, nil)
+	p.followerOf = "10.0.0.11:9003"
+
+	for _, req := range []struct{ method, path string }{
+		{http.MethodPost, "/v2/team/api/blobs/uploads/"},
+		{http.MethodPut, "/v2/team/api/manifests/v2"},
+		{http.MethodDelete, "/v2/team/api/manifests/v1"},
+	} {
+		rec := serve(p, req.method, req.path, "", nil)
+
+		if code, message := ociMessage(t, rec); rec.Code != http.StatusMethodNotAllowed || code != "UNSUPPORTED" || !strings.Contains(message, "follower of 10.0.0.11:9003") {
+			t.Errorf("%s %s = %d %s %q, want 405 UNSUPPORTED naming the primary", req.method, req.path, rec.Code, code, message)
+		}
+	}
+
+	if len(registry.recorded()) != 0 {
+		t.Errorf("the registry received %v, want no writes", registry.recorded())
+	}
+
+	if rec := serve(p, http.MethodGet, "/v2/team/api/manifests/v1", "", nil); rec.Code != http.StatusOK {
+		t.Errorf("pull of a real name = %d, want it passed through", rec.Code)
+	}
+}

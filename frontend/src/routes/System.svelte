@@ -8,6 +8,7 @@
   import TasksTab from "../lib/components/system/TasksTab.svelte";
   import FailuresTab from "../lib/components/system/FailuresTab.svelte";
   import AuditTab from "../lib/components/system/AuditTab.svelte";
+  import ReplicationTab from "../lib/components/system/ReplicationTab.svelte";
 
   let { params }: { params?: { tab?: string } } = $props();
 
@@ -16,6 +17,7 @@
     { id: "tasks", label: "Tasks" },
     { id: "failures", label: "Failures" },
     { id: "audit", label: "Audit log" },
+    { id: "replication", label: "Replication" },
   ] as const;
 
   let rawTab = $derived(params?.tab);
@@ -56,6 +58,8 @@
     <FailuresTab />
   {:else if tab === "audit"}
     <AuditTab />
+  {:else if tab === "replication"}
+    <ReplicationTab />
   {/if}
 </AppShell>
 

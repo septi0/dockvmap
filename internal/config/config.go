@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/septi0/dockvmap/internal/oci"
+	"github.com/septi0/dockvmap/internal/replicationapi"
 )
 
 type Config struct {
@@ -39,6 +40,8 @@ type Config struct {
 	TLS                     TLSConfig              `yaml:"tls"`
 	ProxyAuth               ProxyAuthConfig        `yaml:"proxy_auth"`
 	InternalRegistry        InternalRegistryConfig `yaml:"internal_registry"`
+	Replication             ReplicationConfig      `yaml:"replication"`
+	Follower                FollowerConfig         `yaml:"follower"`
 	LoginRateLimit          LoginRateLimitConfig   `yaml:"login_rate_limit"`
 
 	DerivedWarnings []string `yaml:"-"`
@@ -72,6 +75,19 @@ type InternalRegistryConfig struct {
 	PushAllowedIPs []string `yaml:"push_allowed_ips" env:"DOCKVMAP_INTERNAL_REGISTRY_PUSH_ALLOWED_IPS"`
 }
 
+type ReplicationConfig struct {
+	Enabled    bool     `yaml:"enabled" env:"DOCKVMAP_REPLICATION_ENABLED"`
+	Listen     string   `yaml:"listen" env:"DOCKVMAP_REPLICATION_LISTEN" default:":9003"`
+	AllowedIPs []string `yaml:"allowed_ips" env:"DOCKVMAP_REPLICATION_ALLOWED_IPS"`
+}
+
+type FollowerConfig struct {
+	Enabled           bool   `yaml:"enabled" env:"DOCKVMAP_FOLLOWER_ENABLED"`
+	Primary           string `yaml:"primary" env:"DOCKVMAP_FOLLOWER_PRIMARY"`
+	Token             string `yaml:"token" env:"DOCKVMAP_FOLLOWER_TOKEN"`
+	ReconcileInterval string `yaml:"reconcile_interval" env:"DOCKVMAP_FOLLOWER_RECONCILE_INTERVAL" default:"24h"`
+}
+
 type TLSConfig struct {
 	Enabled  bool   `yaml:"enabled" env:"DOCKVMAP_TLS_ENABLED"`
 	CertFile string `yaml:"cert_file" env:"DOCKVMAP_TLS_CERT_FILE"`
@@ -98,7 +114,8 @@ func (c *Config) applyDerivedDefaults() {
 
 	c.InternalRegistry.Address = strings.TrimSpace(c.InternalRegistry.Address)
 
-	if c.InternalRegistry.Enabled && !c.ProxyAuth.Enabled && len(c.InternalRegistry.PushAllowedIPs) == 0 {
+	// a follower refuses every push, so the warning would be wrong there
+	if c.InternalRegistry.Enabled && !c.Follower.Enabled && !c.ProxyAuth.Enabled && len(c.InternalRegistry.PushAllowedIPs) == 0 {
 		c.warn("internal_registry is enabled but proxy_auth is off and internal_registry.push_allowed_ips is empty; the internal registry accepts pushes from anyone who can reach the proxy. Set push_allowed_ips to your build hosts, or turn on proxy_auth and push with a token that has Can push")
 	}
 
@@ -187,6 +204,10 @@ func (c *Config) validate() error {
 		return fmt.Errorf("tls.enabled is set but cert_file or key_file is blank")
 	}
 
+	if err := c.validateReplication(); err != nil {
+		return err
+	}
+
 	if c.SMTP.Enabled {
 		if c.SMTP.Port < 1 || c.SMTP.Port > 65535 {
 			return fmt.Errorf("invalid smtp.port %d: must be between 1 and 65535", c.SMTP.Port)
@@ -198,6 +219,49 @@ func (c *Config) validate() error {
 	}
 
 	return nil
+}
+
+func (c *Config) validateReplication() error {
+	if c.Replication.Enabled && c.Follower.Enabled {
+		return fmt.Errorf("replication.enabled and follower.enabled are both set; a follower can't also serve replication")
+	}
+
+	if c.Replication.Enabled && !validListenAddress(c.Replication.Listen) {
+		return fmt.Errorf("invalid replication.listen %q: must be host:port or :port", c.Replication.Listen)
+	}
+
+	if !c.Follower.Enabled {
+		return nil
+	}
+
+	if _, port, err := net.SplitHostPort(c.Follower.Primary); err != nil || port == "" {
+		return fmt.Errorf("invalid follower.primary %q: must be the primary's own host:port, like 10.0.0.11:9003", c.Follower.Primary)
+	}
+
+	if c.Follower.Token == "" {
+		return fmt.Errorf("follower.enabled is set but follower.token is blank; create a replication token on the primary's System > Replication page")
+	}
+
+	if _, _, err := replicationapi.ParseToken(c.Follower.Token); err != nil {
+		return err
+	}
+
+	if d, err := time.ParseDuration(c.Follower.ReconcileInterval); err != nil || d < 0 {
+		return fmt.Errorf("invalid follower.reconcile_interval %q: must be a duration like 24h, or 0 to turn it off", c.Follower.ReconcileInterval)
+	}
+
+	return nil
+}
+
+func validListenAddress(address string) bool {
+	_, port, err := net.SplitHostPort(address)
+
+	return err == nil && port != ""
+}
+
+func (f FollowerConfig) ReconcileIntervalDuration() time.Duration {
+	d, _ := time.ParseDuration(f.ReconcileInterval)
+	return d
 }
 
 func (c *Config) SessionLifetimeDuration() time.Duration {

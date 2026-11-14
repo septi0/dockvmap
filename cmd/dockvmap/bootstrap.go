@@ -24,6 +24,8 @@ const credentialEncryptionKeyFile = "credential_encryption.key"
 
 const agentClientIdentityFile = "agent_client.pem"
 
+const replicationIdentityFile = "replication.pem"
+
 func resolveCredentialEncryptionKey(cfg *config.Config, dataPath string) (string, error) {
 	if cfg.CredentialEncryptionKey != "" {
 		return cfg.CredentialEncryptionKey, nil
@@ -59,28 +61,34 @@ func resolveCredentialEncryptionKey(cfg *config.Config, dataPath string) (string
 }
 
 func loadAgentClientIdentity(dataPath string) (tls.Certificate, error) {
-	path := filepath.Join(dataPath, agentClientIdentityFile)
+	return loadIdentity(filepath.Join(dataPath, agentClientIdentityFile), "the agent client identity")
+}
 
+func loadReplicationIdentity(dataPath string) (tls.Certificate, error) {
+	return loadIdentity(filepath.Join(dataPath, replicationIdentityFile), "the replication identity")
+}
+
+func loadIdentity(path, name string) (tls.Certificate, error) {
 	data, err := os.ReadFile(path)
 
 	if errors.Is(err, os.ErrNotExist) {
 		if data, err = agentapi.NewIdentity("dockvmap"); err != nil {
-			return tls.Certificate{}, fmt.Errorf("creating the agent client identity: %w", err)
+			return tls.Certificate{}, fmt.Errorf("creating %s: %w", name, err)
 		}
 
 		if err := writeFileAtomic(path, data, 0o600); err != nil {
-			return tls.Certificate{}, fmt.Errorf("writing the agent client identity: %w", err)
+			return tls.Certificate{}, fmt.Errorf("writing %s: %w", name, err)
 		}
 
-		slog.Info("generated the agent client identity", "path", path)
+		slog.Info("generated "+name, "path", path)
 	} else if err != nil {
-		return tls.Certificate{}, fmt.Errorf("reading the agent client identity: %w", err)
+		return tls.Certificate{}, fmt.Errorf("reading %s: %w", name, err)
 	}
 
 	identity, err := agentapi.ParseIdentity(data)
 
 	if err != nil {
-		return tls.Certificate{}, fmt.Errorf("reading the agent client identity %s: %w", path, err)
+		return tls.Certificate{}, fmt.Errorf("reading %s %s: %w", name, path, err)
 	}
 
 	return identity, nil

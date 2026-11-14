@@ -67,8 +67,8 @@ func TestNextPageURL(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := nextPageURL(base, tc.link); got != tc.want {
-				t.Errorf("nextPageURL(%q) = %q; want %q", tc.link, got, tc.want)
+			if got := NextPageURL(base, tc.link); got != tc.want {
+				t.Errorf("NextPageURL(%q) = %q; want %q", tc.link, got, tc.want)
 			}
 		})
 	}

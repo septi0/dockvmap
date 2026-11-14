@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/septi0/dockvmap/internal/agentclient"
 	"github.com/septi0/dockvmap/internal/config"
@@ -72,7 +73,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		BgCtx:     workerCtx,
 	})
 
-	internalRegistry := service.NewInternalRegistry(service.InternalRegistryDeps{
+	internalRegistryDeps := service.InternalRegistryDeps{
 		Store:     db,
 		Audit:     audit,
 		Failures:  failureLog,
@@ -81,7 +82,13 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Enabled:   cfg.InternalRegistry.Enabled,
 		Address:   cfg.InternalRegistry.Address,
 		TLS:       cfg.InternalRegistry.TLS,
-	})
+	}
+
+	if cfg.Replication.Enabled {
+		internalRegistryDeps.Changes = db
+	}
+
+	internalRegistry := service.NewInternalRegistry(internalRegistryDeps)
 
 	if err := internalRegistry.EnsureInternal(ctx); err != nil {
 		return err
@@ -106,6 +113,18 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 
 	if err := images.RecoverFromRestart(ctx); err != nil {
 		return fmt.Errorf("failed to recover image refresh state: %w", err)
+	}
+
+	replication, replicationSrv, err := startReplication(workerCtx, cfg, db, audit, internalRegistry, dataPath)
+
+	if err != nil {
+		return err
+	}
+
+	follower, err := startFollower(workerCtx, cfg, db, images.TagsReplaced, internalRegistry)
+
+	if err != nil {
+		return err
 	}
 
 	health := service.NewHealth(db)
@@ -165,6 +184,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		Changes:             internalRegistry,
 		TrustedProxies:      trustedProxies,
 		PushAllowed:         pushAllowed,
+		FollowerOf:          followerOf(cfg),
 	}, tlsConfig)
 
 	wDeps := workerDeps{
@@ -180,6 +200,8 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		proxyMetrics:        metrics,
 		proxyMetricsHistory: proxyMetricsHistory,
 		proxyUsage:          proxyUsage,
+		replication:         replication,
+		follower:            follower,
 	}
 
 	jobs := scheduledJobs(wDeps)
@@ -214,16 +236,31 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		webDeps.CacheUsage = cache
 	}
 
+	if replication != nil {
+		webDeps.Replication = replication
+	}
+
+	if follower != nil {
+		webDeps.Follower = follower
+	}
+
 	webSrv, err := newWebServer(webDeps, tlsConfig)
 
 	if err != nil {
 		return fmt.Errorf("failed to initialize web server: %w", err)
 	}
 
-	serverErrs := make(chan error, 2)
+	servers := map[string]*http.Server{"proxy": proxySrv, "web": webSrv}
 
-	go listenAndServe(proxySrv, "proxy", serverErrs)
-	go listenAndServe(webSrv, "web", serverErrs)
+	if replicationSrv != nil {
+		servers["replication"] = replicationSrv
+	}
+
+	serverErrs := make(chan error, len(servers))
+
+	for name, srv := range servers {
+		go listenAndServe(srv, name, serverErrs)
+	}
 
 	workerDone := make(chan struct{})
 
@@ -232,7 +269,7 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, dataPath st
 		runScheduledJobs(workerCtx, jobs, worker)
 	}()
 
-	serverErr := awaitShutdown(proxySrv, webSrv, workerCancel, workerDone, serverErrs)
+	serverErr := awaitShutdown(servers, workerCancel, workerDone, serverErrs)
 	internalRegistry.Stop()
 
 	return serverErr

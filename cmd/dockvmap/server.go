@@ -54,7 +54,7 @@ func loadTLSConfig(cfg *config.Config) (*tls.Config, error) {
 	return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
 }
 
-func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFunc, workerDone <-chan struct{}, serverErrs <-chan error) error {
+func awaitShutdown(servers map[string]*http.Server, workerCancel context.CancelFunc, workerDone <-chan struct{}, serverErrs <-chan error) error {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 
@@ -82,23 +82,14 @@ func awaitShutdown(proxySrv, webSrv *http.Server, workerCancel context.CancelFun
 	defer shutdownCancel()
 
 	var shutdownWg sync.WaitGroup
-	shutdownWg.Add(2)
 
-	go func() {
-		defer shutdownWg.Done()
-
-		if err := proxySrv.Shutdown(shutdownCtx); err != nil {
-			slog.Error("proxy server shutdown error", "error", err)
-		}
-	}()
-
-	go func() {
-		defer shutdownWg.Done()
-
-		if err := webSrv.Shutdown(shutdownCtx); err != nil {
-			slog.Error("web server shutdown error", "error", err)
-		}
-	}()
+	for name, srv := range servers {
+		shutdownWg.Go(func() {
+			if err := srv.Shutdown(shutdownCtx); err != nil {
+				slog.Error(name+" server shutdown error", "error", err)
+			}
+		})
+	}
 
 	shutdownWg.Wait()
 

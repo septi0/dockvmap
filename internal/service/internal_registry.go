@@ -39,6 +39,10 @@ type internalRegistryStore interface {
 	ListImageIDsByRegistryRepository(ctx context.Context, registryID int64, repository string) ([]int64, error)
 }
 
+type repositoryChangeRecorder interface {
+	RecordRepositoryChange(ctx context.Context, repository, reference string, deleted bool) error
+}
+
 type imageRefresher interface {
 	StartBackgroundRefresh(imageID int64) (bool, error)
 }
@@ -69,6 +73,9 @@ type InternalRegistryDeps struct {
 	Enabled   bool
 	Address   string
 	TLS       bool
+
+	// set on a replication primary, so followers learn about pushes and deletes
+	Changes repositoryChangeRecorder
 }
 
 type InternalRegistry struct {
@@ -77,6 +84,7 @@ type InternalRegistry struct {
 	failures  failureRecorder
 	refresher imageRefresher
 	digests   digestResolver
+	changes   repositoryChangeRecorder
 
 	digestsMu     sync.Mutex
 	tagDigests    map[string]*registryTagDigest
@@ -100,6 +108,7 @@ func NewInternalRegistry(deps InternalRegistryDeps) *InternalRegistry {
 		failures:      deps.Failures,
 		refresher:     deps.Refresher,
 		digests:       deps.Digests,
+		changes:       deps.Changes,
 		tagDigests:    make(map[string]*registryTagDigest),
 		enabled:       deps.Enabled,
 		address:       deps.Address,
@@ -124,7 +133,7 @@ func (r *InternalRegistry) TLS() bool {
 	return r.useTLS
 }
 
-func (r *InternalRegistry) url(path string) string {
+func (r *InternalRegistry) URL(path string) string {
 	scheme := "http"
 
 	if r.useTLS {
@@ -134,7 +143,7 @@ func (r *InternalRegistry) url(path string) string {
 	return scheme + "://" + r.address + path
 }
 
-func (r *InternalRegistry) options() model.RegistryOptions {
+func (r *InternalRegistry) Options() model.RegistryOptions {
 	return model.RegistryOptions{Insecure: !r.useTLS}
 }
 
@@ -171,7 +180,7 @@ func (r *InternalRegistry) EnsureInternal(ctx context.Context) error {
 	}
 
 	switch {
-	case marked != nil && marked.Registry == r.address && marked.Options == r.options():
+	case marked != nil && marked.Registry == r.address && marked.Options == r.Options():
 		return nil
 
 	case marked != nil && marked.Registry == r.address:
@@ -220,7 +229,7 @@ func (r *InternalRegistry) EnsureInternal(ctx context.Context) error {
 }
 
 func (r *InternalRegistry) mark(ctx context.Context, registryID int64) error {
-	err := r.store.MarkRegistryInternal(ctx, registryID, r.address, r.options())
+	err := r.store.MarkRegistryInternal(ctx, registryID, r.address, r.Options())
 
 	if errors.Is(err, store.ErrRegistryConflict) {
 		return r.addressInUse()
@@ -236,7 +245,7 @@ func (r *InternalRegistry) addressInUse() error {
 func (r *InternalRegistry) auditRegistryEntry(ctx context.Context, auditType, registry string) {
 	recordAudit(ctx, r.audit, auditType, auditRegistryData{
 		Registry: registry,
-		Options:  r.options(),
+		Options:  r.Options(),
 	})
 }
 
@@ -250,7 +259,7 @@ func (r *InternalRegistry) checkUntilReachable(ctx context.Context) {
 	failed := ""
 
 	for {
-		err := r.ping(ctx)
+		err := r.Ping(ctx)
 
 		if ctx.Err() != nil {
 			return
@@ -280,8 +289,8 @@ func (r *InternalRegistry) checkUntilReachable(ctx context.Context) {
 	}
 }
 
-func (r *InternalRegistry) ping(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.url("/v2/"), nil)
+func (r *InternalRegistry) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, r.URL("/v2/"), nil)
 
 	if err != nil {
 		return err
@@ -310,11 +319,11 @@ func (r *InternalRegistry) ping(ctx context.Context) error {
 }
 
 func (r *InternalRegistry) Pushed(repository, tag, token string, info RequestInfo) {
-	r.changed(repository, AuditTypeImagePushed, auditImagePushedData{Repository: repository, Tag: tag, Token: token}, info)
+	r.changed(repository, tag, false, AuditTypeImagePushed, auditImagePushedData{Repository: repository, Tag: tag, Token: token}, info)
 }
 
 func (r *InternalRegistry) Deleted(repository, reference, token string, info RequestInfo) {
-	r.changed(repository, AuditTypeManifestDeleted, auditManifestDeletedData{Repository: repository, Reference: reference, Token: token}, info)
+	r.changed(repository, reference, true, AuditTypeManifestDeleted, auditManifestDeletedData{Repository: repository, Reference: reference, Token: token}, info)
 }
 
 type registryTagDigest struct {
@@ -376,7 +385,7 @@ func (r *InternalRegistry) forgetTagDigests(repository string) {
 	}
 }
 
-func (r *InternalRegistry) changed(repository, auditType string, data any, info RequestInfo) {
+func (r *InternalRegistry) changed(repository, reference string, deleted bool, auditType string, data any, info RequestInfo) {
 	r.forgetTagDigests(repository)
 
 	r.audits.Add(1)
@@ -388,6 +397,15 @@ func (r *InternalRegistry) changed(repository, auditType string, data any, info 
 		defer cancel()
 
 		recordAudit(ctx, r.audit, auditType, data)
+
+		if r.changes == nil {
+			return
+		}
+
+		if err := r.changes.RecordRepositoryChange(ctx, repository, reference, deleted); err != nil {
+			slog.Error("recording a registry change for followers failed", "repository", repository, "error", err)
+			r.failures.Record(ctx, FailureSourceReplication, repository, err)
+		}
 	}()
 
 	r.mu.Lock()

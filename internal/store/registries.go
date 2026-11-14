@@ -113,28 +113,33 @@ func (s *Store) GetRegistryCredentials(ctx context.Context, registry string) (*m
 		Username: username.String,
 	}
 
-	if len(ciphertext) == 0 {
-		return credentials, nil
-	}
-
-	if s.credentialCipher == nil {
-		return nil, ErrCredentialEncryptionNotConfigured
-	}
-
-	credential, err := s.credentialCipher.gcm.Open(
-		nil,
-		nonce,
-		ciphertext,
-		[]byte(strconv.FormatInt(id, 10)),
-	)
+	credential, err := s.decryptRegistryCredential(id, nonce, ciphertext)
 
 	if err != nil {
 		return nil, fmt.Errorf("decrypting registry credentials for %q: %w", registry, err)
 	}
 
-	credentials.Credential = string(credential)
+	credentials.Credential = credential
 
 	return credentials, nil
+}
+
+func (s *Store) decryptRegistryCredential(registryID int64, nonce, ciphertext []byte) (string, error) {
+	if len(ciphertext) == 0 {
+		return "", nil
+	}
+
+	if s.credentialCipher == nil {
+		return "", ErrCredentialEncryptionNotConfigured
+	}
+
+	credential, err := s.credentialCipher.gcm.Open(nil, nonce, ciphertext, []byte(strconv.FormatInt(registryID, 10)))
+
+	if err != nil {
+		return "", err
+	}
+
+	return string(credential), nil
 }
 
 func (s *Store) GetRegistryOptions(ctx context.Context, registry string) (*model.RegistryOptions, error) {

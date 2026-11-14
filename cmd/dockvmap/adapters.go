@@ -5,6 +5,7 @@ import (
 
 	"github.com/septi0/dockvmap/internal/model"
 	"github.com/septi0/dockvmap/internal/oci"
+	"github.com/septi0/dockvmap/internal/ocicopy"
 	"github.com/septi0/dockvmap/internal/service"
 )
 
@@ -84,4 +85,35 @@ func (a registryOptionsAdapter) GetRegistryOptions(ctx context.Context, registry
 		Insecure:             registryOptions.Insecure,
 		AllowSelfSignedCerts: registryOptions.AllowSelfSignedCerts,
 	}, nil
+}
+
+type followerMirror struct {
+	primary ocicopy.Registry
+	local   ocicopy.Registry
+}
+
+func (m followerMirror) Repositories(ctx context.Context) ([]string, error) {
+	return m.primary.Repositories(ctx)
+}
+
+func (m followerMirror) Tags(ctx context.Context, repository string) ([]string, error) {
+	return m.primary.Tags(ctx, repository)
+}
+
+func (m followerMirror) Copy(ctx context.Context, repository, tag string) (bool, error) {
+	return ocicopy.Copy(ctx, m.primary, m.local, repository, tag)
+}
+
+func (m followerMirror) HasTag(ctx context.Context, repository, tag string) (bool, error) {
+	digest, err := m.local.ManifestDigest(ctx, repository, tag)
+
+	return digest != "", err
+}
+
+func (m followerMirror) Delete(ctx context.Context, repository, reference string) error {
+	return m.local.Delete(ctx, repository, reference)
+}
+
+func (m followerMirror) DeletesAllowed(ctx context.Context) (bool, error) {
+	return m.local.DeletesAllowed(ctx)
 }
