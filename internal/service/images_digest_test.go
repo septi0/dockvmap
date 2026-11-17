@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -278,5 +279,86 @@ func TestDigestLookupIsCappedInTheSweepAndAfterRetags(t *testing.T) {
 		if remaining <= 0 || remaining > digestLookupTimeout {
 			t.Fatalf("lookup %d had %v left, want at most %v", i, remaining, digestLookupTimeout)
 		}
+	}
+}
+
+type dropTags string
+
+func (prefix dropTags) Apply(tags []string) []string {
+	return slices.DeleteFunc(slices.Clone(tags), func(tag string) bool { return strings.HasPrefix(tag, string(prefix)) })
+}
+
+// an internal image whose tag check hasn't run since a push: the registry is asked before a tag is refused
+func newPushedTagFixture(t *testing.T, internal bool) (*groupFixture, *fakeDigests, int64) {
+	f, digests, _ := newDigestFixture(t)
+
+	if internal {
+		if err := f.store.MarkRegistryInternal(f.ctx, f.registryID, "registry.test", model.RegistryOptions{Insecure: true}); err != nil {
+			t.Fatalf("marking the registry internal: %v", err)
+		}
+	}
+
+	id := f.addImage("web", "v1", "v1")
+	digests.set("stack/web:v2", testDigest("b"))
+	f.images.tagLister = listedTags{"v1", "v2"}
+
+	return f, digests, id
+}
+
+func TestUpdateTagAcceptsATagPushedBeforeTheTagCheckRan(t *testing.T) {
+	f, _, id := newPushedTagFixture(t, true)
+
+	if err := f.images.UpdateTag(f.ctx, id, "v2", model.TagHistorySourceManual); err != nil {
+		t.Fatalf("UpdateTag() error = %v, want the pushed tag accepted at once", err)
+	}
+
+	f.tags(id, "v2")
+
+	deadline := time.Now().Add(2 * time.Second)
+
+	for {
+		tags, _ := f.store.GetImageTags(f.ctx, id)
+
+		if hasImageTag(tags, "v2") && f.image(id).RefreshStatus == "idle" {
+			break
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("tags = %v, want the tag check started so v2 is listed", tags)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestUpdateTagStillRefusesWhatTheRegistryLacks(t *testing.T) {
+	cases := []struct {
+		name     string
+		internal bool
+		tag      string
+		filter   tagFilterer
+		lookups  int
+	}{
+		{"missing from the registry", true, "v3", stubFilter{}, 1},
+		{"excluded by the tag filters", true, "v2", dropTags("v2"), 0},
+		{"not on the internal registry", false, "v2", stubFilter{}, 0},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f, digests, id := newPushedTagFixture(t, c.internal)
+			f.images.tagFilter = c.filter
+			before := len(digests.lookups)
+
+			if err := f.images.UpdateTag(f.ctx, id, c.tag, model.TagHistorySourceManual); !errors.Is(err, ErrTagUnavailable) {
+				t.Fatalf("UpdateTag() error = %v, want ErrTagUnavailable", err)
+			}
+
+			if got := len(digests.lookups) - before; got != c.lookups {
+				t.Errorf("registry lookups = %d, want %d", got, c.lookups)
+			}
+
+			f.tags(id, "v1")
+		})
 	}
 }

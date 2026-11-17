@@ -458,6 +458,26 @@ func TestReplicationIntegration(t *testing.T) {
 		})
 	})
 
+	t.Run("a virtual tag moves to a tag right after its push", func(t *testing.T) {
+		pushImage(t, primary.proxy, "team/deploy", "v1", "deploy-v1")
+		primary.mustAPI(t, http.MethodPost, "/api/images", map[string]any{"name": "deploy", "registryId": internalID, "repository": "team/deploy", "tag": "v1"}, nil)
+
+		var images struct {
+			Images []struct{ ID int64 }
+		}
+		primary.mustAPI(t, http.MethodGet, "/api/images?search=deploy", nil, &images)
+
+		deployV2 := pushImage(t, primary.proxy, "team/deploy", "v2", "deploy-v2")
+
+		if code := primary.api(t, http.MethodPut, fmt.Sprintf("/api/images/%d/tag", images.Images[0].ID), map[string]string{"tag": "v2"}, nil); code != http.StatusOK {
+			t.Fatalf("moving deploy to v2 right after its push answered %d, want 200", code)
+		}
+
+		if got, code := pullDigest(primary, "deploy"); got != deployV2 {
+			t.Errorf("pull of deploy:current = %q (%d), want the pushed v2 %q", got, code, deployV2)
+		}
+	})
+
 	backup := filepath.Join(t.TempDir(), "primary-before.db")
 	run(t, binary, "-data-path", primary.dir, "-backup", backup)
 

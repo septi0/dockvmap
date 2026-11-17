@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -266,10 +268,12 @@ func TestRegistriesRefuseChangesToTheInternalRegistry(t *testing.T) {
 	}
 }
 
-func TestInternalRegistryCheckRecordsAFailureOnceAndStopsWhenReachable(t *testing.T) {
+// runStartupCheck runs the startup check against a registry that fails for unreachableFor, then answers
+func runStartupCheck(t *testing.T, grace, unreachableFor time.Duration) (failures []string, logs string, calls int) {
+	t.Helper()
+
 	var mu sync.Mutex
 	status := http.StatusServiceUnavailable
-	calls := 0
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
@@ -280,9 +284,15 @@ func TestInternalRegistryCheckRecordsAFailureOnceAndStopsWhenReachable(t *testin
 	}))
 	defer server.Close()
 
-	failures := &recordingFailures{}
-	registry := NewInternalRegistry(InternalRegistryDeps{Failures: failures, Enabled: true, Address: strings.TrimPrefix(server.URL, "http://")})
+	var buf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	defer slog.SetDefault(previous)
+
+	recorder := &recordingFailures{}
+	registry := NewInternalRegistry(InternalRegistryDeps{Failures: recorder, Enabled: true, Address: strings.TrimPrefix(server.URL, "http://")})
 	registry.checkInterval = 10 * time.Millisecond
+	registry.startGrace = grace
 
 	done := make(chan struct{})
 
@@ -291,7 +301,7 @@ func TestInternalRegistryCheckRecordsAFailureOnceAndStopsWhenReachable(t *testin
 		close(done)
 	}()
 
-	time.Sleep(60 * time.Millisecond)
+	time.Sleep(unreachableFor)
 
 	mu.Lock()
 	status = http.StatusOK
@@ -303,19 +313,39 @@ func TestInternalRegistryCheckRecordsAFailureOnceAndStopsWhenReachable(t *testin
 		t.Fatal("the check didn't stop after the registry answered")
 	}
 
-	failures.mu.Lock()
-	got := append([]string(nil), failures.entries...)
-	failures.mu.Unlock()
-
-	if len(got) != 1 || !strings.Contains(got[0], "internal_registry ") || !strings.Contains(got[0], "instead of a registry") {
-		t.Errorf("failures = %q, want one recorded failure", got)
-	}
-
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
 	mu.Lock()
 	defer mu.Unlock()
 
+	return append([]string(nil), recorder.entries...), buf.String(), calls
+}
+
+func TestInternalRegistryCheckRecordsAFailureOnceAndStopsWhenReachable(t *testing.T) {
+	failures, logs, calls := runStartupCheck(t, 20*time.Millisecond, 80*time.Millisecond)
+
+	if len(failures) != 1 || !strings.Contains(failures[0], "internal_registry ") || !strings.Contains(failures[0], "instead of a registry") {
+		t.Errorf("failures = %q, want one recorded failure once the grace period is over", failures)
+	}
+
+	if !strings.Contains(logs, "level=WARN") || !strings.Contains(logs, "internal registry answers again") {
+		t.Errorf("logs = %s, want the warning and the recovery", logs)
+	}
+
 	if calls < 3 {
 		t.Errorf("calls = %d, want several retries", calls)
+	}
+}
+
+func TestInternalRegistryStartingWithinTheGraceIsNotAProblem(t *testing.T) {
+	failures, logs, _ := runStartupCheck(t, time.Second, 40*time.Millisecond)
+
+	if len(failures) != 0 {
+		t.Errorf("failures = %q, want none for a registry that started a moment after DockVMap", failures)
+	}
+
+	if strings.Contains(logs, "level=WARN") || !strings.Contains(logs, "internal registry reachable") {
+		t.Errorf("logs = %s, want no warning and the first success logged as reachable", logs)
 	}
 }
 

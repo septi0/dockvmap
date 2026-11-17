@@ -18,6 +18,7 @@ import (
 
 const (
 	internalRegistryCheckInterval = 10 * time.Second
+	internalRegistryStartGrace    = 30 * time.Second
 	internalRegistryCheckTimeout  = 5 * time.Second
 	internalTagDigestTTL          = 5 * time.Minute
 
@@ -93,6 +94,7 @@ type InternalRegistry struct {
 	useTLS        bool
 	client        *http.Client
 	checkInterval time.Duration
+	startGrace    time.Duration
 	quietPeriod   time.Duration
 	maxWait       time.Duration
 
@@ -115,6 +117,7 @@ func NewInternalRegistry(deps InternalRegistryDeps) *InternalRegistry {
 		useTLS:        deps.TLS,
 		client:        &http.Client{Timeout: internalRegistryCheckTimeout},
 		checkInterval: internalRegistryCheckInterval,
+		startGrace:    internalRegistryStartGrace,
 		quietPeriod:   changeQuietPeriod,
 		maxWait:       changeMaxWait,
 		pending:       make(map[string]*pendingCheck),
@@ -257,6 +260,8 @@ func (r *InternalRegistry) StartChecking(ctx context.Context) {
 
 func (r *InternalRegistry) checkUntilReachable(ctx context.Context) {
 	failed := ""
+	// when Docker restarts the host, the registry container can start after DockVMap; that isn't a problem yet
+	quietUntil := time.Now().Add(r.startGrace)
 
 	for {
 		err := r.Ping(ctx)
@@ -275,7 +280,9 @@ func (r *InternalRegistry) checkUntilReachable(ctx context.Context) {
 			return
 		}
 
-		if err.Error() != failed {
+		if time.Now().Before(quietUntil) {
+			slog.Debug("internal registry not answering yet", "registry", r.address, "error", err)
+		} else if err.Error() != failed {
 			slog.Warn("internal registry check failed", "registry", r.address, "error", err)
 			r.failures.Record(ctx, FailureSourceInternalRegistry, r.address, err)
 			failed = err.Error()

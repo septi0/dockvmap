@@ -1,7 +1,10 @@
 package replication
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,9 +23,18 @@ type fakePrimary struct {
 	seen     string
 	request  service.StateRequest
 	pulls    []replicationapi.PullReport
+	authErr  error
 }
 
-func (f *fakePrimary) Authenticate(_ context.Context, secret string) (*model.ReplicationToken, error) {
+func (f *fakePrimary) Authenticate(ctx context.Context, secret string) (*model.ReplicationToken, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	if f.authErr != nil {
+		return nil, f.authErr
+	}
+
 	if secret != "good" {
 		return nil, nil
 	}
@@ -208,5 +220,50 @@ func TestPullReportNeedsATokenAndReachesThePrimary(t *testing.T) {
 
 	if code := post("good", `{"images":[{"imageId":3,"pulledAt":"2026-11-14T10:00:00Z","pulledTag":"v1"}]}`); code != http.StatusNoContent || len(primary.pulls) != 1 || primary.pulls[0].Images[0].ImageID != 3 {
 		t.Errorf("report: status = %d, pulls %+v, want 204 and the image passed on", code, primary.pulls)
+	}
+}
+
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	return &logs
+}
+
+func TestARequestCancelledByShutdownAnswers503WithoutAnError(t *testing.T) {
+	logs := captureLogs(t)
+	h := NewHandler(&fakePrimary{}, nil, ipmatch.Set{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req := httptest.NewRequest(http.MethodGet, replicationapi.StatePath, nil).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer good")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503 so the follower retries", rec.Code)
+	}
+
+	if strings.Contains(logs.String(), "level=ERROR") {
+		t.Errorf("logs = %s, want no ERROR for a request cancelled by shutdown", logs)
+	}
+}
+
+func TestAFailedTokenCheckAnswers500AndLogsAnError(t *testing.T) {
+	logs := captureLogs(t)
+	h := NewHandler(&fakePrimary{authErr: errors.New("database is locked")}, nil, ipmatch.Set{})
+
+	if rec := request(t, h, http.MethodGet, replicationapi.StatePath, "good"); rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
+
+	if !strings.Contains(logs.String(), "level=ERROR") {
+		t.Errorf("logs = %s, want an ERROR for a real failure", logs)
 	}
 }

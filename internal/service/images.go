@@ -354,6 +354,11 @@ func (i *Images) UpdateTag(ctx context.Context, imageId int64, tag string, sourc
 func (i *Images) applyTag(ctx context.Context, images []model.Image, tag string, source model.TagHistorySource) error {
 	changes := make([]imageChange, 0, len(images))
 	missing := make([]string, 0)
+	unlisted := make(map[int64]bool)
+
+	// one limit for every registry lookup below, so a group can't hold its locks past the request's timeout
+	lookupCtx, cancel := context.WithTimeout(ctx, digestLookupTimeout)
+	defer cancel()
 
 	for _, image := range images {
 		if image.Tag == tag {
@@ -367,9 +372,13 @@ func (i *Images) applyTag(ctx context.Context, images []model.Image, tag string,
 		}
 
 		if !hasImageTag(allTags, tag) {
-			missing = append(missing, image.Name)
+			if !i.pushedTag(lookupCtx, image, tag) {
+				missing = append(missing, image.Name)
 
-			continue
+				continue
+			}
+
+			unlisted[image.ID] = true
 		}
 
 		updateAvailable, updateAvailableTag := effectiveUpdateAvailable(image.Pinned, allTags, tag)
@@ -422,7 +431,7 @@ func (i *Images) applyTag(ctx context.Context, images []model.Image, tag string,
 	i.notifyTagChanged(names...)
 
 	for _, change := range changes {
-		if change.image.LastCheckError == nil {
+		if change.image.LastCheckError == nil && !unlisted[change.image.ID] {
 			continue
 		}
 
@@ -694,6 +703,17 @@ func (i *Images) MarkTagsAsSeen(ctx context.Context, imageId int64) (int64, erro
 	}
 
 	return marked, nil
+}
+
+// pushedTag tells whether an internal image's registry already has a tag its tag list doesn't, like one pushed a moment ago
+func (i *Images) pushedTag(ctx context.Context, image model.Image, tag string) bool {
+	if !image.RegistryInternal || len(i.tagFilter.Apply([]string{tag})) == 0 {
+		return false
+	}
+
+	digest, err := i.digests.ManifestDigest(ctx, image.Registry, image.Repository, tag)
+
+	return err == nil && digest != ""
 }
 
 func hasImageTag(tags []model.ImageTag, tag string) bool {

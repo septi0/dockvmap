@@ -62,6 +62,20 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, replicationapi.Error{Error: message})
 }
 
+// serverError answers 503 when the request ended first, as every request does while the primary stops; a follower retries either way
+func serverError(w http.ResponseWriter, r *http.Request, failure, answer string, err error, attrs ...any) {
+	attrs = append(attrs, "error", err)
+
+	if r.Context().Err() != nil {
+		slog.Debug(failure, attrs...)
+		writeError(w, http.StatusServiceUnavailable, "the primary is stopping or the request was cancelled; try again")
+		return
+	}
+
+	slog.Error(failure, attrs...)
+	writeError(w, http.StatusInternalServerError, answer)
+}
+
 type tokenKey struct{}
 
 // authenticated checks the address before the token, so refused addresses cost no lookup and no log line
@@ -82,8 +96,7 @@ func (h *handler) authenticated(next http.HandlerFunc) http.HandlerFunc {
 		token, err := h.service.Authenticate(r.Context(), secret)
 
 		if err != nil {
-			slog.Error("checking a replication token failed", "error", err)
-			writeError(w, http.StatusInternalServerError, "checking the replication token failed")
+			serverError(w, r, "checking a replication token failed", "checking the replication token failed", err)
 			return
 		}
 
@@ -134,8 +147,7 @@ func (h *handler) state(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case err != nil:
-		slog.Error("answering a follower failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "reading the replication state failed; check the primary's log")
+		serverError(w, r, "answering a follower failed", "reading the replication state failed; check the primary's log", err)
 	case conflict != nil:
 		writeJSON(w, http.StatusConflict, conflict)
 	case response == nil:
@@ -158,8 +170,7 @@ func (h *handler) changes(w http.ResponseWriter, r *http.Request) {
 	response, err := h.service.Changes(r.Context(), repository, after)
 
 	if err != nil {
-		slog.Error("reading registry changes for a follower failed", "repository", repository, "error", err)
-		writeError(w, http.StatusInternalServerError, "reading the changes failed; check the primary's log")
+		serverError(w, r, "reading registry changes for a follower failed", "reading the changes failed; check the primary's log", err, "repository", repository)
 		return
 	}
 
@@ -177,8 +188,7 @@ func (h *handler) pulls(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.RecordPulls(r.Context(), report); err != nil {
-		slog.Error("recording a follower's pulls failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "recording the pulls failed; check the primary's log")
+		serverError(w, r, "recording a follower's pulls failed", "recording the pulls failed; check the primary's log", err)
 		return
 	}
 

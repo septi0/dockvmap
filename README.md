@@ -297,6 +297,8 @@ A follower's proxy must behave like the primary's: the same `virtual_tag`, `prox
 
 The token gives a follower every registry login stored on the primary, so keep it like a password and delete it on the primary when a follower is retired. `replication.allowed_ips` makes a leaked token useless from anywhere else. `replication.pem` in the primary's data folder is as secret as the database.
 
+The primary checks the address a connection arrives from. With Docker, that's the follower's real address only when published ports go through Docker's NAT rules, as they do by default. Through Docker's userland proxy, as with rootless Docker or for a moment while Docker starts, every connection arrives from the bridge gateway instead and gets `403`. Don't add that gateway to `allowed_ips`, or anyone can connect. A follower refused for a moment retries by itself.
+
 ### Failover and read replicas
 
 With [keepalived](https://keepalived.org) or similar, clients use one floating address that moves to the follower when the primary's host is down. Both nodes publish the proxy on that address (with `net.ipv4.ip_nonlocal_bind=1`) and on their own:
@@ -307,13 +309,13 @@ With [keepalived](https://keepalived.org) or similar, clients use one floating a
 | Web UI | `10.0.0.11:8080`, `127.0.0.1:8080` | `127.0.0.1:8080` (health checks) |
 | Replication | `10.0.0.11:9003` | none |
 
-Both nodes need the TLS certificate for the floating name. Each keepalived checks only its own node, like `curl -sf http://127.0.0.1:8080/health/ready`. A follower is ready once it has the primary's data and images and its setup matches, even with the primary down. A returning primary is ready once its database and registry work, so the address doesn't move back too early. `compose.registry.sample.yaml` is a starting point for both nodes.
+Both nodes need the TLS certificate for the floating name. Each keepalived checks only its own node, like `curl -sf http://127.0.0.1:8080/health/ready`, or with `tls.enabled` `curl -sfk https://127.0.0.1:8443/health/ready` (`-k` since the certificate is for the floating name). A follower is ready once it has the primary's data and images and its setup matches, even with the primary down. A returning primary is ready once its database and registry work, so the address doesn't move back too early. `compose.registry.sample.yaml` is a starting point for both nodes.
 
 A follower also serves pulls while the primary is up, like a MySQL read replica. A tag pushed a moment ago can answer `404` there until it's copied. Put `/health/ready` in front of any load balancer. The primary's Hosts page recognises only containers pulled through its own address or its `proxy_public_host`.
 
 ### Health
 
-`GET /health/ready` on the web port needs no login and answers `200` when ready, `503` when not, with details as JSON. On a follower they include `sync` (`running`, or why it stopped), `appliedVersion`, `primaryVersion`, `lastContactAt`, `pendingRepositories`, `failedCopies` and `lastError`; on the primary, the followers connected right now. Keep `GET /health` as the container healthcheck, so a follower that is behind isn't restarted.
+`GET /health/ready` is on the web port, `:8080`, or `:8443` with `tls.enabled` (the examples here use `:8080`). It needs no login and answers `200` when ready, `503` when not, with details as JSON. On a follower they include `sync` (`running`, or why it stopped), `appliedVersion`, `primaryVersion`, `lastContactAt`, `pendingRepositories`, `failedCopies` and `lastError`; on the primary, the followers connected right now. Keep `GET /health` as the container healthcheck, so a follower that is behind isn't restarted.
 
 ### Runbook
 
@@ -423,7 +425,7 @@ A DockVMap is a primary or a follower, never both. See [Replication and follower
 |---|---|---|
 | `replication.enabled` | `false` | Let followers copy this DockVMap. |
 | `replication.listen` | `:9003` | Replication port. Publish it on the primary's own address only. |
-| `replication.allowed_ips` | `[]` | IPs or CIDRs of the followers, like `["10.0.0.12"]`. Others get `403` naming the address seen, which with rootless Docker or Docker's userland proxy can be a Docker gateway address. Empty allows every address. |
+| `replication.allowed_ips` | `[]` | IPs or CIDRs of the followers, like `["10.0.0.12"]`. Others get `403` naming the address seen, which must be the follower's real one (see [Replication and follower mode](#replication-and-follower-mode)). Empty allows every address. |
 | `follower.enabled` | `false` | Make this DockVMap a read-only follower, with no web UI. |
 | `follower.primary` | none | The primary's own `host:port` for replication, never a floating address. |
 | `follower.token` | none | A replication token from the primary's System › Replication page. |
