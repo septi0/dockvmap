@@ -1,11 +1,14 @@
 ARG DATA_DIR=/data
 
-FROM node:22.23.1-alpine AS node
+# the build stages run on the build host and cross-compile, so an arm64 image needs no emulation
+FROM --platform=$BUILDPLATFORM node:22.23.1-alpine AS node
 
 # ---------- Build stage ----------
-FROM golang:1.25-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
 ARG DATA_DIR
+ARG TARGETOS
+ARG TARGETARCH
 
 RUN apk add --no-cache make git libstdc++ libgcc
 
@@ -23,7 +26,7 @@ COPY frontend/package.json frontend/package-lock.json frontend/
 RUN make frontend-deps
 
 COPY . .
-RUN make build-server DEFAULT_DATA_PATH=${DATA_DIR}
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} make build-server DEFAULT_DATA_PATH=${DATA_DIR}
 
 # ---------- Runtime stage ----------
 FROM alpine:3.20 AS runtime

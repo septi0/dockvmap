@@ -1,5 +1,9 @@
 # ---------- Build stage ----------
-FROM golang:1.25-alpine AS builder
+# runs on the build host and cross-compiles, so an arm64 image needs no emulation
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 RUN apk add --no-cache make git ca-certificates
 
@@ -9,7 +13,7 @@ COPY Makefile go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN make build-agent DEFAULT_DATA_PATH=/data
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} make build-agent DEFAULT_DATA_PATH=/data
 
 # ---------- Runtime stage ----------
 FROM scratch
