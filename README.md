@@ -446,7 +446,7 @@ make test-integration  # replication end to end in Docker (containers named dvm-
 
 ## Contributing
 
-Bug reports and feature ideas are welcome as [issues](https://github.com/septi0/dockvmap/issues); pull requests aren't accepted for now. [CONTRIBUTING.md](CONTRIBUTING.md) describes how the project is built. To report a security problem, see [SECURITY.md](SECURITY.md).
+Bug reports and feature ideas are welcome as [issues](https://github.com/septi0/dockvmap/issues). Small fixes can go straight to a pull request; for anything larger, open an issue first. [CONTRIBUTING.md](CONTRIBUTING.md) describes how the project is built. To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## License
 

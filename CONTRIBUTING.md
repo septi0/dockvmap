@@ -1,6 +1,6 @@
 # Contributing
 
-DockVMap is maintained by one person. Bug reports and feature ideas are welcome as [GitHub issues](https://github.com/septi0/dockvmap/issues); pull requests aren't accepted for now. To report a security problem, see [SECURITY.md](SECURITY.md).
+Bug reports and feature ideas are welcome as [GitHub issues](https://github.com/septi0/dockvmap/issues). Small fixes can go straight to a pull request; for anything larger, open an issue first so we can agree on the approach. Run `make verify` before sending one. To report a security problem, see [SECURITY.md](SECURITY.md).
 
 The rest of this guide describes how the project is built, for anyone reading the code or working on a fork.
 
