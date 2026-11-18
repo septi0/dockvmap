@@ -114,7 +114,7 @@ func unexpectedAnswer(resp *http.Response) error {
 }
 
 // State returns nil and nil when nothing changed during the primary's wait
-func (c *Client) State(ctx context.Context, req service.StateRequest, status string) (*replicationapi.StateResponse, *replicationapi.Conflict, error) {
+func (c *Client) State(ctx context.Context, req service.StateRequest, status string, health replicationapi.FollowerHealth) (*replicationapi.StateResponse, *replicationapi.Conflict, error) {
 	query := url.Values{}
 
 	if req.HasVersion {
@@ -130,7 +130,14 @@ func (c *Client) State(ctx context.Context, req service.StateRequest, status str
 		query.Set(replicationapi.ParamFull, "1")
 	}
 
-	resp, err := c.send(ctx, http.MethodGet, replicationapi.StatePath, query, nil, http.Header{replicationapi.FollowerStatusHeader: {status}})
+	healthJSON, err := json.Marshal(health)
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	header := http.Header{replicationapi.FollowerStatusHeader: {status}, replicationapi.FollowerHealthHeader: {string(healthJSON)}}
+	resp, err := c.send(ctx, http.MethodGet, replicationapi.StatePath, query, nil, header)
 
 	if err != nil {
 		return nil, nil, err

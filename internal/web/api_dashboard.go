@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -50,9 +51,10 @@ type dashboardActivityData struct {
 }
 
 type dashboardIssuesData struct {
-	Failures []failureResponse `json:"failures"`
-	Distinct int               `json:"distinct"`
-	Total    int64             `json:"total"`
+	Followers []seenFollowerResponse `json:"followers"`
+	Failures  []failureResponse      `json:"failures"`
+	Distinct  int                    `json:"distinct"`
+	Total     int64                  `json:"total"`
 }
 
 type dashboardHostsData struct {
@@ -235,7 +237,29 @@ func (w *Web) dashboardIssues(ctx context.Context) dashboardSection[dashboardIss
 		responses = append(responses, newFailureResponse(failure))
 	}
 
-	return dashboardData(dashboardIssuesData{Failures: responses, Distinct: len(failures), Total: total})
+	followers, err := w.followerProblems(ctx)
+
+	if err != nil {
+		return dashboardError[dashboardIssuesData]("failed to load recent issues")
+	}
+
+	return dashboardData(dashboardIssuesData{Followers: followers, Failures: responses, Distinct: len(failures), Total: total})
+}
+
+func (w *Web) followerProblems(ctx context.Context) ([]seenFollowerResponse, error) {
+	if w.replication == nil {
+		return []seenFollowerResponse{}, nil
+	}
+
+	followers, err := w.replication.Followers(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	problems := slices.DeleteFunc(followers, func(f service.SeenFollower) bool { return !f.HasProblem() })
+
+	return newSeenFollowerResponses(problems), nil
 }
 
 func (w *Web) dashboardActivity(ctx context.Context) dashboardSection[dashboardActivityData] {

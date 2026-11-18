@@ -22,6 +22,7 @@ func apiServiceError(rw http.ResponseWriter, err error) {
 		errors.Is(err, service.ErrInvalidUser),
 		errors.Is(err, service.ErrInvalidProxyToken),
 		errors.Is(err, service.ErrInvalidReplicationToken),
+		errors.Is(err, service.ErrInvalidFollowerName),
 		errors.Is(err, service.ErrInvalidHost):
 		apiError(rw, http.StatusBadRequest, err.Error())
 

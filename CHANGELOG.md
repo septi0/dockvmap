@@ -2,15 +2,17 @@
 
 Changes people running DockVMap will notice, newest first. Upgrade notes call out anything to do before or after upgrading.
 
-## v1.14.0 (unreleased)
+## v1.14.0 (2026-11-18)
 
 - **Replication and follower mode**: run a second DockVMap as a read-only follower of the primary, as a failover standby (with a floating IP moved by keepalived) or as a mirror at another site. The follower connects out to the primary's replication port, keeps a copy of virtual images, groups, pins, registries with their logins and proxy token hashes, and copies every image pushed to the internal registry, all platforms, checked against their digests. Changes arrive within about a second, and a follower that was down catches up by itself. A follower has no web UI; it serves pulls, and clients can use it as a read replica while the primary is up. Pulls it serves are reported back, so the primary's pull tracking stays true. Turn it on with `replication.enabled` on the primary, with `replication.allowed_ips` to accept only your followers' addresses, and `follower.enabled` on the follower; tokens are on the primary's new System › Replication page, with a ready follower config. See "Replication and follower mode" in the README.
 - **Safe by default**: a follower refuses every push, and stops instead of following a primary that was restored from an older backup, or that belongs to another cluster, until you run `dockvmap -resync` on it. Deletes are applied only when the primary recorded them. A follower whose setup differs from its primary's (virtual tag, proxy auth, TLS, internal registry, registry deletes) stops and names the setting.
+- **Follower registries stay complete and checkable**: the daily reconcile also copies layers missing from images the follower already has, like one removed by garbage collection while it was copying, and reports the tags the primary doesn't have as `extraTags` in `/health/ready`, without deleting them. `dockvmap -resync` also removes those tags, unless the primary's registry is empty.
+- **Followers seen from the primary**: System › Replication lists every follower that ever connected, with what it's doing (in sync, copying, failing to copy, not ready to take over, stopped) and how to fix it. Followers show by their IP until you name them; click one to name it, see its details, or remove a retired one. A follower that stops connecting stays listed as not connected, and the dashboard's Problems card shows followers that are gone, stopped, or failing to copy.
 - **Readiness check**: `GET /health/ready` answers `200` or `503` with JSON details on every DockVMap, for keepalived, Uptime Kuma and other monitors: database and registry checks, and on a follower its sync state, versions, last contact and pending copies.
 - **Move a virtual tag right after a push**: a tag just pushed to the internal registry can be picked at once, so a build script can push and move the virtual tag without waiting for the tag check.
 - **No false problem after a reboot**: when the internal registry container starts up to 30 seconds after DockVMap, as it can when Docker restarts, DockVMap waits for it quietly instead of warning and listing it under Problems.
 
-**Upgrade note:** this release migrates the database (migration 037). Run `dockvmap -backup <path>` before upgrading. Nothing changes until you turn on `replication.enabled` or `follower.enabled`. Upgrade followers before their primary. On a primary, back up `replication.pem` with the database.
+**Upgrade note:** this release migrates the database (migrations 037 to 039). Run `dockvmap -backup <path>` before upgrading. Nothing changes until you turn on `replication.enabled` or `follower.enabled`. Upgrade followers before their primary. On a primary, back up `replication.pem` with the database.
 
 ## v1.13.0 (2026-11-07)
 

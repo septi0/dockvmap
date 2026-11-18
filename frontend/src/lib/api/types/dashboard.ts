@@ -4,6 +4,7 @@ import type { ImageEvent } from './events'
 import type { Failure } from './failures'
 import type { ProxyMetrics } from './metrics'
 import type { Host, HostContainer } from './hosts'
+import type { SeenFollower } from './replication'
 
 export interface DashboardSection<T> {
   data: T | null
@@ -29,6 +30,7 @@ export interface DashboardActivity {
 }
 
 export interface DashboardIssues {
+  followers: SeenFollower[]
   failures: Failure[]
   distinct: number
   total: number

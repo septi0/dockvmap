@@ -20,7 +20,22 @@ const (
 	RegistryPrefix = "/replication/v1/registry"
 )
 
-const FollowerStatusHeader = "X-Dockvmap-Follower"
+const (
+	FollowerStatusHeader = "X-Dockvmap-Follower"
+	FollowerHealthHeader = "X-Dockvmap-Follower-Health"
+)
+
+// FollowerHealth is what a follower reports about itself with every state request
+type FollowerHealth struct {
+	ID                  string `json:"id,omitempty"`
+	Ready               bool   `json:"ready"`
+	NotReady            string `json:"notReady,omitempty"`
+	PendingRepositories int    `json:"pendingRepositories"`
+	FailedCopies        int    `json:"failedCopies"`
+	ExtraTags           *int   `json:"extraTags,omitempty"`
+	LastError           string `json:"lastError,omitempty"`
+	CopyError           string `json:"copyError,omitempty"`
+}
 
 const (
 	ParamVersion = "version"

@@ -68,12 +68,26 @@ type ReplicationToken struct {
 	LastUsedAt *time.Time
 }
 
+// TokenID is 0 and TokenLabel empty once the follower's token is deleted
+type ReplicationFollower struct {
+	ID          int64
+	FollowerID  string
+	Name        string
+	TokenID     int64
+	TokenLabel  string
+	Address     string
+	Version     string
+	FirstSeenAt time.Time
+	LastSeenAt  time.Time
+}
+
 type FollowerState struct {
 	ClusterID       string
 	AppliedVersion  int64
 	AppliedTag      string
 	AppliedAt       *time.Time
 	InitialCopyDone bool
+	PruneRequested  bool
 }
 
 type LocalInternalRegistry struct {

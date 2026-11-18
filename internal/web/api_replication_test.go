@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/septi0/dockvmap/internal/config"
+	"github.com/septi0/dockvmap/internal/model"
 	"github.com/septi0/dockvmap/internal/replicationapi"
 	"github.com/septi0/dockvmap/internal/service"
 )
@@ -93,5 +94,55 @@ func TestHealthReadyOnAFollowerHidesSettingValues(t *testing.T) {
 
 	if body["role"] != "follower" || body["cluster"] != "c1" || body["sync"] != service.FollowerSetupMismatch || body["primary"] != "10.0.0.11:9003" {
 		t.Errorf("body = %v, want role, cluster, sync and primary", body)
+	}
+}
+
+type fakePrimary struct {
+	followers []service.SeenFollower
+}
+
+func (p fakePrimary) Status(context.Context) (*service.ReplicationStatus, error) {
+	return &service.ReplicationStatus{ClusterID: "c1", Version: 5, Followers: p.followers}, nil
+}
+
+func (fakePrimary) Ready(context.Context) (bool, map[string]string) {
+	return true, map[string]string{"database": "ok"}
+}
+
+func (fakePrimary) ListTokens(context.Context) ([]model.ReplicationToken, error) { return nil, nil }
+
+func (fakePrimary) CreateToken(context.Context, string) (int64, string, error) { return 0, "", nil }
+
+func (fakePrimary) DeleteToken(context.Context, int64) (bool, error) { return false, nil }
+
+func (p fakePrimary) Followers(context.Context) ([]service.SeenFollower, error) {
+	return p.followers, nil
+}
+
+func (fakePrimary) RenameFollower(context.Context, int64, string) (bool, error) { return false, nil }
+
+func (fakePrimary) RemoveFollower(context.Context, int64) (bool, error) { return false, nil }
+
+func TestHealthReadyOnAPrimaryNeverShowsFollowerAddresses(t *testing.T) {
+	w := &Web{replication: fakePrimary{followers: []service.SeenFollower{
+		{Name: "DC standby", Address: "10.0.0.12", Connection: service.FollowerConnected},
+		{Address: "10.0.0.13", Connection: service.FollowerConnected},
+		{Name: "site-b", Address: "10.0.0.14", Connection: service.FollowerMissing},
+	}}}
+
+	rec := httptest.NewRecorder()
+	w.apiHealthReady(rec, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+
+	if strings.Contains(rec.Body.String(), "10.0.0.") {
+		t.Errorf("body %s shows a follower address, want none on an endpoint without auth", rec.Body)
+	}
+
+	var body struct {
+		Followers []struct{ Name string } `json:"followers"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &body)
+
+	if len(body.Followers) != 2 || body.Followers[0].Name != "DC standby" || body.Followers[1].Name != "" {
+		t.Errorf("followers = %+v, want the two connected ones, named only by the name given on the primary", body.Followers)
 	}
 }

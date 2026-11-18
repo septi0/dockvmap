@@ -129,6 +129,18 @@ func (w *Web) registerAPIRoutes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("/replication/tokens/{id}", apiMethod(http.MethodDelete, w.apiDeleteReplicationToken))
+	mux.HandleFunc("/replication/followers/{id}", func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			w.apiRenameReplicationFollower(rw, r)
+
+		case http.MethodDelete:
+			w.apiRemoveReplicationFollower(rw, r)
+
+		default:
+			apiError(rw, http.StatusMethodNotAllowed, "method not allowed")
+		}
+	})
 
 	mux.HandleFunc("/hosts", func(rw http.ResponseWriter, r *http.Request) {
 		switch r.Method {

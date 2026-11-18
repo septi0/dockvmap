@@ -29,7 +29,7 @@
 
 <AsyncState loading={loading && !status} {error}>
   {#if status?.primary}
-    <PrimaryReplication status={status.primary} />
+    <PrimaryReplication status={status.primary} onChanged={load} />
   {:else if status}
     <div class="card section-card">
       <h2>Replication is off</h2>

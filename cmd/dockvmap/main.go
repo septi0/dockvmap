@@ -30,7 +30,7 @@ func run() error {
 	resetPassword := flag.String("reset-password", "", "generate a new random password for the given username, print it, and exit")
 	refreshTags := flag.Bool("refresh-tags", false, "refresh tags for all configured images from their upstream registries, then exit")
 	backupPath := flag.String("backup", "", "write a consistent copy of the database to the given path, then exit")
-	resync := flag.Bool("resync", false, "on a follower, replace its data with the primary's at the next sync, then exit")
+	resync := flag.Bool("resync", false, "on a follower, replace its data and registry images with the primary's at the next sync, then exit")
 	yes := flag.Bool("yes", false, "with -resync, don't ask for confirmation")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()

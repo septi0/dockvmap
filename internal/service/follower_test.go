@@ -26,7 +26,7 @@ type fakePrimaryClient struct {
 	reports  []replicationapi.PullReport
 }
 
-func (c *fakePrimaryClient) State(_ context.Context, req StateRequest, _ string) (*replicationapi.StateResponse, *replicationapi.Conflict, error) {
+func (c *fakePrimaryClient) State(_ context.Context, req StateRequest, _ string, _ replicationapi.FollowerHealth) (*replicationapi.StateResponse, *replicationapi.Conflict, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -76,7 +76,7 @@ func (m *fakeMirror) Tags(_ context.Context, repository string) ([]string, error
 	return m.primaryTags[repository], nil
 }
 
-func (m *fakeMirror) Copy(_ context.Context, repository, tag string) (bool, error) {
+func (m *fakeMirror) Copy(_ context.Context, repository, tag string, _ bool) (bool, error) {
 	if m.failCopy {
 		return false, errors.New("the primary didn't answer")
 	}
@@ -99,6 +99,24 @@ func (m *fakeMirror) HasTag(_ context.Context, repository, tag string) (bool, er
 func (m *fakeMirror) Delete(_ context.Context, repository, reference string) error {
 	m.deleted = append(m.deleted, repository+":"+reference)
 	m.localTags[repository] = slices.DeleteFunc(m.localTags[repository], func(tag string) bool { return tag == reference })
+
+	return nil
+}
+
+func (m *fakeMirror) LocalTags(context.Context) (map[string][]string, error) {
+	tags := make(map[string][]string, len(m.localTags))
+
+	for repository, list := range m.localTags {
+		tags[repository] = slices.Clone(list)
+	}
+
+	return tags, nil
+}
+
+func (m *fakeMirror) DeleteTags(ctx context.Context, repository string, tags []string) error {
+	for _, tag := range tags {
+		m.Delete(ctx, repository, tag)
+	}
 
 	return nil
 }
@@ -413,6 +431,10 @@ func TestFollowerCopyFailureKeepsTheRepositoryPending(t *testing.T) {
 		t.Errorf("status = %+v, want team/web pending and the initial copy not done", status)
 	}
 
+	if status.CopyError != "team/web: the primary didn't answer" {
+		t.Errorf("CopyError = %q, want the repository and its error", status.CopyError)
+	}
+
 	if ready, _ := p.f.Ready(ctx, status); ready {
 		t.Errorf("a follower whose first copy failed is ready, want not ready")
 	}
@@ -485,6 +507,92 @@ func TestFollowerFirstCopyIncludesImagesPushedBeforeReplication(t *testing.T) {
 	}
 }
 
+func TestFollowerReconcileReportsTagsThePrimaryLacks(t *testing.T) {
+	ctx := context.Background()
+	p := newReplicationPair(t)
+	p.mirror.primaryTags["team/web"] = []string{"v1"}
+	p.mirror.localTags["team/web"] = []string{"v1", "old"}
+	p.mirror.localTags["team/stray"] = []string{"v1"}
+	p.publish(t, replicationapi.Setup{})
+	p.sync(t, true, false)
+
+	if status, _ := p.f.Status(ctx); status.ExtraTags != nil {
+		t.Errorf("ExtraTags before a reconcile = %d, want unknown", *status.ExtraTags)
+	}
+
+	if _, err := p.f.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	if status, _ := p.f.Status(ctx); status.ExtraTags == nil || *status.ExtraTags != 2 {
+		t.Errorf("ExtraTags = %v, want team/web:old and team/stray:v1", status.ExtraTags)
+	}
+
+	if len(p.mirror.deleted) != 0 {
+		t.Errorf("Reconcile() deleted %v, want nothing deleted", p.mirror.deleted)
+	}
+}
+
+func TestFollowerResyncRemovesTagsThePrimaryLacks(t *testing.T) {
+	ctx := context.Background()
+	p := newReplicationPair(t)
+	p.mirror.primaryTags["team/web"] = []string{"v1"}
+	p.publish(t, replicationapi.Setup{})
+	p.sync(t, true, false)
+	p.f.copyRepositories(ctx)
+
+	p.mirror.localTags["team/web"] = append(p.mirror.localTags["team/web"], "old")
+	p.mirror.localTags["team/stray"] = []string{"v1"}
+	p.f.copyRepositories(ctx)
+
+	if len(p.mirror.deleted) != 0 {
+		t.Fatalf("a copy without a resync deleted %v, want nothing", p.mirror.deleted)
+	}
+
+	p.follower.RequestResync(ctx)
+	p.sync(t, true, true)
+
+	if failed := p.f.copyRepositories(ctx); failed != 0 {
+		t.Fatalf("copyRepositories() after a resync failed %d", failed)
+	}
+
+	slices.Sort(p.mirror.deleted)
+
+	if !slices.Equal(p.mirror.deleted, []string{"team/stray:v1", "team/web:old"}) || !slices.Equal(p.mirror.localTags["team/web"], []string{"v1"}) {
+		t.Errorf("deleted %v, follower team/web %v, want the two extra tags gone and v1 kept", p.mirror.deleted, p.mirror.localTags["team/web"])
+	}
+
+	if status, _ := p.f.Status(ctx); status.ExtraTags == nil || *status.ExtraTags != 0 {
+		t.Errorf("ExtraTags after the resync = %v, want 0", status.ExtraTags)
+	}
+
+	p.mirror.deleted = nil
+	p.mirror.localTags["team/later"] = []string{"v1"}
+	p.f.copyRepositories(ctx)
+
+	if len(p.mirror.deleted) != 0 {
+		t.Errorf("a copy after the resync finished deleted %v, want only one removal per resync", p.mirror.deleted)
+	}
+}
+
+func TestFollowerResyncKeepsEverythingWhenThePrimaryRegistryIsEmpty(t *testing.T) {
+	ctx := context.Background()
+	p := newReplicationPair(t)
+	p.mirror.localTags["team/web"] = []string{"v1"}
+	p.publish(t, replicationapi.Setup{})
+	p.follower.RequestResync(ctx)
+	p.sync(t, true, true)
+	p.f.copyRepositories(ctx)
+
+	if len(p.mirror.deleted) != 0 {
+		t.Errorf("deleted %v with the primary's registry empty, want everything kept", p.mirror.deleted)
+	}
+
+	if state, _ := p.follower.FollowerState(ctx); state.PruneRequested {
+		t.Errorf("the prune request is still pending, want it dropped so the next copy doesn't delete")
+	}
+}
+
 func TestFollowerReportsPullsUntilThePrimaryTakesThem(t *testing.T) {
 	ctx := context.Background()
 	p := newReplicationPair(t)
@@ -525,5 +633,46 @@ func TestFollowerReportsPullsUntilThePrimaryTakesThem(t *testing.T) {
 
 	if got, _ := p.primary.GetImage(ctx, "web"); *got.LastPulledTag != "v2" {
 		t.Errorf("primary web last pulled tag = %s, want v2: an older pull on the follower must not move it back", *got.LastPulledTag)
+	}
+}
+
+func TestFollowerKeepsItsIDAcrossResyncs(t *testing.T) {
+	ctx := context.Background()
+	p := newReplicationPair(t)
+
+	first, err := p.follower.FollowerID(ctx, followerA)
+
+	if err != nil || first != followerA {
+		t.Fatalf("FollowerID() = %q, %v, want the new ID saved", first, err)
+	}
+
+	p.follower.RequestResync(ctx)
+
+	if again, _ := p.follower.FollowerID(ctx, followerB); again != followerA {
+		t.Errorf("FollowerID() after a resync = %q, want the first ID kept", again)
+	}
+}
+
+func TestFollowerReconcileClearsACopyErrorOnceTheCopyWorks(t *testing.T) {
+	ctx := context.Background()
+	p := newReplicationPair(t)
+	p.mirror.primaryTags["team/web"] = []string{"v1"}
+	p.publish(t, replicationapi.Setup{})
+	p.sync(t, true, false)
+	p.mirror.failCopy = true
+	p.f.Reconcile(ctx)
+
+	if status, _ := p.f.Status(ctx); status.CopyError == "" {
+		t.Fatalf("CopyError after a failed reconcile is empty, want the failure")
+	}
+
+	p.mirror.failCopy = false
+
+	if _, err := p.f.Reconcile(ctx); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	if status, _ := p.f.Status(ctx); status.CopyError != "" {
+		t.Errorf("CopyError after the copy worked = %q, want it cleared", status.CopyError)
 	}
 }

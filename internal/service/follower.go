@@ -23,11 +23,12 @@ const (
 	FollowerIdentity      = "identity-changed"
 	FollowerAPIVersion    = "api-version"
 
-	followerStoppedCheck = time.Minute
-	followerResyncPoll   = 3 * time.Second
-	followerMaxBackoff   = time.Minute
-	followerCopyRetry    = 15 * time.Second
-	followerMaxCopyRetry = 5 * time.Minute
+	followerStoppedCheck  = time.Minute
+	followerResyncPoll    = 3 * time.Second
+	followerMaxBackoff    = time.Minute
+	followerCopyRetry     = 15 * time.Second
+	followerMaxCopyRetry  = 5 * time.Minute
+	followerHealthTimeout = 5 * time.Second
 )
 
 type followerStore interface {
@@ -41,11 +42,13 @@ type followerStore interface {
 	MarkInitialCopyDone(ctx context.Context) error
 	TakeResyncRequest(ctx context.Context) (bool, error)
 	ClearClusterID(ctx context.Context) error
+	ClearPruneRequest(ctx context.Context) error
+	FollowerID(ctx context.Context, newID string) (string, error)
 	ProxyUsage(ctx context.Context) ([]model.ImageUsage, []model.ProxyTokenUsage, error)
 }
 
 type primaryClient interface {
-	State(ctx context.Context, req StateRequest, status string) (*replicationapi.StateResponse, *replicationapi.Conflict, error)
+	State(ctx context.Context, req StateRequest, status string, health replicationapi.FollowerHealth) (*replicationapi.StateResponse, *replicationapi.Conflict, error)
 	Changes(ctx context.Context, repository string, after int64) (*replicationapi.ChangesResponse, error)
 	ReportPulls(ctx context.Context, report replicationapi.PullReport) error
 }
@@ -54,9 +57,11 @@ type primaryClient interface {
 type registryMirror interface {
 	Repositories(ctx context.Context) ([]string, error)
 	Tags(ctx context.Context, repository string) ([]string, error)
-	Copy(ctx context.Context, repository, tag string) (bool, error)
+	Copy(ctx context.Context, repository, tag string, deep bool) (bool, error)
 	HasTag(ctx context.Context, repository, tag string) (bool, error)
 	Delete(ctx context.Context, repository, reference string) error
+	LocalTags(ctx context.Context) (map[string][]string, error)
+	DeleteTags(ctx context.Context, repository string, tags []string) error
 	DeletesAllowed(ctx context.Context) (bool, error)
 }
 
@@ -84,8 +89,10 @@ type FollowerStatus struct {
 	LastAppliedAt       *time.Time
 	PendingRepositories int
 	FailedCopies        int
+	ExtraTags           *int
 	InitialCopyDone     bool
 	LastError           string
+	CopyError           string
 	Mismatches          []replicationapi.Mismatch
 }
 
@@ -99,6 +106,7 @@ type Follower struct {
 	internal     *model.LocalInternalRegistry
 	registryPing func(ctx context.Context) error
 	tagsChanged  func(names ...string)
+	id           string
 
 	applyMu sync.Mutex
 	copyMu  sync.Mutex
@@ -113,6 +121,7 @@ type Follower struct {
 	latest         *replicationapi.StateResponse
 	pending        int
 	failed         int
+	extraTags      *int
 	copyErrors     map[string]string
 }
 
@@ -144,6 +153,14 @@ func (f *Follower) Start(ctx context.Context) error {
 	if err := f.store.ClearClusterID(ctx); err != nil {
 		return err
 	}
+
+	id, err := f.store.FollowerID(ctx, newRandomID())
+
+	if err != nil {
+		return err
+	}
+
+	f.id = id
 
 	slog.Info("following a primary", "primary", f.primary)
 
@@ -235,7 +252,7 @@ func (f *Follower) syncOnce(ctx context.Context, full, resync bool) error {
 		return err
 	}
 
-	response, conflict, err := f.client.State(ctx, req, f.currentSync())
+	response, conflict, err := f.client.State(ctx, req, f.currentSync(), f.health(ctx))
 
 	if err != nil {
 		return err
@@ -321,7 +338,7 @@ func (f *Follower) reportWhileStopped(ctx context.Context) {
 
 	req.Full = true
 
-	if response, conflict, err := f.client.State(ctx, req, f.currentSync()); err == nil {
+	if response, conflict, err := f.client.State(ctx, req, f.currentSync(), f.health(ctx)); err == nil {
 		f.contacted()
 
 		if conflict != nil {
@@ -475,8 +492,10 @@ func (f *Follower) Status(ctx context.Context) (*FollowerStatus, error) {
 		LastAppliedAt:       state.AppliedAt,
 		PendingRepositories: f.pending,
 		FailedCopies:        f.failed,
+		ExtraTags:           f.extraTags,
 		InitialCopyDone:     state.InitialCopyDone || f.mirror == nil,
 		LastError:           f.lastError,
+		CopyError:           f.copyError(),
 		Mismatches:          f.mismatches,
 	}
 
@@ -516,6 +535,58 @@ func (f *Follower) Ready(ctx context.Context, status *FollowerStatus) (bool, map
 	synced := status.ClusterID != "" && status.Sync != FollowerExistingData && status.InitialCopyDone
 
 	return synced && allOK(checks), checks
+}
+
+func (f *Follower) health(ctx context.Context) replicationapi.FollowerHealth {
+	ctx, cancel := context.WithTimeout(ctx, followerHealthTimeout)
+	defer cancel()
+
+	status, err := f.Status(ctx)
+
+	if err != nil {
+		return replicationapi.FollowerHealth{ID: f.id, NotReady: "its database can't be read", LastError: err.Error()}
+	}
+
+	ready, checks := f.Ready(ctx, status)
+
+	// any other error was about reaching the primary, which this request just did
+	if status.Sync == FollowerSyncRunning {
+		status.LastError = ""
+	}
+
+	return replicationapi.FollowerHealth{
+		ID:                  f.id,
+		Ready:               ready,
+		NotReady:            notReadyReason(ready, status, checks),
+		PendingRepositories: status.PendingRepositories,
+		FailedCopies:        status.FailedCopies,
+		ExtraTags:           status.ExtraTags,
+		LastError:           status.LastError,
+		CopyError:           status.CopyError,
+	}
+}
+
+func notReadyReason(ready bool, status *FollowerStatus, checks map[string]string) string {
+	if ready {
+		return ""
+	}
+
+	for _, check := range []string{"database", "registry", "setup"} {
+		if result, ok := checks[check]; ok && result != "ok" {
+			return "its " + check + " check failed: " + result
+		}
+	}
+
+	switch {
+	case status.Sync == FollowerExistingData:
+		return "it has its own data and waits for dockvmap -resync"
+	case status.ClusterID == "":
+		return "it hasn't synced with this primary yet"
+	case !status.InitialCopyDone:
+		return "it's still copying this primary's images"
+	}
+
+	return "unknown"
 }
 
 func (f *Follower) currentSync() string {

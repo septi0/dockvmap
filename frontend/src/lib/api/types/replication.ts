@@ -1,12 +1,29 @@
 export type ReplicationRole = 'standalone' | 'primary'
 
+export interface FollowerHealth {
+  ready: boolean
+  notReady?: string
+  pendingRepositories: number
+  failedCopies: number
+  extraTags?: number
+  lastError?: string
+  copyError?: string
+}
+
+export type FollowerConnection = 'connected' | 'waiting' | 'missing'
+
 export interface SeenFollower {
+  id: number
   name: string
   address: string
+  token: string
   version: string
   appliedVersion: number
   status: string
+  connection: FollowerConnection
+  firstSeen: string
   lastSeen: string
+  health?: FollowerHealth
 }
 
 export interface PrimaryStatus {

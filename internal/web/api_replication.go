@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/septi0/dockvmap/internal/replicationapi"
 	"github.com/septi0/dockvmap/internal/service"
 )
 
@@ -29,12 +30,27 @@ type primaryReplicationResponse struct {
 }
 
 type seenFollowerResponse struct {
-	Name           string    `json:"name"`
-	Address        string    `json:"address"`
-	Version        string    `json:"version"`
-	AppliedVersion int64     `json:"appliedVersion"`
-	Status         string    `json:"status"`
-	LastSeen       time.Time `json:"lastSeen"`
+	ID             int64                          `json:"id"`
+	Name           string                         `json:"name"`
+	Address        string                         `json:"address"`
+	Token          string                         `json:"token"`
+	Version        string                         `json:"version"`
+	AppliedVersion int64                          `json:"appliedVersion"`
+	Status         string                         `json:"status"`
+	Connection     string                         `json:"connection"`
+	FirstSeen      time.Time                      `json:"firstSeen"`
+	LastSeen       time.Time                      `json:"lastSeen"`
+	Health         *replicationapi.FollowerHealth `json:"health,omitempty"`
+}
+
+func newSeenFollowerResponses(followers []service.SeenFollower) []seenFollowerResponse {
+	responses := make([]seenFollowerResponse, 0, len(followers))
+
+	for _, f := range followers {
+		responses = append(responses, seenFollowerResponse(f))
+	}
+
+	return responses
 }
 
 type replicationTokenResponse struct {
@@ -45,19 +61,13 @@ type replicationTokenResponse struct {
 }
 
 func newPrimaryReplicationResponse(status *service.ReplicationStatus, allowedIPs []string) *primaryReplicationResponse {
-	followers := make([]seenFollowerResponse, 0, len(status.Followers))
-
-	for _, f := range status.Followers {
-		followers = append(followers, seenFollowerResponse(f))
-	}
-
 	return &primaryReplicationResponse{
 		Cluster:      status.ClusterID,
 		StateVersion: status.Version,
 		Fingerprint:  status.Fingerprint,
 		Listen:       status.Listen,
 		AllowedIPs:   append([]string{}, allowedIPs...),
-		Followers:    followers,
+		Followers:    newSeenFollowerResponses(status.Followers),
 	}
 }
 
@@ -175,4 +185,68 @@ func (w *Web) apiDeleteReplicationToken(rw http.ResponseWriter, r *http.Request)
 	}
 
 	apiJSON(rw, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+type renameReplicationFollowerRequest struct {
+	Name string `json:"name"`
+}
+
+func (w *Web) apiRenameReplicationFollower(rw http.ResponseWriter, r *http.Request) {
+	if !w.requirePrimary(rw) {
+		return
+	}
+
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+
+	if err != nil {
+		apiError(rw, http.StatusBadRequest, "follower id must be a valid integer")
+		return
+	}
+
+	request, ok := decodeJSON[renameReplicationFollowerRequest](rw, r)
+
+	if !ok {
+		return
+	}
+
+	renamed, err := w.replication.RenameFollower(r.Context(), id, request.Name)
+
+	if err != nil {
+		apiServiceError(rw, err)
+		return
+	}
+
+	if !renamed {
+		apiError(rw, http.StatusNotFound, "follower not found")
+		return
+	}
+
+	apiJSON(rw, http.StatusOK, map[string]string{"status": "renamed"})
+}
+
+func (w *Web) apiRemoveReplicationFollower(rw http.ResponseWriter, r *http.Request) {
+	if !w.requirePrimary(rw) {
+		return
+	}
+
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+
+	if err != nil {
+		apiError(rw, http.StatusBadRequest, "follower id must be a valid integer")
+		return
+	}
+
+	removed, err := w.replication.RemoveFollower(r.Context(), id)
+
+	if err != nil {
+		apiServiceError(rw, err)
+		return
+	}
+
+	if !removed {
+		apiError(rw, http.StatusNotFound, "follower not found")
+		return
+	}
+
+	apiJSON(rw, http.StatusOK, map[string]string{"status": "removed"})
 }

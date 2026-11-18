@@ -7,6 +7,8 @@
   import CardState from "./CardState.svelte";
   import CardErrorState from "./CardErrorState.svelte";
   import HostStatus from "../hosts/HostStatus.svelte";
+  import StateIndicator from "../StateIndicator.svelte";
+  import { followerName, followerState } from "../../utils/replication";
   import { formatCount, formatDate, formatNumber, formatRelativeTime } from "../../utils/format";
   import type { DashboardIssues } from "../../api/types/dashboard";
   import type { Host } from "../../api/types/hosts";
@@ -24,16 +26,18 @@
     hasHosts,
   }: DashboardCardProps<DashboardIssues> & { hosts: Host[]; hasHosts: boolean } = $props();
 
+  let followers = $derived(data?.followers ?? []);
   let shownHosts = $derived(hosts.slice(0, SHOWN));
-  let failures = $derived((data?.failures ?? []).slice(0, Math.max(0, SHOWN - shownHosts.length)));
+  let shownFollowers = $derived(followers.slice(0, Math.max(0, SHOWN - shownHosts.length)));
+  let failures = $derived((data?.failures ?? []).slice(0, Math.max(0, SHOWN - shownHosts.length - shownFollowers.length)));
   let total = $derived(data?.total ?? 0);
   let distinct = $derived(data?.distinct ?? 0);
 </script>
 
-<DashboardCard title="Problems" count={hosts.length + distinct}>
+<DashboardCard title="Problems" count={hosts.length + followers.length + distinct}>
   {#snippet icon()}<TriangleAlert size={16} strokeWidth={1.75} />{/snippet}
 
-  <CardBody {loading} {busy} hasError={!!error} empty={hosts.length === 0 && distinct === 0}>
+  <CardBody {loading} {busy} hasError={!!error} empty={hosts.length === 0 && followers.length === 0 && distinct === 0}>
     {#snippet errorState()}
       <CardErrorState title="Couldn’t load problems" {error} {onRetry} />
     {/snippet}
@@ -61,6 +65,17 @@
           </button>
         </li>
       {/each}
+      {#each shownFollowers as follower (follower.id)}
+        {@const view = followerState(follower, follower.appliedVersion)}
+        <li>
+          <button type="button" class="item-row" onclick={() => push("/system/replication")}>
+            <span class="item-main">
+              <span class="item-title">{followerName(follower)}</span>
+              <StateIndicator tone={view.tone} label={view.label} inline wrap />
+            </span>
+          </button>
+        </li>
+      {/each}
       {#each failures as failure, i (i)}
         <li class="failure">
           <span class="issue-date muted" title={formatDate(failure.occurredAt)}>
@@ -78,6 +93,9 @@
 
     {#if hosts.length > shownHosts.length}
       <a class="view-all link" href="/hosts" use:link>View all {hosts.length} hosts</a>
+    {/if}
+    {#if followers.length > shownFollowers.length}
+      <a class="view-all link" href="/system/replication" use:link>View all {followers.length} followers</a>
     {/if}
     {#if total > failures.length}
       <a class="view-all link" href="/system/failures" use:link>View all {formatNumber(total)} failures</a>

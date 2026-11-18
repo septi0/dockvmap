@@ -557,6 +557,28 @@ func TestReplicationIntegration(t *testing.T) {
 			t.Errorf("web:current on the stopped follower = %q, want it unchanged at v2", got)
 		}
 
+		pushImage(t, followerRegistry, "team/stray", "v1", "stray")
+		pushImage(t, followerRegistry, "team/web", "old", "old")
+
+		lostLayer := "http://" + followerRegistry + "/v2/team/web/blobs/" + digestOf([]byte("arm64 layer v1"))
+		blobStatus := func() int {
+			resp, err := http.Head(lostLayer)
+
+			if err != nil {
+				return 0
+			}
+
+			resp.Body.Close()
+
+			return resp.StatusCode
+		}
+
+		unlink, _ := http.NewRequest(http.MethodDelete, lostLayer, nil)
+
+		if resp, err := http.DefaultClient.Do(unlink); err != nil || resp.StatusCode != http.StatusAccepted || blobStatus() != http.StatusNotFound {
+			t.Fatalf("removing a layer of team/web:v1 from the follower's registry: %v %v, then HEAD %d", resp, err, blobStatus())
+		}
+
 		resync := exec.Command(binary, "-data-path", follower.dir, "-resync", "-yes")
 		resync.Env = follower.environ()
 
@@ -569,6 +591,17 @@ func TestReplicationIntegration(t *testing.T) {
 			_, body := follower.ready(t)
 			return got == webV1 && body["sync"] == "running", fmt.Sprint(got, body)
 		})
+
+		eventually(t, "the resync removing what the primary lacks and restoring the lost layer", func() (bool, string) {
+			_, stray := manifestDigest(followerRegistry, "team/stray", "v1")
+			_, old := manifestDigest(followerRegistry, "team/web", "old")
+			_, body := follower.ready(t)
+			return stray == http.StatusNotFound && old == http.StatusNotFound && blobStatus() == http.StatusOK && body["extraTags"] == float64(0), fmt.Sprint(stray, old, blobStatus(), body["extraTags"])
+		})
+
+		if got, _ := manifestDigest(followerRegistry, "team/web", "v1"); got != webV1 {
+			t.Errorf("team/web:v1 on the follower after the resync = %q, want it kept at %q", got, webV1)
+		}
 
 		primary.mustAPI(t, http.MethodPost, "/api/login", map[string]string{"username": "admin", "password": "testlab-password"}, nil)
 	})

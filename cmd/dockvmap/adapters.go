@@ -100,8 +100,8 @@ func (m followerMirror) Tags(ctx context.Context, repository string) ([]string, 
 	return m.primary.Tags(ctx, repository)
 }
 
-func (m followerMirror) Copy(ctx context.Context, repository, tag string) (bool, error) {
-	return ocicopy.Copy(ctx, m.primary, m.local, repository, tag)
+func (m followerMirror) Copy(ctx context.Context, repository, tag string, deep bool) (bool, error) {
+	return ocicopy.Copy(ctx, m.primary, m.local, repository, tag, deep)
 }
 
 func (m followerMirror) HasTag(ctx context.Context, repository, tag string) (bool, error) {
@@ -112,6 +112,28 @@ func (m followerMirror) HasTag(ctx context.Context, repository, tag string) (boo
 
 func (m followerMirror) Delete(ctx context.Context, repository, reference string) error {
 	return m.local.Delete(ctx, repository, reference)
+}
+
+func (m followerMirror) LocalTags(ctx context.Context) (map[string][]string, error) {
+	repositories, err := m.local.Repositories(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	tags := make(map[string][]string, len(repositories))
+
+	for _, repository := range repositories {
+		if tags[repository], err = m.local.Tags(ctx, repository); err != nil {
+			return nil, err
+		}
+	}
+
+	return tags, nil
+}
+
+func (m followerMirror) DeleteTags(ctx context.Context, repository string, tags []string) error {
+	return m.local.DeleteTags(ctx, repository, tags)
 }
 
 func (m followerMirror) DeletesAllowed(ctx context.Context) (bool, error) {

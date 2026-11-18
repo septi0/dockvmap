@@ -16,3 +16,11 @@ export function createReplicationToken(label: string) {
 export function deleteReplicationToken(id: number) {
   return api.delete<{ status: string }>(`/replication/tokens/${id}`)
 }
+
+export function removeReplicationFollower(id: number) {
+  return api.delete<{ status: string }>(`/replication/followers/${id}`)
+}
+
+export function renameReplicationFollower(id: number, name: string) {
+  return api.put<{ status: string }>(`/replication/followers/${id}`, { name })
+}

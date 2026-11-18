@@ -9,14 +9,23 @@
   import StateIndicator from "../../StateIndicator.svelte";
   import ConfirmDialog from "../../ConfirmDialog.svelte";
   import ReplicationTokenModal from "./ReplicationTokenModal.svelte";
+  import FollowerModal from "./FollowerModal.svelte";
   import { listReplicationTokens, deleteReplicationToken } from "../../../api/replication";
   import { errorMessage } from "../../../api/client";
   import { toast } from "../../../services/toast";
   import { formatDate, formatNumber, formatRelativeTime } from "../../../utils/format";
   import { followerState } from "../../../utils/replication";
-  import type { PrimaryStatus, ReplicationToken } from "../../../api/types/replication";
+  import type { PrimaryStatus, ReplicationToken, SeenFollower } from "../../../api/types/replication";
 
-  let { status }: { status: PrimaryStatus } = $props();
+  let { status, onChanged }: { status: PrimaryStatus; onChanged: () => void } = $props();
+
+  let selectedId = $state<number | null>(null);
+  let selected = $derived(status.followers.find((f) => f.id === selectedId) ?? null);
+
+  function selectRow(event: MouseEvent, follower: SeenFollower) {
+    if ((event.target as HTMLElement).closest("button")) return;
+    selectedId = follower.id;
+  }
 
   let tokens = $state<ReplicationToken[]>([]);
   let loading = $state(true);
@@ -50,6 +59,7 @@
       toast.success(`Replication token "${deleting.label}" deleted`);
       deleting = null;
       await loadTokens();
+      onChanged();
     } catch (err) {
       deleteError = errorMessage(err, "Failed to delete the replication token");
     } finally {
@@ -83,7 +93,7 @@
     Followers <span class="heading-count">{status.followers.length}</span>
   </h2>
   {#if status.followers.length === 0}
-    <p class="muted">No follower connected right now.</p>
+    <p class="muted">No follower has connected yet.</p>
   {:else}
     <div class="table-wrap">
       <table class="table">
@@ -96,11 +106,13 @@
           </tr>
         </thead>
         <tbody>
-          {#each status.followers as follower (follower.name + follower.address)}
+          {#each status.followers as follower (follower.id)}
             {@const state = followerState(follower, status.stateVersion)}
-            <tr>
+            <tr class="clickable" onclick={(event) => selectRow(event, follower)}>
               <td>
-                {follower.name}
+                <button type="button" class="row-name" onclick={() => (selectedId = follower.id)}>
+                  {#if follower.name}{follower.name}{:else}<span class="muted">Unnamed follower</span>{/if}
+                </button>
                 <span class="muted address">{follower.address}</span>
                 <div class="phone-only follower-status">
                   <StateIndicator tone={state.tone} label={state.label} detail={state.fix} wrap />
@@ -130,7 +142,7 @@
     </Button>
   </div>
   <p class="section-hint muted">
-    A follower needs one to copy this primary's data, including every registry login. Give each follower its own.
+    A follower needs one to copy this primary's data, including every registry login. Give each follower its own, so you can cut one off without the others.
   </p>
 
   <AsyncState {loading} {error} empty={tokens.length === 0} emptyMessage="No replication tokens yet." emptyVariant="text">
@@ -180,12 +192,22 @@
   </AsyncState>
 </div>
 
+<FollowerModal
+  follower={selected}
+  stateVersion={status.stateVersion}
+  onClose={() => (selectedId = null)}
+  onChanged={() => {
+    selectedId = null;
+    onChanged();
+  }}
+/>
+
 <ReplicationTokenModal open={showAdd} listen={status.listen} onClose={() => (showAdd = false)} onCreated={loadTokens} />
 
 <ConfirmDialog
   open={deleting !== null}
   title="Delete replication token"
-  message={`Delete "${deleting?.label ?? ""}"? A follower using it stops syncing until it gets a new token. This cannot be undone.`}
+  message={`Delete "${deleting?.label ?? ""}"? Followers using it stop syncing until they get a new token. This cannot be undone.`}
   confirmLabel="Delete"
   danger
   error={deleteError}

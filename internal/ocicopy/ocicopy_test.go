@@ -30,6 +30,7 @@ type fakeRegistry struct {
 	tags           map[string]map[string]string
 	uploads        int
 	deletesOff     bool
+	tagDeletesOff  bool
 	corruptDigests bool
 }
 
@@ -155,6 +156,24 @@ func (f *fakeRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			if strings.HasPrefix(reference, "sha256:") {
+				if _, ok := f.manifests[reference]; !ok {
+					http.NotFound(w, r)
+					return
+				}
+
+				delete(f.manifests, reference)
+				maps.DeleteFunc(f.tags[repository], func(_, digest string) bool { return digest == reference })
+				w.WriteHeader(http.StatusAccepted)
+
+				return
+			}
+
+			if f.tagDeletesOff {
+				http.Error(w, `{"errors":[{"code":"DIGEST_INVALID"}]}`, http.StatusBadRequest)
+				return
+			}
+
 			if _, ok := f.tags[repository][reference]; ok {
 				delete(f.tags[repository], reference)
 				w.WriteHeader(http.StatusAccepted)
@@ -236,7 +255,7 @@ func TestCopyMultiArchImage(t *testing.T) {
 	index := multiArch(source, "team/web", "v1")
 	src, dst := serve(t, source), serve(t, target)
 
-	copied, err := Copy(ctx, src, dst, "team/web", "v1")
+	copied, err := Copy(ctx, src, dst, "team/web", "v1", false)
 
 	if err != nil || !copied {
 		t.Fatalf("Copy() = %v, %v, want copied", copied, err)
@@ -254,7 +273,7 @@ func TestCopyMultiArchImage(t *testing.T) {
 		t.Errorf("target has %d manifests, want the index and both platforms", len(target.manifests))
 	}
 
-	copied, err = Copy(ctx, src, dst, "team/web", "v1")
+	copied, err = Copy(ctx, src, dst, "team/web", "v1", false)
 
 	if err != nil || copied || target.uploads != 5 {
 		t.Errorf("second Copy() = %v, %v with %d uploads, want nothing copied", copied, err, target.uploads)
@@ -267,7 +286,7 @@ func TestCopySkipsBlobsTheTargetHas(t *testing.T) {
 	source.addManifest("team/api", "v2", manifestType, image(source, "base", "api layer", "api config"))
 	target.addBlob("base")
 
-	if _, err := Copy(ctx, serve(t, source), serve(t, target), "team/api", "v2"); err != nil {
+	if _, err := Copy(ctx, serve(t, source), serve(t, target), "team/api", "v2", false); err != nil {
 		t.Fatalf("Copy() error = %v", err)
 	}
 
@@ -276,12 +295,58 @@ func TestCopySkipsBlobsTheTargetHas(t *testing.T) {
 	}
 }
 
+func TestCopyDeepRestoresWhatTheTargetLost(t *testing.T) {
+	ctx := context.Background()
+	source, target := newFakeRegistry(), newFakeRegistry()
+	multiArch(source, "team/web", "v1")
+	src, dst := serve(t, source), serve(t, target)
+
+	if _, err := Copy(ctx, src, dst, "team/web", "v1", false); err != nil {
+		t.Fatalf("Copy() error = %v", err)
+	}
+
+	lostLayer := digestOf([]byte("arm64 layer"))
+	delete(target.blobs, lostLayer)
+
+	var lostPlatform string
+
+	for digest, body := range target.manifests {
+		if strings.Contains(string(body), digestOf([]byte("amd64 config"))) {
+			lostPlatform = digest
+		}
+	}
+
+	delete(target.manifests, lostPlatform)
+
+	if copied, err := Copy(ctx, src, dst, "team/web", "v1", false); err != nil || copied {
+		t.Errorf("shallow Copy() of a tag at the same digest = %v, %v, want nothing copied", copied, err)
+	}
+
+	copied, err := Copy(ctx, src, dst, "team/web", "v1", true)
+
+	if err != nil || !copied {
+		t.Fatalf("deep Copy() = %v, %v, want the missing parts copied", copied, err)
+	}
+
+	if _, ok := target.blobs[lostLayer]; !ok {
+		t.Errorf("the lost arm64 layer wasn't copied back")
+	}
+
+	if _, ok := target.manifests[lostPlatform]; !ok {
+		t.Errorf("the lost amd64 manifest wasn't copied back")
+	}
+
+	if copied, err := Copy(ctx, src, dst, "team/web", "v1", true); err != nil || copied {
+		t.Errorf("deep Copy() of a complete image = %v, %v, want nothing copied", copied, err)
+	}
+}
+
 func TestCopyRefusesAManifestThatDoesNotMatchItsDigest(t *testing.T) {
 	source, target := newFakeRegistry(), newFakeRegistry()
 	multiArch(source, "team/web", "v1")
 	source.corruptDigests = true
 
-	_, err := Copy(context.Background(), serve(t, source), serve(t, target), "team/web", "v1")
+	_, err := Copy(context.Background(), serve(t, source), serve(t, target), "team/web", "v1", false)
 
 	if err == nil || !strings.Contains(err.Error(), "doesn't match its digest") {
 		t.Errorf("Copy() error = %v, want a digest mismatch", err)
@@ -336,5 +401,40 @@ func TestDeletes(t *testing.T) {
 
 	if err := r.Delete(ctx, "team/web", "v1"); !errors.Is(err, ErrDeletesDisabled) {
 		t.Errorf("Delete() with deletes off error = %v, want ErrDeletesDisabled", err)
+	}
+}
+
+func TestDeleteTags(t *testing.T) {
+	ctx := context.Background()
+
+	setup := func(tagDeletesOff bool) (*fakeRegistry, Registry) {
+		registry := newFakeRegistry()
+		registry.tagDeletesOff = tagDeletesOff
+		registry.addManifest("team/web", "old", manifestType, image(registry, "base", "old", "old"))
+		shared := registry.addManifest("team/web", "v1", manifestType, image(registry, "base", "v1", "v1"))
+		registry.tags["team/web"]["v1-copy"] = shared
+
+		return registry, serve(t, registry)
+	}
+
+	registry, r := setup(false)
+
+	if err := r.DeleteTags(ctx, "team/web", []string{"old", "v1-copy"}); err != nil {
+		t.Fatalf("DeleteTags() error = %v", err)
+	}
+
+	if got := slices.Sorted(maps.Keys(registry.tags["team/web"])); !slices.Equal(got, []string{"v1"}) {
+		t.Errorf("tags after deleting by tag = %v, want v1 kept", got)
+	}
+
+	registry, r = setup(true)
+	err := r.DeleteTags(ctx, "team/web", []string{"old", "v1-copy"})
+
+	if err == nil || !strings.Contains(err.Error(), "team/web:v1-copy share an image") {
+		t.Errorf("DeleteTags() on a registry deleting only by digest error = %v, want v1-copy named as sharing v1's image", err)
+	}
+
+	if got := slices.Sorted(maps.Keys(registry.tags["team/web"])); !slices.Equal(got, []string{"v1", "v1-copy"}) {
+		t.Errorf("tags after deleting by digest = %v, want old gone and v1 with its copy kept", got)
 	}
 }

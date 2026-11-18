@@ -334,3 +334,70 @@ func (s *Store) DeleteReplicationToken(ctx context.Context, id int64) (bool, err
 
 	return deleted != 0, nil
 }
+
+func (s *Store) SaveReplicationFollower(ctx context.Context, f model.ReplicationFollower) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO replication_followers (follower_id, address, token_id, version, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT (follower_id) DO UPDATE SET address = excluded.address, token_id = excluded.token_id, version = excluded.version, last_seen_at = excluded.last_seen_at
+	`, f.FollowerID, f.Address, f.TokenID, f.Version, f.LastSeenAt.UTC(), f.LastSeenAt.UTC())
+
+	if err != nil {
+		return fmt.Errorf("saving follower %s: %w", f.Address, err)
+	}
+
+	return nil
+}
+
+const replicationFollowerSelect = `
+	SELECT f.id, f.follower_id, f.name, COALESCE(f.token_id, 0), COALESCE(t.label, ''), f.address, f.version, f.first_seen_at, f.last_seen_at
+	FROM replication_followers f LEFT JOIN replication_tokens t ON t.id = f.token_id`
+
+func scanReplicationFollower(scan rowScanner, f *model.ReplicationFollower) error {
+	return scan.Scan(&f.ID, &f.FollowerID, &f.Name, &f.TokenID, &f.TokenLabel, &f.Address, &f.Version, &f.FirstSeenAt, &f.LastSeenAt)
+}
+
+func (s *Store) ListReplicationFollowers(ctx context.Context) ([]model.ReplicationFollower, error) {
+	var followers []model.ReplicationFollower
+
+	if err := collectRows(ctx, s.db, replicationFollowerSelect+` ORDER BY COALESCE(NULLIF(f.name, ''), f.address), f.address`, &followers, scanReplicationFollower); err != nil {
+		return nil, fmt.Errorf("listing followers: %w", err)
+	}
+
+	return followers, nil
+}
+
+func (s *Store) GetReplicationFollower(ctx context.Context, id int64) (*model.ReplicationFollower, error) {
+	var follower model.ReplicationFollower
+
+	err := scanReplicationFollower(s.db.QueryRowContext(ctx, replicationFollowerSelect+` WHERE f.id = ?`, id), &follower)
+
+	if isNoRows(err) {
+		return nil, nil
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("getting follower %d: %w", id, err)
+	}
+
+	return &follower, nil
+}
+
+func (s *Store) RenameReplicationFollower(ctx context.Context, id int64, name string) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE replication_followers SET name = ? WHERE id = ?`, name, id); err != nil {
+		return fmt.Errorf("renaming follower %d: %w", id, err)
+	}
+
+	return nil
+}
+
+func (s *Store) DeleteReplicationFollower(ctx context.Context, id int64) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM replication_followers WHERE id = ?`, id)
+
+	if err != nil {
+		return false, fmt.Errorf("removing follower %d: %w", id, err)
+	}
+
+	deleted, err := result.RowsAffected()
+
+	return deleted > 0, err
+}

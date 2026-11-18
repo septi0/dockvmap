@@ -26,7 +26,7 @@ type primaryService interface {
 	State(ctx context.Context, req service.StateRequest) (*replicationapi.StateResponse, *replicationapi.Conflict, error)
 	Changes(ctx context.Context, repository string, after int64) (*replicationapi.ChangesResponse, error)
 	RecordPulls(ctx context.Context, report replicationapi.PullReport) error
-	SeeFollower(token *model.ReplicationToken, address, version, status string, applied int64)
+	SeeFollower(ctx context.Context, token *model.ReplicationToken, address, version, status string, applied int64, health *replicationapi.FollowerHealth)
 }
 
 type handler struct {
@@ -141,7 +141,7 @@ func (h *handler) state(w http.ResponseWriter, r *http.Request) {
 
 	address, _, _ := net.SplitHostPort(r.RemoteAddr)
 	token := r.Context().Value(tokenKey{}).(*model.ReplicationToken)
-	h.service.SeeFollower(token, address, strings.TrimPrefix(r.UserAgent(), userAgentPrefix), r.Header.Get(replicationapi.FollowerStatusHeader), req.Version)
+	h.service.SeeFollower(r.Context(), token, address, strings.TrimPrefix(r.UserAgent(), userAgentPrefix), r.Header.Get(replicationapi.FollowerStatusHeader), req.Version, followerHealth(r))
 
 	response, conflict, err := h.service.State(r.Context(), req)
 
@@ -237,4 +237,15 @@ func newRegistryReader(registry *ocicopy.Registry) http.Handler {
 		ErrorLog:  slog.NewLogLogger(slog.Default().Handler(), slog.LevelDebug),
 		Transport: registry.Client.Transport,
 	}
+}
+
+// followerHealth is nil from a follower too old to send it
+func followerHealth(r *http.Request) *replicationapi.FollowerHealth {
+	var health replicationapi.FollowerHealth
+
+	if json.Unmarshal([]byte(r.Header.Get(replicationapi.FollowerHealthHeader)), &health) != nil {
+		return nil
+	}
+
+	return &health
 }

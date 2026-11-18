@@ -23,6 +23,8 @@ const pageSize = 1000
 
 var ErrDeletesDisabled = errors.New("the registry doesn't allow deletes; set REGISTRY_STORAGE_DELETE_ENABLED=true on it")
 
+var errTagDeletesUnsupported = errors.New("the registry deletes only by digest, not by tag")
+
 type Registry struct {
 	BaseURL string
 	Client  *http.Client
@@ -220,8 +222,8 @@ func (r Registry) fetchManifest(ctx context.Context, repository, reference strin
 	return &manifest{body: body, mediaType: mediaType, digest: digest}, nil
 }
 
-// Copy returns false when dst already had the tag at the same digest, or src no longer has it
-func Copy(ctx context.Context, src, dst Registry, repository, tag string) (bool, error) {
+// Copy returns false when dst already had the tag at the same digest, or src no longer has it; deep also repairs a tag dst has
+func Copy(ctx context.Context, src, dst Registry, repository, tag string, deep bool) (bool, error) {
 	wanted, err := src.ManifestDigest(ctx, repository, tag)
 
 	if err != nil || wanted == "" {
@@ -234,53 +236,82 @@ func Copy(ctx context.Context, src, dst Registry, repository, tag string) (bool,
 		return false, err
 	}
 
-	if current == wanted {
-		return false, nil
+	same := current == wanted
+	var m *manifest
+
+	if !same {
+		if m, err = src.fetchManifest(ctx, repository, tag); err != nil {
+			return false, err
+		}
+
+		same = current == m.digest
 	}
 
-	m, err := src.fetchManifest(ctx, repository, tag)
+	if same {
+		if !deep {
+			return false, nil
+		}
 
-	if err != nil {
-		return false, err
+		if m, err = dst.fetchManifest(ctx, repository, current); err != nil {
+			return false, err
+		}
+
+		return copyContent(ctx, src, dst, repository, m, true)
 	}
 
-	if current == m.digest {
-		return false, nil
-	}
-
-	if err := copyContent(ctx, src, dst, repository, m); err != nil {
+	if _, err := copyContent(ctx, src, dst, repository, m, deep); err != nil {
 		return false, err
 	}
 
 	return true, dst.putManifest(ctx, repository, tag, m)
 }
 
-func copyContent(ctx context.Context, src, dst Registry, repository string, m *manifest) error {
+// copyContent copies the child manifests and blobs dst lacks; deep also looks inside the child manifests dst has
+func copyContent(ctx context.Context, src, dst Registry, repository string, m *manifest, deep bool) (bool, error) {
 	var content manifestContent
 
 	if err := json.Unmarshal(m.body, &content); err != nil {
-		return fmt.Errorf("reading manifest %s of %s: %w", m.digest, repository, err)
+		return false, fmt.Errorf("reading manifest %s of %s: %w", m.digest, repository, err)
 	}
 
+	copied := false
+
 	for _, child := range content.Manifests {
-		if existing, err := dst.ManifestDigest(ctx, repository, child.Digest); err != nil {
-			return err
-		} else if existing != "" {
+		existing, err := dst.ManifestDigest(ctx, repository, child.Digest)
+
+		if err != nil {
+			return copied, err
+		}
+
+		if existing != "" && !deep {
 			continue
 		}
 
-		childManifest, err := src.fetchManifest(ctx, repository, child.Digest)
+		from := src
+
+		if existing != "" {
+			from = dst
+		}
+
+		childManifest, err := from.fetchManifest(ctx, repository, child.Digest)
 
 		if err != nil {
-			return err
+			return copied, err
 		}
 
-		if err := copyContent(ctx, src, dst, repository, childManifest); err != nil {
-			return err
+		childCopied, err := copyContent(ctx, src, dst, repository, childManifest, deep)
+		copied = copied || childCopied
+
+		if err != nil {
+			return copied, err
 		}
 
-		if err := dst.putManifest(ctx, repository, child.Digest, childManifest); err != nil {
-			return err
+		if existing == "" {
+			if err := dst.putManifest(ctx, repository, child.Digest, childManifest); err != nil {
+				return copied, err
+			}
+
+			copied = true
 		}
 	}
 
@@ -291,12 +322,15 @@ func copyContent(ctx context.Context, src, dst Registry, repository string, m *m
 	}
 
 	for _, blob := range blobs {
-		if err := copyBlob(ctx, src, dst, repository, blob); err != nil {
-			return err
+		blobCopied, err := copyBlob(ctx, src, dst, repository, blob)
+		copied = copied || blobCopied
+
+		if err != nil {
+			return copied, err
 		}
 	}
 
-	return nil
+	return copied, nil
 }
 
 func (r Registry) blobExists(ctx context.Context, repository, digest string) (bool, error) {
@@ -319,34 +353,34 @@ func (r Registry) blobExists(ctx context.Context, repository, digest string) (bo
 }
 
 // the destination registry checks the digest when the upload completes, as the OCI spec requires
-func copyBlob(ctx context.Context, src, dst Registry, repository string, blob descriptor) error {
+func copyBlob(ctx context.Context, src, dst Registry, repository string, blob descriptor) (bool, error) {
 	if exists, err := dst.blobExists(ctx, repository, blob.Digest); err != nil || exists {
-		return err
+		return false, err
 	}
 
 	op := "copying blob " + blob.Digest + " of " + repository
 	resp, err := src.do(ctx, http.MethodGet, "/v2/"+repository+"/blobs/"+blob.Digest, nil, nil)
 
 	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
+		return false, fmt.Errorf("%s: %w", op, err)
 	}
 
 	defer oci.DrainAndClose(resp)
 
 	if resp.StatusCode != http.StatusOK {
-		return &statusError{Status: resp.StatusCode, Op: op}
+		return false, &statusError{Status: resp.StatusCode, Op: op}
 	}
 
 	location, err := dst.startUpload(ctx, repository)
 
 	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
+		return false, fmt.Errorf("%s: %w", op, err)
 	}
 
 	upload, err := url.Parse(location)
 
 	if err != nil {
-		return fmt.Errorf("%s: invalid upload location: %w", op, err)
+		return false, fmt.Errorf("%s: invalid upload location: %w", op, err)
 	}
 
 	query := upload.Query()
@@ -356,23 +390,23 @@ func copyBlob(ctx context.Context, src, dst Registry, repository string, blob de
 	req, err := dst.newRequest(ctx, http.MethodPut, dst.resolve(upload).String(), resp.Body, http.Header{"Content-Type": {"application/octet-stream"}})
 
 	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
+		return false, fmt.Errorf("%s: %w", op, err)
 	}
 
 	req.ContentLength = resp.ContentLength
 	put, err := dst.Client.Do(req)
 
 	if err != nil {
-		return fmt.Errorf("%s: %w", op, err)
+		return false, fmt.Errorf("%s: %w", op, err)
 	}
 
 	oci.DrainAndClose(put)
 
 	if put.StatusCode != http.StatusCreated {
-		return &statusError{Status: put.StatusCode, Op: op}
+		return false, &statusError{Status: put.StatusCode, Op: op}
 	}
 
-	return nil
+	return true, nil
 }
 
 func (r Registry) startUpload(ctx context.Context, repository string) (string, error) {
@@ -442,9 +476,91 @@ func (r Registry) Delete(ctx context.Context, repository, reference string) erro
 		return nil
 	case http.StatusMethodNotAllowed:
 		return ErrDeletesDisabled
+	case http.StatusBadRequest:
+		if !oci.IsDigest(reference) {
+			return errTagDeletesUnsupported
+		}
 	}
 
 	return &statusError{Status: resp.StatusCode, Op: "deleting " + repository + ":" + reference}
+}
+
+// DeleteTags removes tags of one repository; a registry that deletes only by digest (registry:2) loses an image only when all its tags go
+func (r Registry) DeleteTags(ctx context.Context, repository string, tags []string) error {
+	var byDigest []string
+
+	for _, tag := range tags {
+		err := r.Delete(ctx, repository, tag)
+
+		if errors.Is(err, errTagDeletesUnsupported) {
+			byDigest = append(byDigest, tag)
+		} else if err != nil {
+			return err
+		}
+	}
+
+	if len(byDigest) == 0 {
+		return nil
+	}
+
+	return r.deleteByDigest(ctx, repository, byDigest)
+}
+
+func (r Registry) deleteByDigest(ctx context.Context, repository string, tags []string) error {
+	all, err := r.Tags(ctx, repository)
+
+	if err != nil {
+		return err
+	}
+
+	removing := make(map[string]bool, len(tags))
+
+	for _, tag := range tags {
+		removing[tag] = true
+	}
+
+	removed := map[string][]string{}
+	kept := map[string]bool{}
+
+	for _, tag := range all {
+		digest, err := r.ManifestDigest(ctx, repository, tag)
+
+		if err != nil {
+			return err
+		}
+
+		if removing[tag] {
+			removed[digest] = append(removed[digest], tag)
+		} else {
+			kept[digest] = true
+		}
+	}
+
+	var shared []string
+
+	for digest, tags := range removed {
+		if digest == "" {
+			continue
+		}
+
+		if kept[digest] {
+			for _, tag := range tags {
+				shared = append(shared, repository+":"+tag)
+			}
+
+			continue
+		}
+
+		if err := r.Delete(ctx, repository, digest); err != nil {
+			return err
+		}
+	}
+
+	if len(shared) > 0 {
+		return fmt.Errorf("%s share an image with tags that stay, and this registry deletes only whole images; registry:3 deletes single tags", strings.Join(shared, ", "))
+	}
+
+	return nil
 }
 
 // DeletesAllowed deletes a manifest that can't exist: a registry with deletes off refuses before looking it up

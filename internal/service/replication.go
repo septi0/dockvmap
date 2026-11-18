@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"maps"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +39,11 @@ type replicationStore interface {
 	GetReplicationTokenByID(ctx context.Context, id int64) (*model.ReplicationToken, error)
 	TouchReplicationToken(ctx context.Context, id int64, usedAt time.Time) error
 	DeleteReplicationToken(ctx context.Context, id int64) (bool, error)
+	SaveReplicationFollower(ctx context.Context, follower model.ReplicationFollower) error
+	ListReplicationFollowers(ctx context.Context) ([]model.ReplicationFollower, error)
+	GetReplicationFollower(ctx context.Context, id int64) (*model.ReplicationFollower, error)
+	RenameReplicationFollower(ctx context.Context, id int64, name string) error
+	DeleteReplicationFollower(ctx context.Context, id int64) (bool, error)
 }
 
 type ReplicationDeps struct {
@@ -60,15 +64,6 @@ type StateRequest struct {
 	Cluster    string
 	HasVersion bool
 	Full       bool
-}
-
-type SeenFollower struct {
-	Name           string
-	Address        string
-	Version        string
-	AppliedVersion int64
-	Status         string
-	LastSeen       time.Time
 }
 
 type ReplicationStatus struct {
@@ -94,7 +89,8 @@ type Replication struct {
 	changed   chan struct{}
 	waiting   int
 	version   int64
-	followers map[string]SeenFollower
+	startedAt time.Time
+	followers map[string]*liveFollower
 }
 
 func NewReplication(deps ReplicationDeps) *Replication {
@@ -109,12 +105,13 @@ func NewReplication(deps ReplicationDeps) *Replication {
 		waitTimeout:   replicationWaitTimeout,
 		watchInterval: replicationWatchInterval,
 		changed:       make(chan struct{}),
-		followers:     make(map[string]SeenFollower),
+		startedAt:     time.Now(),
+		followers:     make(map[string]*liveFollower),
 	}
 }
 
 func (r *Replication) Start(ctx context.Context) error {
-	clusterID, err := r.store.EnsureClusterID(ctx, newClusterID())
+	clusterID, err := r.store.EnsureClusterID(ctx, newRandomID())
 
 	if err != nil {
 		return err
@@ -135,7 +132,7 @@ func (r *Replication) Start(ctx context.Context) error {
 	return nil
 }
 
-func newClusterID() string {
+func newRandomID() string {
 	raw := make([]byte, 16)
 	rand.Read(raw)
 
@@ -300,20 +297,6 @@ func (p *deletesProbe) addTo(ctx context.Context, setup replicationapi.Setup) re
 	return setup
 }
 
-func (r *Replication) SeeFollower(token *model.ReplicationToken, address, version, status string, applied int64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.followers[fmt.Sprint(token.ID)+"@"+address] = SeenFollower{
-		Name:           token.Label,
-		Address:        address,
-		Version:        version,
-		AppliedVersion: applied,
-		Status:         status,
-		LastSeen:       time.Now().UTC(),
-	}
-}
-
 func (r *Replication) Status(ctx context.Context) (*ReplicationStatus, error) {
 	state, err := r.store.ReplicationState(ctx)
 
@@ -321,21 +304,11 @@ func (r *Replication) Status(ctx context.Context) (*ReplicationStatus, error) {
 		return nil, err
 	}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	followers, err := r.Followers(ctx)
 
-	followers := make([]SeenFollower, 0, len(r.followers))
-
-	for key, follower := range r.followers {
-		if time.Since(follower.LastSeen) > replicationFollowerSeenTTL {
-			delete(r.followers, key)
-			continue
-		}
-
-		followers = append(followers, follower)
+	if err != nil {
+		return nil, err
 	}
-
-	slices.SortFunc(followers, func(a, b SeenFollower) int { return strings.Compare(a.Name+a.Address, b.Name+b.Address) })
 
 	return &ReplicationStatus{
 		ClusterID:   state.ClusterID,

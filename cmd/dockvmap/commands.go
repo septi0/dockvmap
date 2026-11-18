@@ -124,6 +124,10 @@ func cmdResync(ctx context.Context, db *store.Store, cfg *config.Config, yes boo
 	fmt.Printf("Resyncing replaces this follower's %d virtual images, %d groups, %d registries and %d proxy tokens with the primary's at %s.\n",
 		len(local.Images), len(local.Groups), len(local.Registries), len(local.ProxyTokens), cfg.Follower.Primary)
 
+	if cfg.InternalRegistry.Enabled {
+		fmt.Println("It also copies what this follower's registry lacks and removes the images the primary's registry doesn't have.")
+	}
+
 	if !yes {
 		fmt.Print("Type yes to continue: ")
 		answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')

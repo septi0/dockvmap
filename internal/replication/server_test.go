@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -58,8 +59,12 @@ func (f *fakePrimary) RecordPulls(_ context.Context, report replicationapi.PullR
 	return nil
 }
 
-func (f *fakePrimary) SeeFollower(token *model.ReplicationToken, _, version, status string, _ int64) {
+func (f *fakePrimary) SeeFollower(_ context.Context, token *model.ReplicationToken, _, version, status string, _ int64, health *replicationapi.FollowerHealth) {
 	f.seen = token.Label + " " + version + " " + status
+
+	if health != nil {
+		f.seen += fmt.Sprintf(" ready=%v failed=%d", health.Ready, health.FailedCopies)
+	}
 }
 
 func request(t *testing.T, h http.Handler, method, target, token string) *httptest.ResponseRecorder {
@@ -73,6 +78,7 @@ func request(t *testing.T, h http.Handler, method, target, token string) *httpte
 
 	req.Header.Set("User-Agent", "dockvmap/1.14.0")
 	req.Header.Set(replicationapi.FollowerStatusHeader, "syncing")
+	req.Header.Set(replicationapi.FollowerHealthHeader, `{"ready":false,"failedCopies":2}`)
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -104,8 +110,8 @@ func TestStateAnswers(t *testing.T) {
 		t.Errorf("request = %+v, want version 4, tag ab, cluster c1", primary.request)
 	}
 
-	if primary.seen != "standby-1 1.14.0 syncing" {
-		t.Errorf("seen follower = %q, want its label, version and status", primary.seen)
+	if primary.seen != "standby-1 1.14.0 syncing ready=false failed=2" {
+		t.Errorf("seen follower = %q, want its label, version, status and health", primary.seen)
 	}
 
 	primary.conflict = &replicationapi.Conflict{Reason: replicationapi.ConflictDiverged, PrimaryVersion: 2}

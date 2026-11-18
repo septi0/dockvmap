@@ -263,7 +263,7 @@ func replicationJobs(deps workerDeps) []scheduledJob {
 func reconcileJob(deps workerDeps) scheduledJob {
 	reconcile := scheduledJob{
 		name:        "replication-reconcile",
-		description: "Copy every image on the primary's internal registry that this follower lacks; it never deletes.",
+		description: "Copy every image on the primary's internal registry that this follower lacks, missing layers included, and count the images the primary doesn't have; it never deletes.",
 	}
 
 	switch interval := deps.cfg.Follower.ReconcileIntervalDuration(); {

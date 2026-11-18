@@ -26,6 +26,7 @@ type auditFields struct {
 	Repository string `json:"repository"`
 	Reference  string `json:"reference"`
 	Label      string `json:"label"`
+	Address    string `json:"address"`
 	CanPush    bool   `json:"canPush"`
 	Username   string `json:"username"`
 }
@@ -81,6 +82,16 @@ func auditSummary(entry model.AuditLog) string {
 	case service.AuditTypeReplicationTokenCreated, service.AuditTypeReplicationTokenDeleted:
 		return f.Label
 
+	case service.AuditTypeReplicationFollowerRenamed:
+		return orAddress(f.OldName, f.Address) + " → " + orAddress(f.NewName, f.Address)
+
+	case service.AuditTypeReplicationFollowerRemoved:
+		if f.Name == "" {
+			return f.Address
+		}
+
+		return f.Name + " at " + f.Address
+
 	case service.AuditTypeProxyTokenCreated, service.AuditTypeProxyTokenDeleted:
 		if f.CanPush {
 			return f.Label + " (can push)"
@@ -113,4 +124,12 @@ func inGroup(summary, group string) string {
 	}
 
 	return summary + " (" + group + " group)"
+}
+
+func orAddress(name, address string) string {
+	if name == "" {
+		return address
+	}
+
+	return name
 }

@@ -16,8 +16,8 @@ func (s *Store) FollowerState(ctx context.Context) (model.FollowerState, error) 
 	var clusterID sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT cluster_id, applied_version, applied_tag, applied_at, initial_copy_done FROM follower_state WHERE id = 1
-	`).Scan(&clusterID, &state.AppliedVersion, &state.AppliedTag, &state.AppliedAt, &state.InitialCopyDone)
+		SELECT cluster_id, applied_version, applied_tag, applied_at, initial_copy_done, prune_requested FROM follower_state WHERE id = 1
+	`).Scan(&clusterID, &state.AppliedVersion, &state.AppliedTag, &state.AppliedAt, &state.InitialCopyDone, &state.PruneRequested)
 
 	if err != nil {
 		return state, fmt.Errorf("reading the follower state: %w", err)
@@ -284,7 +284,15 @@ func (s *Store) MarkInitialCopyDone(ctx context.Context) error {
 	return nil
 }
 
-// RequestResync also forgets what was copied, so the registry is compared in full against the primary it resyncs from
+func (s *Store) ClearPruneRequest(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `UPDATE follower_state SET prune_requested = 0 WHERE id = 1`); err != nil {
+		return fmt.Errorf("clearing the prune request: %w", err)
+	}
+
+	return nil
+}
+
+// RequestResync also forgets what was copied, so the registry is compared in full against the primary it resyncs from, and asks for what the primary lacks to be removed
 func (s *Store) RequestResync(ctx context.Context) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 
@@ -294,7 +302,7 @@ func (s *Store) RequestResync(ctx context.Context) error {
 
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `UPDATE follower_state SET resync_requested = 1, initial_copy_done = 0 WHERE id = 1`); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE follower_state SET resync_requested = 1, initial_copy_done = 0, prune_requested = 1 WHERE id = 1`); err != nil {
 		return fmt.Errorf("requesting a resync: %w", err)
 	}
 
@@ -321,4 +329,19 @@ func (s *Store) TakeResyncRequest(ctx context.Context) (bool, error) {
 	n, err := result.RowsAffected()
 
 	return n > 0, err
+}
+
+// FollowerID is this follower's own identity on its primary, made once and kept across resyncs
+func (s *Store) FollowerID(ctx context.Context, newID string) (string, error) {
+	if _, err := s.db.ExecContext(ctx, `UPDATE follower_state SET follower_id = ? WHERE id = 1 AND follower_id = ''`, newID); err != nil {
+		return "", fmt.Errorf("saving the follower ID: %w", err)
+	}
+
+	var id string
+
+	if err := s.db.QueryRowContext(ctx, `SELECT follower_id FROM follower_state WHERE id = 1`).Scan(&id); err != nil {
+		return "", fmt.Errorf("reading the follower ID: %w", err)
+	}
+
+	return id, nil
 }

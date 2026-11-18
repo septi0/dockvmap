@@ -119,6 +119,9 @@ type replicationService interface {
 	ListTokens(ctx context.Context) ([]model.ReplicationToken, error)
 	CreateToken(ctx context.Context, label string) (int64, string, error)
 	DeleteToken(ctx context.Context, id int64) (bool, error)
+	Followers(ctx context.Context) ([]service.SeenFollower, error)
+	RenameFollower(ctx context.Context, id int64, name string) (bool, error)
+	RemoveFollower(ctx context.Context, id int64) (bool, error)
 }
 
 type registryBrowserService interface {

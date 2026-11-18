@@ -1,6 +1,6 @@
 import type { StateTone } from './hosts'
 import type { SeenFollower } from '../api/types/replication'
-import { formatCount } from './format'
+import { formatCount, formatRelativeTime } from './format'
 
 type FollowerState = { label: string; tone: StateTone; fix?: string }
 
@@ -15,15 +15,42 @@ const SYNC_STATES: Record<string, FollowerState> = {
   'api-version': { label: 'The primary runs a newer DockVMap', tone: 'warning', fix: 'Update it to this version' },
 }
 
-// a syncing follower shows how far behind it is; a stopped one, why and what to do on it
-export function followerState(follower: SeenFollower, stateVersion: number): FollowerState {
-  if (!follower.status || follower.status === 'running') {
-    const behind = stateVersion - follower.appliedVersion
+// a follower shows the name given on this primary, or its address until it has one
+export function followerName(follower: SeenFollower): string {
+  return follower.name || follower.address
+}
 
-    return { label: behind <= 0 ? 'In sync' : `${formatCount(behind, 'change')} behind`, tone: 'running' }
+// the worst thing about a follower first: gone, stopped, failing copies, not ready, then how far behind it is
+export function followerState(follower: SeenFollower, stateVersion: number): FollowerState {
+  if (follower.connection === 'missing') {
+    return { label: `Not connected, last seen ${formatRelativeTime(follower.lastSeen)}`, tone: 'failed', fix: 'Check that it runs and can reach this primary' }
   }
 
-  return SYNC_STATES[follower.status] ?? { label: follower.status, tone: 'warning' }
+  if (follower.connection === 'waiting') {
+    return { label: 'Waiting for it to connect', tone: 'stopped' }
+  }
+
+  if (follower.status && follower.status !== 'running') {
+    return SYNC_STATES[follower.status] ?? { label: follower.status, tone: 'warning' }
+  }
+
+  const health = follower.health
+
+  if (health && health.failedCopies > 0) {
+    return { label: `${formatCount(health.failedCopies, 'repository', 'repositories')} failing to copy`, tone: 'failed' }
+  }
+
+  if (health && !health.ready) {
+    return { label: `Not ready: ${health.notReady}`, tone: 'warning' }
+  }
+
+  if (health && health.pendingRepositories > 0) {
+    return { label: `Copying, ${formatCount(health.pendingRepositories, 'repository', 'repositories')} left`, tone: 'running' }
+  }
+
+  const behind = stateVersion - follower.appliedVersion
+
+  return { label: behind <= 0 ? 'In sync' : `${formatCount(behind, 'change')} behind`, tone: 'running' }
 }
 
 // the primary's own address: the listen host when it names one, else the address this page was opened on

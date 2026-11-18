@@ -123,7 +123,7 @@ func TestUpdateAvailableFor(t *testing.T) {
 			current: "17.9-alpine-3",
 		},
 		{
-			name: "pinned 17 does not flag 17.10 (impl suppresses; PROJECT.md:172 wording says it should)",
+			name: "17 already tracks 17.10, so it is suppressed",
 			tags: []model.ImageTag{
 				mt("17.10", 1, 0, false, true, []int64{17, 10}),
 				mt("17", 1, 1, false, true, []int64{17}),

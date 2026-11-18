@@ -43,8 +43,10 @@ type followerStatusResponse struct {
 	LastAppliedAt       *time.Time                `json:"lastAppliedAt"`
 	PendingRepositories int                       `json:"pendingRepositories"`
 	FailedCopies        int                       `json:"failedCopies"`
+	ExtraTags           *int                      `json:"extraTags"`
 	InitialCopyDone     bool                      `json:"initialCopyDone"`
 	LastError           string                    `json:"lastError,omitempty"`
+	CopyError           string                    `json:"copyError,omitempty"`
 	Mismatches          []replicationapi.Mismatch `json:"-"`
 }
 
@@ -76,6 +78,10 @@ func (w *Web) apiHealthReady(rw http.ResponseWriter, r *http.Request) {
 			response.Cluster, response.StateVersion = status.ClusterID, &status.Version
 
 			for _, f := range status.Followers {
+				if f.Connection != service.FollowerConnected {
+					continue
+				}
+
 				response.Followers = append(response.Followers, followerHealth{Name: f.Name, Version: f.Version, AppliedVersion: f.AppliedVersion, Status: f.Status})
 			}
 		}
